@@ -1,0 +1,897 @@
+.screen {
+    flex-grow: 1;
+    padding: 26px 40px;
+    background-color: #10151e;
+    color: #f5f7fa;
+}
+.header, .footer {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+    height: 42px;
+    border-color: #394350;
+}
+.header { border-bottom-width: 1px; }
+.footer { border-top-width: 1px; }
+.brand, .eyebrow, .muted {
+    font-size: 14px;
+    -unity-font-style: bold;
+}
+.brand, .accent, .eyebrow { color: #ffaf63; }
+.muted { color: #aab7c8; }
+.main {
+    flex-grow: 1;
+    justify-content: center;
+    align-items: center;
+}
+.card {
+    width: 100%;
+    max-width: 740px;
+    padding: 26px 34px;
+    background-color: #1c2633;
+    border-left-width: 5px;
+    border-left-color: #ffaf63;
+}
+.eyebrow { margin-bottom: 14px; }
+.title {
+    font-size: 54px;
+    -unity-font-style: bold;
+    margin: 0;
+}
+.description {
+    color: #c9d3e0;
+    font-size: 19px;
+    white-space: normal;
+    margin-top: 14px;
+    margin-bottom: 19px;
+}
+.action {
+    align-self: flex-start;
+    min-width: 170px;
+    height: 44px;
+    margin: 0;
+    color: #141a22;
+    background-color: #ffaf63;
+    border-color: #ffaf63;
+    font-size: 17px;
+    -unity-font-style: bold;
+}
+.action:hover, .action:focus {
+    background-color: #ffd2a7;
+    border-color: #ffffff;
+}
+
+.actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+}
+.quit-action {
+    min-width: 90px;
+    margin-left: 12px;
+    color: #f5f7fa;
+    background-color: #263342;
+    border-color: #64768b;
+}
+.quit-action:hover, .quit-action:focus {
+    background-color: #394a60;
+    border-color: #ffffff;
+}
+
+.garage-entry {
+    padding: 12px 16px;
+    margin-bottom: 18px;
+    background-color: #10151e;
+}
+.garage-detail {
+    margin: 2px 0;
+    color: #c9d3e0;
+    font-size: 16px;
+    white-space: normal;
+}
+
+.track-heading {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 0;
+}
+.track-heading .action { align-self: center; }
+.track-heading .eyebrow { margin-bottom: 0; }
+.track-title {
+    font-size: 36px;
+    -unity-font-style: bold;
+}
+.race-viewport {
+    flex-basis: 0;
+    min-width: 0;
+    flex-grow: 1;
+    margin-bottom: 12px;
+    background-color: #192b2b;
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+.tracks-editor .unity-base-field__label {
+    color: #e3e9f2;
+}
+.tracks-editor .unity-base-text-field__input {
+    background-color: #202b39;
+    border-color: #69798c;
+    color: #f5f7fa;
+    --unity-cursor-color: #ffffff;
+    --unity-selection-color: #315b87;
+}
+.tracks-editor .unity-base-text-field__input:focus {
+    border-color: #ffaf63;
+}
+.tracks-editor .unity-base-text-field__input .unity-text-element {
+    color: #f5f7fa;
+    --unity-cursor-color: #ffffff;
+    --unity-selection-color: #315b87;
+}
+
+.track-utility #utilityTitle {
+    font-size: 30px;
+    -unity-font-style: bold;
+    margin-right: 20px;
+}
+.track-utility .utility-button {
+    min-width: 0;
+    height: 32px;
+    padding: 0 12px;
+    margin: 3px 8px 3px 0;
+    font-size: 14px;
+}
+.utility-body {
+    flex-grow: 1;
+    flex-wrap: nowrap;
+    min-height: 0;
+    margin-top: 10px;
+}
+.utility-sidebar {
+    width: 32%;
+    min-width: 0;
+    padding-right: 8px;
+    flex-direction: row;
+}
+.utility-form {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-width: 0;
+    padding-right: 8px;
+}
+.utility-tabs {
+    width: 140px;
+    flex-shrink: 0;
+    margin-right: 8px;
+}
+.utility-tab {
+    min-height: 34px;
+    margin: 0 0 4px 0;
+    padding: 5px 8px;
+    white-space: normal;
+    -unity-text-align: middle-left;
+    color: #e3e9f2;
+    background-color: #202b39;
+    border-color: #394350;
+}
+.utility-tab-selected, .utility-tab-selected:hover {
+    color: #141a22;
+    background-color: #ffaf63;
+    border-color: #ffaf63;
+}
+.utility-form .unity-base-field__label { min-width: 0; }
+.utility-map {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-width: 0;
+    background-color: #17212b;
+}
+.utility-section {
+    color: #ffaf63;
+    -unity-font-style: bold;
+    margin-top: 12px;
+    margin-bottom: 4px;
+}
+
+.utility-tab-row {
+    flex-wrap: nowrap;
+    align-items: center;
+}
+.utility-tab-row .utility-tab {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-width: 0;
+}
+.utility-visibility {
+    flex-shrink: 0;
+    margin: 0 3px 4px 0;
+}
+/* Shared neutral palette. Apply game-neutral to a screen to use it. */
+.game-neutral {
+    --game-background: #151515;
+    --game-surface: #222222;
+    --game-button: #454545;
+    --game-button-hover: #565656;
+    --game-button-selected: #626262;
+    --game-text: #f5f5f5;
+    --game-divider: #b6b6b6;
+    background-color: var(--game-background);
+    color: var(--game-text);
+}
+.game-neutral .nav-button {
+    color: var(--game-text);
+    background-color: var(--game-button);
+    border-color: var(--game-button);
+    min-height: 34px;
+    padding: 4px 8px;
+}
+.game-neutral .nav-button:hover, .game-neutral .nav-button:focus {
+    background-color: var(--game-button-hover);
+    border-color: var(--game-divider);
+}
+.game-neutral .nav-button-selected {
+    background-color: var(--game-button-selected);
+    border-bottom-color: var(--game-divider);
+}
+.garage-heading {
+    color: #009bdd;
+    font-size: 22px;
+    -unity-font-style: bold;
+}
+.garage-body {
+    flex-grow: 1;
+    min-height: 0;
+}
+.garage-page {
+    padding: 22px 12px;
+}
+.garage-page-title {
+    font-size: 38px;
+    -unity-font-style: bold;
+    margin-bottom: 16px;
+}
+.garage-screen .garage-entry {
+    background-color: var(--game-surface);
+}
+.garage-screen .garage-detail {
+    color: var(--game-text);
+}
+.garage-track-button {
+    align-self: flex-start;
+    margin-top: 12px;
+}
+.garage-footer {
+    border-top-color: var(--game-divider);
+    height: auto;
+    padding-top: 10px;
+}
+.garage-footer .nav-button {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-width: 0;
+    margin: 0 2px;
+    padding-left: 1px;
+    padding-right: 1px;
+}
+
+.title-screen {
+    --title-accent: #009bdd;
+    --title-accent-hover: #55c4ef;
+}
+.title-screen .brand,
+.title-screen .eyebrow,
+.title-screen .accent {
+    color: var(--title-accent);
+}
+.title-screen .card {
+    border-left-color: var(--title-accent);
+}
+.title-actions .action {
+    flex-shrink: 0;
+    margin: 0 10px 10px 0;
+}
+.title-actions .title-primary {
+    background-color: var(--title-accent);
+    border-color: var(--title-accent);
+}
+.title-actions .title-primary:hover,
+.title-actions .title-primary:focus {
+    background-color: var(--title-accent-hover);
+    border-color: #ffffff;
+}
+
+.schedule-race {
+    padding: 7px 0;
+    border-bottom-width: 1px;
+    border-bottom-color: #454545;
+}
+.schedule-race-completed {
+    opacity: 0.5;
+}
+
+.schedule-page {
+    flex-grow: 1;
+    min-height: 0;
+    padding-top: 12px;
+    padding-bottom: 12px;
+}
+.schedule-layout {
+    flex-direction: row;
+    flex-grow: 1;
+    min-height: 0;
+}
+.schedule-standings, .schedule-events, .schedule-details {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-width: 0;
+    min-height: 0;
+}
+.schedule-events {
+    margin: 0 16px;
+}
+.schedule-heading {
+    flex-shrink: 0;
+    -unity-font-style: bold;
+}
+.schedule-list {
+    flex-grow: 1;
+    min-height: 0;
+}
+.schedule-status {
+    white-space: normal;
+    flex-shrink: 0;
+}
+.schedule-track-outline {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-height: 36px;
+    max-height: 220px;
+    margin: 8px 0;
+}
+.schedule-event-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-top: auto;
+    flex-shrink: 0;
+    justify-content: flex-end;
+    align-items: flex-end;
+}
+#simulateEventButton {
+    margin-right: 6px;
+}
+.schedule-event-actions .nav-button {
+    margin: 0;
+}
+.schedule-choice {
+    margin: 2px 0;
+    white-space: normal;
+    -unity-text-align: middle-left;
+}
+
+.session-speed {
+    align-self: center;
+    min-width: 105px;
+    margin-right: 12px;
+}
+.session-speed .unity-base-field__label {
+    min-width: 0;
+    color: #f5f5f5;
+}
+
+.results-grid {
+    min-width: 0;
+    margin-top: 12px;
+}
+.results-grid-row {
+    flex-direction: row;
+    border-bottom-width: 1px;
+    border-bottom-color: var(--game-divider);
+}
+.results-grid-header {
+    -unity-font-style: bold;
+}
+.results-grid-cell {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-width: 0;
+    padding: 5px 6px;
+    white-space: normal;
+}
+.results-grid-name {
+    flex-grow: 1.65;
+}
+
+.track-content {
+    flex-direction: row;
+    flex-grow: 1;
+    min-height: 0;
+}
+.track-timing {
+    width: 25%;
+    min-width: 200px;
+    max-width: 310px;
+    flex-shrink: 0;
+    margin-left: 12px;
+    margin-bottom: 12px;
+    background-color: #1c2633;
+}
+.timing-rows {
+    flex-grow: 1;
+    min-height: 0;
+}
+.timing-row {
+    flex-direction: row;
+    padding: 5px 6px;
+    border-bottom-width: 1px;
+    border-bottom-color: #394350;
+}
+.timing-header {
+    -unity-font-style: bold;
+}
+.timing-car {
+    width: 18%;
+}
+.timing-driver {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.timing-row > Label {
+    font-size: 12px;
+    white-space: nowrap;
+}
+.timing-speed {
+    width: 43px;
+    flex-shrink: 0;
+    -unity-text-align: middle-right;
+}
+.timing-lap {
+    width: 32%;
+    -unity-text-align: middle-right;
+}
+
+.timing-position {
+    width: 15%;
+}
+
+
+.track-ratings {
+    flex-direction: row;
+    margin: 8px 0;
+}
+.rating-column {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-width: 0;
+    margin: 0 2px;
+}
+.rating-well {
+    height: 48px;
+    width: 56%;
+    align-self: center;
+    justify-content: flex-end;
+    background-color: var(--game-surface);
+}
+.rating-fill {
+    background-color: #009bdd;
+}
+.rating-label {
+    font-size: 12px;
+    -unity-text-align: middle-center;
+}
+
+.team-results-event-picker .unity-base-popup-field__input {
+    background-color: #e4e8ee;
+}
+.team-results-event-picker .unity-base-popup-field__text {
+    color: #171c23;
+}
+.team-results-event-picker .unity-base-popup-field__arrow {
+    -unity-background-image-tint-color: #171c23;
+}
+
+.standings-row {
+    border-left-width: 3px;
+    border-left-color: transparent;
+}
+.standings-player {
+    border-left-color: #009bdd;
+    -unity-font-style: bold;
+}
+.standings-position, .standings-car-number, .standings-points {
+    flex-grow: 0;
+    flex-basis: 54px;
+    -unity-text-align: middle-center;
+}
+
+.cars-roster {
+    min-width: 0;
+}
+.car-tabs .unity-scroll-view__content-container {
+    flex-direction: row;
+}
+.game-neutral .car-tab {
+    flex-shrink: 0;
+    margin: 4px 8px 4px 0;
+    padding: 6px 12px;
+}
+.cars-performance {
+    width: 33.333%;
+    min-width: 220px;
+    max-width: 100%;
+    margin-top: 12px;
+}
+.car-rating-row {
+    flex-direction: row;
+    justify-content: space-between;
+}
+.car-rating-name {
+    flex-grow: 1;
+    min-width: 0;
+}
+.car-rating-value {
+    width: 60px;
+    flex-shrink: 0;
+    -unity-text-align: middle-right;
+}
+
+.car-market-page {
+    display: none;
+    flex-grow: 1;
+    min-height: 0;
+}
+.car-market-new {
+    flex-direction: row;
+    align-items: center;
+    margin: 8px 0 16px;
+}
+.car-market-new .nav-button {
+    margin-left: 12px;
+}
+.car-market-back {
+    align-self: flex-end;
+    margin-top: 8px;
+}
+.car-market-action {
+    flex-grow: 0;
+    flex-basis: 88px;
+    min-width: 0;
+}
+
+.employee-dismissal-prompt {
+    display: none;
+    margin: 8px 0;
+    padding: 8px;
+    background-color: var(--game-surface);
+}
+
+.employees-page {
+    flex-grow: 1;
+    min-height: 0;
+    padding-top: 8px;
+    padding-bottom: 8px;
+}
+.employee-roster {
+    flex-grow: 1;
+    min-height: 0;
+}
+.employee-roster .unity-scroll-view__content-container {
+    flex-direction: row;
+}
+.game-neutral .employee-card {
+    width: 240px;
+    flex-shrink: 0;
+    margin: 8px 8px 8px 0;
+    padding: 8px;
+    background-color: var(--game-surface);
+}
+.game-neutral .employee-card.nav-button-selected {
+    border-left-width: 3px;
+    border-left-color: #009bdd;
+}
+.employee-role-actions {
+    flex-direction: row;
+    align-items: center;
+    margin: 8px 0;
+}
+.employee-role-actions .unity-base-field {
+    width: 280px;
+    margin-right: 8px;
+}
+
+.finance-summary {
+    flex-direction: row;
+}
+.finance-card {
+    flex-grow: 1;
+    flex-basis: 0;
+    margin-right: 6px;
+    padding: 12px;
+    align-items: center;
+}
+.finance-total {
+    font-size: 28px;
+    -unity-font-style: bold;
+}
+.finance-description {
+    flex-grow: 2;
+}
+.finance-number {
+    -unity-text-align: middle-right;
+}
+.finance-positive {
+    color: #91cf98;
+}
+.finance-negative {
+    color: #f58a86;
+}
+
+.employee-portrait {
+    width: 88px;
+    height: 88px;
+    align-self: center;
+    margin-bottom: 4px;
+    border-radius: 44px;
+    overflow: hidden;
+}
+.game-neutral .employee-card .garage-detail {
+    margin-top: 2px;
+    margin-bottom: 2px;
+    padding-top: 0;
+    padding-bottom: 0;
+}
+
+.recruitment-actions {
+    margin-top: auto;
+    flex-shrink: 0;
+}
+.recruitment-filter {
+    max-width: 360px;
+    margin-bottom: 8px;
+}
+.recruitment-row {
+    align-items: center;
+}
+.recruitment-photo-cell {
+    width: 56px;
+    flex-shrink: 0;
+    padding: 3px 4px;
+}
+.recruitment-portrait {
+    width: 48px;
+    height: 48px;
+}
+.recruitment-candidate {
+    flex-grow: 1.6;
+}
+.recruitment-skills {
+    flex-grow: 2;
+}
+.recruitment-action {
+    width: 72px;
+    flex-shrink: 0;
+}
+
+.team-calendar {
+    flex-direction: row;
+    align-items: center;
+    flex-shrink: 0;
+    margin-left: 6px;
+}
+.team-date-panel {
+    min-width: 88px;
+    padding: 3px 6px;
+    background-color: #236078;
+}
+.team-date-label {
+    margin: 0;
+    padding: 0;
+    color: #f5f7fa;
+    font-size: 12px;
+    -unity-text-align: middle-center;
+}
+.team-calendar .nav-button {
+    flex-grow: 0;
+    flex-basis: auto;
+    min-width: 72px;
+    margin-left: 4px;
+}
+
+.skip-race-overlay {
+    display: none;
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.65);
+    align-items: center;
+    justify-content: center;
+}
+.skip-race-dialog {
+    width: 440px;
+    max-width: 90%;
+    padding: 18px;
+}
+.skip-race-dialog .actions {
+    margin-top: 12px;
+    justify-content: flex-end;
+}
+
+.header.team-header-row {
+    height: auto;
+    min-height: 62px;
+    padding-top: 4px;
+    padding-bottom: 6px;
+}
+
+.team-header-info {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+}
+
+.team-header {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.car-tab-image {
+    width: 160px;
+    height: 90px;
+    align-self: center;
+    margin-bottom: 4px;
+}
+
+.sponsor-row {
+    flex-direction: row;
+    align-items: center;
+    margin-top: 6px;
+    margin-bottom: 6px;
+    padding: 8px;
+    border-bottom-width: 1px;
+    border-bottom-color: rgb(81, 91, 103);
+}
+
+.sponsor-logo {
+    width: 70px;
+    height: 55px;
+    margin-right: 12px;
+    flex-shrink: 0;
+    border-left-width: 5px;
+    -unity-text-align: middle-center;
+    -unity-font-style: bold;
+    font-size: 25px;
+}
+
+.car-paint-button {
+    align-self: flex-start;
+}
+
+.car-options-dialog {
+    width: 520px;
+    max-height: 85%;
+}
+
+.car-option-row {
+    flex-direction: row;
+    align-items: center;
+    min-height: 54px;
+    white-space: normal;
+}
+
+.car-option-image {
+    width: 88px;
+    height: 50px;
+    margin-right: 10px;
+    flex-shrink: 0;
+}
+
+#eventCarPicker {
+    white-space: normal;
+}
+
+.car-option-row {
+    background-color: rgb(40, 47, 56);
+}
+
+.car-option-row:hover {
+    background-color: rgb(57, 66, 78);
+}
+
+.car-option-row Label {
+    color: whitesmoke;
+}
+
+#trackScreen .track-heading {
+    flex-shrink: 0;
+}
+.track-heading-labels {
+    flex-shrink: 1;
+    min-width: 0;
+}
+#trackScreen .track-heading > .actions {
+    flex-shrink: 0;
+}
+.track-player-panel {
+    flex-shrink: 0;
+    padding: 6px;
+    border-top-width: 1px;
+    border-color: #394350;
+    font-size: 12px;
+}
+.pit-readouts {
+    flex-direction: row;
+}
+.pit-tires {
+    width: 76px;
+    flex-shrink: 0;
+    flex-direction: row;
+    flex-wrap: wrap;
+}
+.pit-tire {
+    width: 50%;
+    align-items: center;
+}
+.pit-tire .unity-base-field__label,
+.pit-levels .unity-base-field__label {
+    min-width: 0;
+}
+.track-player-panel .unity-toggle__checkmark {
+    scale: 0.5 0.5;
+}
+.pit-tire-bar, .pit-level-bar {
+    background-color: #10151e;
+    border-width: 1px;
+    border-color: #64768b;
+    overflow: hidden;
+}
+.pit-tire-bar {
+    width: 14px;
+    height: 35px;
+    justify-content: flex-end;
+}
+.pit-level-bar {
+    height: 9px;
+    flex-direction: row;
+}
+.pit-meter-fill {
+    background-color: #57d568;
+}
+.pit-damage-fill {
+    background-color: #ef694d;
+}
+.pit-levels {
+    flex-grow: 1;
+    min-width: 0;
+    padding-left: 4px;
+}
+.pit-levels > Label {
+    white-space: normal;
+}
+.track-pit-status {
+    min-height: 16px;
+    white-space: normal;
+}
+.track-player-panel .action {
+    align-self: stretch;
+    min-width: 0;
+    height: 28px;
+    font-size: 13px;
+}
+#trackScreen .footer > .muted {
+    min-width: 0;
+    flex-shrink: 1;
+    white-space: normal;
+}
+#trackScreen .footer > .brand {
+    flex-shrink: 0;
+    margin-left: 12px;
+}

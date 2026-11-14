@@ -1,0 +1,710 @@
+{
+  "id": 15,
+  "name": "Bowman Gray Stadium",
+  "location": {
+    "city": "Winston-Salem",
+    "state": "NC"
+  },
+  "qualifyingReferenceMph": 63.663,
+  "lengthMiles": 0.25,
+  "aspectRatio": 2.1,
+  "majorStyle": "Oval",
+  "minorStyle": "Oval",
+  "surface": "Asphalt",
+  "restrictorPlate": false,
+  "banking": {
+    "turns12": 0,
+    "turns34": 0,
+    "frontStraight": 0,
+    "backStraight": 0
+  },
+  "widthMeters": 12.192,
+  "pitStalls": 23,
+  "raceLaps": 200,
+  "raceStageLaps": [
+    100,
+    100
+  ],
+  "weights": {
+    "surfaceRoughness": 0.5,
+    "aerodynamics": 0.5,
+    "horsepower": 0.5,
+    "brakes": 0.5,
+    "suspension": 0.5,
+    "handling": 0.5,
+    "tireWear": 0.5,
+    "ratingsAssigned": false
+  },
+  "layoutPoints": [
+    {
+      "x": -41.426746,
+      "z": -37.660678,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": -31.070059,
+      "z": -37.660678,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": -20.713373,
+      "z": -37.660678,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": -10.356686,
+      "z": -37.660678,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": 0,
+      "z": -37.660678,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": 10.356686,
+      "z": -37.660678,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": 20.713373,
+      "z": -37.660678,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": 31.070059,
+      "z": -37.660678,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": 41.426746,
+      "z": -37.660678,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": 46.34245,
+      "z": -37.338486,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": 51.174046,
+      "z": -36.377421,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": 55.838863,
+      "z": -34.793929,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": 60.257085,
+      "z": -32.615104,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": 64.353114,
+      "z": -29.878225,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": 68.056866,
+      "z": -26.630121,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": 71.30497,
+      "z": -22.926368,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": 74.041849,
+      "z": -18.830339,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": 76.220675,
+      "z": -14.412117,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": 77.804167,
+      "z": -9.747301,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": 78.765231,
+      "z": -4.915705,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": 79.087423,
+      "z": 0,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": 78.765231,
+      "z": 4.915705,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": 77.804167,
+      "z": 9.747301,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": 76.220675,
+      "z": 14.412117,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": 74.041849,
+      "z": 18.830339,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": 71.30497,
+      "z": 22.926368,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": 68.056866,
+      "z": 26.630121,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": 64.353114,
+      "z": 29.878225,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": 60.257085,
+      "z": 32.615104,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": 55.838863,
+      "z": 34.793929,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": 51.174046,
+      "z": 36.377421,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": 46.34245,
+      "z": 37.338486,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": 41.426746,
+      "z": 37.660678,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": 31.070059,
+      "z": 37.660678,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": 20.713373,
+      "z": 37.660678,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": 10.356686,
+      "z": 37.660678,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": 0,
+      "z": 37.660678,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": -10.356686,
+      "z": 37.660678,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": -20.713373,
+      "z": 37.660678,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": -31.070059,
+      "z": 37.660678,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": -41.426746,
+      "z": 37.660678,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": -46.34245,
+      "z": 37.338486,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": -51.174046,
+      "z": 36.377421,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": -55.838863,
+      "z": 34.793929,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": -60.257085,
+      "z": 32.615104,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": -64.353114,
+      "z": 29.878225,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": -68.056866,
+      "z": 26.630121,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": -71.30497,
+      "z": 22.926368,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": -74.041849,
+      "z": 18.830339,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": -76.220675,
+      "z": 14.412117,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": -77.804167,
+      "z": 9.747301,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": -78.765231,
+      "z": 4.915705,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": -79.087423,
+      "z": 0,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": -78.765231,
+      "z": -4.915705,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": -77.804167,
+      "z": -9.747301,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": -76.220675,
+      "z": -14.412117,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": -74.041849,
+      "z": -18.830339,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": -71.30497,
+      "z": -22.926368,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": -68.056866,
+      "z": -26.630121,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": -64.353114,
+      "z": -29.878225,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": -60.257085,
+      "z": -32.615104,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": -55.838863,
+      "z": -34.793929,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": -51.174046,
+      "z": -36.377421,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    },
+    {
+      "x": -46.34245,
+      "z": -37.338486,
+      "banking": 0,
+      "widthMeters": 0,
+      "apronWidthMeters": 1.8288
+    }
+  ],
+  "raceMarkers": {
+    "hasStartFinish": true,
+    "startFinish": 0.102966,
+    "hasRestartZone": true,
+    "restartZoneStart": 0.002966,
+    "restartZoneEnd": 0.070966
+  },
+  "pitRoad": {
+    "enabled": true,
+    "widthMeters": 8,
+    "speedLimitMph": 20,
+    "speedLimitStart": 0.055,
+    "speedLimitEnd": 0.945,
+    "points": [
+      {
+        "x": -83.619255,
+        "z": 39.189887
+      },
+      {
+        "x": -91.376848,
+        "z": 28.654055
+      },
+      {
+        "x": -96.555392,
+        "z": 16.640023
+      },
+      {
+        "x": -98.881642,
+        "z": 3.869869
+      },
+      {
+        "x": -98.271683,
+        "z": -9.203642
+      },
+      {
+        "x": -94.727475,
+        "z": -21.79702
+      },
+      {
+        "x": -88.493681,
+        "z": -33.17756
+      },
+      {
+        "x": -79.785914,
+        "z": -42.948995
+      },
+      {
+        "x": -69.193127,
+        "z": -50.448923
+      }
+    ],
+    "entrance": [
+      {
+        "x": -50.210077,
+        "z": 36.621936
+      },
+      {
+        "x": -53.38583,
+        "z": 37.486982
+      },
+      {
+        "x": -57.381315,
+        "z": 39.651991
+      },
+      {
+        "x": -61.376093,
+        "z": 40.706039
+      },
+      {
+        "x": -64.457689,
+        "z": 39.33963
+      },
+      {
+        "x": -68.098748,
+        "z": 38.767522
+      },
+      {
+        "x": -73.445954,
+        "z": 39.966119
+      },
+      {
+        "x": -79.288349,
+        "z": 40.672563
+      },
+      {
+        "x": -83.619255,
+        "z": 39.189887
+      }
+    ],
+    "exit": [
+      {
+        "x": -69.193127,
+        "z": -50.448923
+      },
+      {
+        "x": -64.846668,
+        "z": -50.391148
+      },
+      {
+        "x": -59.882971,
+        "z": -47.769007
+      },
+      {
+        "x": -55.43601,
+        "z": -44.922842
+      },
+      {
+        "x": -52.07186,
+        "z": -44.324925
+      },
+      {
+        "x": -49.018349,
+        "z": -44.691618
+      },
+      {
+        "x": -45.809641,
+        "z": -42.521078
+      },
+      {
+        "x": -42.798793,
+        "z": -39.31464
+      },
+      {
+        "x": -40.233544,
+        "z": -37.677457
+      }
+    ],
+    "stalls": [
+      {
+        "x": -90.648837,
+        "z": 34.730885
+      },
+      {
+        "x": -93.071134,
+        "z": 31.2564
+      },
+      {
+        "x": -95.193885,
+        "z": 27.480376
+      },
+      {
+        "x": -96.981613,
+        "z": 23.648763
+      },
+      {
+        "x": -98.503139,
+        "z": 19.704954
+      },
+      {
+        "x": -99.753308,
+        "z": 15.634169
+      },
+      {
+        "x": -100.704731,
+        "z": 11.512649
+      },
+      {
+        "x": -101.368497,
+        "z": 7.308988
+      },
+      {
+        "x": -101.730995,
+        "z": 3.092304
+      },
+      {
+        "x": -101.794639,
+        "z": -1.161912
+      },
+      {
+        "x": -101.566667,
+        "z": -5.382867
+      },
+      {
+        "x": -101.046301,
+        "z": -9.58367
+      },
+      {
+        "x": -100.218153,
+        "z": -13.763131
+      },
+      {
+        "x": -99.109486,
+        "z": -17.842349
+      },
+      {
+        "x": -97.714313,
+        "z": -21.861718
+      },
+      {
+        "x": -96.046569,
+        "z": -25.751325
+      },
+      {
+        "x": -94.097518,
+        "z": -29.53455
+      },
+      {
+        "x": -91.900109,
+        "z": -33.149038
+      },
+      {
+        "x": -89.450524,
+        "z": -36.601445
+      },
+      {
+        "x": -86.750543,
+        "z": -39.88792
+      },
+      {
+        "x": -83.851776,
+        "z": -42.963433
+      },
+      {
+        "x": -80.657153,
+        "z": -45.886107
+      },
+      {
+        "x": -77.268243,
+        "z": -48.427425
+      }
+    ]
+  }
+}

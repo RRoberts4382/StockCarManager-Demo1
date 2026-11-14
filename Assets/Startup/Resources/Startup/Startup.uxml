@@ -1,0 +1,31 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <Style src="Startup.uss" />
+    <ui:VisualElement name="titleScreen" class="screen title-screen">
+        <ui:VisualElement class="header">
+            <ui:Label text="SCM  /  RACE OPERATIONS" class="brand" />
+            <ui:Label text="DEMO 01" class="muted" />
+        </ui:VisualElement>
+        <ui:VisualElement class="main">
+            <ui:VisualElement class="card">
+                <ui:Label text="01  /  TEAM HEADQUARTERS" class="eyebrow" />
+                <ui:Label text="STOCK CAR" class="title" />
+                <ui:Label text="MANAGER" class="title accent" />
+                <ui:Label text="Take charge of a stock car racing team." class="description" />
+                <ui:VisualElement class="actions title-actions">
+                    <ui:Button name="continueCareerButton" text="Continue Career" class="action title-primary" />
+                    <ui:Button name="newCareerButton" text="Create a New Career" class="action title-primary" />
+                </ui:VisualElement>
+                <ui:VisualElement class="actions title-actions">
+                    <ui:Button name="tracksButton" text="Tracks" class="action quit-action" />
+                    <ui:Button name="trackUtilityButton" text="Track Utility" class="action quit-action" />
+                    <ui:Button name="titleSettingsButton" text="Settings" class="action quit-action" />
+                    <ui:Button name="quitButton" text="Quit" class="action quit-action" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+        <ui:VisualElement class="footer">
+            <ui:Label text="STOCK CAR MANAGER" class="muted" />
+            <ui:Label text="DESKTOP PROTOTYPE" class="muted" />
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

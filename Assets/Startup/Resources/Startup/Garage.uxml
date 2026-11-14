@@ -1,0 +1,174 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <Style src="Startup.uss" />
+    <ui:VisualElement name="garageScreen" class="screen game-neutral garage-screen">
+        <ui:VisualElement class="header team-header-row">
+            <ui:VisualElement class="team-header-info">
+                <ui:Label name="teamHeader" class="garage-heading team-header" />
+                <ui:Label name="teamNextRace" class="garage-detail team-header" />
+            </ui:VisualElement>
+            <ui:VisualElement class="actions">
+                <ui:Button name="garageSettingsButton" text="Settings" class="nav-button" />
+                <ui:Button name="backButton" text="Back to Title" class="nav-button" />
+                <ui:Button name="garageQuitButton" text="Quit" class="nav-button" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+        <ui:ScrollView name="garageBody" class="garage-body">
+            <ui:VisualElement name="homePage" class="garage-page">
+                <ui:VisualElement class="garage-entry">
+                    <ui:Label name="careerTeamLabel" class="garage-detail" />
+                    <ui:Label name="teamBalanceLabel" class="garage-detail" />
+                    <ui:Label name="careerPlayerLabel" class="garage-detail" />
+                    <ui:Label name="careerSeriesLabel" class="garage-detail" />
+                    <ui:Label name="homeDriverLabel" class="garage-detail" />
+                    <ui:Label name="nextRaceLabel" text="Next race" class="garage-detail" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+            <ui:VisualElement name="mailPage" class="garage-page">
+                <ui:Label text="No messages." class="garage-detail" />
+            </ui:VisualElement>
+            <ui:VisualElement name="carsPage" class="garage-page">
+                <ui:VisualElement class="cars-roster">
+                    <ui:Button name="carPaintButton" text="Paint Colors" class="nav-button car-paint-button" />
+                    <ui:ScrollView name="teamCarRows" mode="Horizontal" horizontal-scroller-visibility="Auto" vertical-scroller-visibility="Hidden" class="car-tabs" />
+                    <ui:VisualElement class="cars-performance">
+                        <ui:Label text="Performance ratings" class="garage-detail schedule-heading" />
+                        <ui:VisualElement name="teamCarRatings" />
+                    </ui:VisualElement>
+                    <ui:Button name="repairUpgradeButton" text="Repair/Upgrade" class="nav-button garage-track-button" />
+                    <ui:Button name="addTeamCarButton" text="Add Car" class="nav-button garage-track-button" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+            <ui:VisualElement name="shopPage" class="garage-page">
+                <ui:Label text="No items available." class="garage-detail" />
+            </ui:VisualElement>
+            <ui:VisualElement name="resultsPage" class="garage-page">
+                <ui:VisualElement name="teamResults" />
+            </ui:VisualElement>
+            <ui:VisualElement name="financesPage" class="garage-page">
+                <ui:VisualElement class="finance-summary">
+                    <ui:VisualElement class="finance-card garage-entry">
+                        <ui:Label text="Available Budget" class="garage-detail" />
+                        <ui:Label name="financeBalance" class="finance-total" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="finance-card garage-entry">
+                        <ui:Label text="Cost Per Race" class="garage-detail" />
+                        <ui:Label name="financeCostPerRace" class="finance-total" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="finance-card garage-entry">
+                        <ui:Label text="Average Profit Per Race" class="garage-detail" />
+                        <ui:Label name="financeAverageProfitPerRace" class="finance-total" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+                <ui:VisualElement name="financeBreakdown" class="results-grid" />
+            </ui:VisualElement>
+            <ui:VisualElement name="sponsorsPage" class="garage-page">
+                <ui:Label text="No active sponsors." class="garage-detail" />
+            </ui:VisualElement>
+        </ui:ScrollView>
+        <ui:VisualElement name="employeesPage" class="garage-page employees-page">
+            <ui:VisualElement class="employee-role-actions">
+                <ui:Button name="recruitEmployeeButton" text="Recruit Employee" class="nav-button" />
+                <ui:Button name="fireEmployeeButton" text="Fire Employee" class="nav-button" />
+            </ui:VisualElement>
+            <ui:VisualElement name="fireEmployeePrompt" class="employee-dismissal-prompt">
+                <ui:Label name="fireEmployeeQuestion" class="garage-detail schedule-status" />
+                <ui:VisualElement class="actions">
+                    <ui:Button name="cancelFireEmployeeButton" text="Cancel" class="nav-button" />
+                    <ui:Button name="confirmFireEmployeeButton" text="Confirm Dismissal" class="nav-button" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+            <ui:Label name="employeeStatus" class="garage-detail schedule-status" />
+            <ui:VisualElement class="employee-role-actions">
+                <ui:DropdownField name="employeeRolePicker" label="Position" class="team-results-event-picker" />
+                <ui:Button name="assignEmployeeRoleButton" text="Assign Position" class="nav-button" />
+            </ui:VisualElement>
+            <ui:ScrollView name="employeeRoster" mode="Horizontal" horizontal-scroller-visibility="Auto" vertical-scroller-visibility="Hidden" class="employee-roster" />
+        </ui:VisualElement>
+        <ui:VisualElement name="schedulePage" class="garage-page schedule-page">
+            <ui:VisualElement class="schedule-layout">
+                <ui:VisualElement class="schedule-standings">
+                    <ui:Label name="teamStandingsHeading" class="garage-detail schedule-heading schedule-status" />
+                    <ui:ScrollView name="teamStandingsRows" class="schedule-list" />
+                </ui:VisualElement>
+                <ui:VisualElement class="schedule-events">
+                    <ui:Label name="seasonLabel" class="garage-detail schedule-heading" />
+                    <ui:ScrollView name="scheduleRows" class="schedule-list" />
+                </ui:VisualElement>
+                <ui:VisualElement class="schedule-details">
+                    <ui:Label text="Event details" class="garage-detail schedule-heading" />
+                    <ui:Label name="scheduleStatus" class="garage-detail schedule-status" />
+                    <ui:Button name="eventCarPicker" text="Choose Race Car" class="nav-button" />
+                    <ui:VisualElement name="scheduleTrackOutline" class="schedule-track-outline" picking-mode="Ignore" />
+                    <ui:VisualElement name="scheduleTrackRatings" class="track-ratings" />
+                    <ui:VisualElement class="schedule-event-actions">
+                        <ui:Button name="simulateEventButton" text="Simulate Event" class="nav-button" />
+                        <ui:Button name="startRaceButton" text="Go To Event" class="nav-button" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+        <ui:VisualElement name="carMaintenancePage" class="garage-page car-market-page">
+            <ui:Label name="carMaintenanceSummary" class="garage-detail schedule-heading" />
+            <ui:ScrollView name="carMaintenanceComponents" class="garage-body" />
+            <ui:Label name="carMaintenanceStatus" class="garage-detail schedule-status" />
+            <ui:Button name="carMaintenanceBackButton" text="Back" class="nav-button car-market-back" />
+        </ui:VisualElement>
+        <ui:VisualElement name="carMarketPage" class="garage-page car-market-page">
+            <ui:Label text="Cars for Sale" class="garage-page-title" />
+            <ui:Label name="carMarketBalance" class="garage-detail" />
+            <ui:VisualElement class="car-market-new">
+                <ui:Label text="New Bare Chassis" class="garage-detail schedule-heading" />
+                <ui:Button name="buyNewChassisButton" text="Buy for $100,000" class="nav-button" />
+            </ui:VisualElement>
+            <ui:Label text="Used cars" class="garage-detail schedule-heading" />
+            <ui:ScrollView name="usedCarListings" class="garage-body" />
+            <ui:Label name="carMarketStatus" class="garage-detail schedule-status" />
+            <ui:Button name="carMarketBackButton" text="Back" class="nav-button car-market-back" />
+        </ui:VisualElement>
+        <ui:VisualElement name="recruitmentPage" class="garage-page car-market-page">
+            <ui:DropdownField name="recruitmentPositionFilter" label="Desired position" class="team-results-event-picker recruitment-filter" />
+            <ui:Label name="recruitmentStatus" class="garage-detail schedule-status" />
+            <ui:ScrollView name="recruitmentRoster" mode="Vertical" class="garage-body" />
+            <ui:VisualElement class="recruitment-actions">
+                <ui:Button name="recruitmentBackButton" text="Back" class="nav-button car-market-back" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+        <ui:VisualElement name="garageFooter" class="footer garage-footer">
+            <ui:Button name="homeTab" text="Home" class="nav-button" />
+            <ui:Button name="mailTab" text="Mail" class="nav-button" />
+            <ui:Button name="carsTab" text="Cars" class="nav-button" />
+            <ui:Button name="shopTab" text="Shop" class="nav-button" />
+            <ui:Button name="employeesTab" text="Employees" class="nav-button" />
+            <ui:Button name="scheduleTab" text="Schedule" class="nav-button" />
+            <ui:Button name="resultsTab" text="Results" class="nav-button" />
+            <ui:Button name="financesTab" text="Finances" class="nav-button" />
+            <ui:Button name="sponsorsTab" text="Sponsors" class="nav-button" />
+            <ui:VisualElement class="team-calendar">
+                <ui:VisualElement class="team-date-panel">
+                    <ui:Label name="teamDayOfWeek" class="team-date-label" />
+                    <ui:Label name="teamDate" class="team-date-label" />
+                </ui:VisualElement>
+                <ui:Button name="nextDayButton" text="Next Day" class="nav-button" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+        <ui:VisualElement name="carOptionsOverlay" class="skip-race-overlay">
+            <ui:VisualElement class="garage-entry skip-race-dialog car-options-dialog">
+                <ui:Label name="carOptionsTitle" class="garage-detail schedule-heading" />
+                <ui:ScrollView name="carOptionsRows" />
+                <ui:Label name="carOptionsStatus" class="garage-detail" />
+                <ui:VisualElement class="actions">
+                    <ui:Button name="carOptionsClose" text="Close" class="nav-button" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+        <ui:VisualElement name="skipRacePrompt" class="skip-race-overlay">
+            <ui:VisualElement class="skip-race-dialog garage-entry">
+                <ui:Label name="skipRaceMessage" class="garage-detail schedule-status" />
+                <ui:VisualElement class="actions">
+                    <ui:Button name="cancelSkipRaceButton" text="Cancel" class="nav-button" />
+                    <ui:Button name="confirmSkipRaceButton" text="Skip Race" class="nav-button" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

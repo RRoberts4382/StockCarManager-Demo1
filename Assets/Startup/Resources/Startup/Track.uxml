@@ -1,0 +1,90 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <Style src="Startup.uss" />
+    <ui:VisualElement name="trackScreen" class="screen">
+        <ui:VisualElement class="header">
+            <ui:Label text="SCM  /  RACE OPERATIONS" class="brand" />
+            <ui:Label text="DEMO 01" class="muted" />
+        </ui:VisualElement>
+        <ui:VisualElement class="track-heading">
+            <ui:VisualElement class="track-heading-labels">
+                <ui:Label name="selectedTrackName" text="03  /  TRACK" class="eyebrow" />
+                <ui:Label name="raceProgressLabel" class="garage-detail" />
+                <ui:VisualElement name="practiceFlags" style="display: none; flex-direction: row; align-items: center;">
+                    <ui:VisualElement name="primaryPracticeFlag" style="width: 20px; height: 13px; margin-right: 5px;" />
+                    <ui:VisualElement name="blackPracticeFlag" style="width: 20px; height: 13px; margin-right: 5px; background-color: #080808; border-color: #a0a0a0; border-width: 1px;" />
+                    <ui:VisualElement name="checkeredFlag" style="display: none; width: 20px; height: 13px; margin-right: 5px;" />
+                    <ui:Label class="garage-detail" />
+                </ui:VisualElement>
+                <ui:Label name="luckyDogLabel" class="garage-detail" style="display: none;" />
+            </ui:VisualElement>
+            <ui:VisualElement class="actions">
+                <ui:DropdownField name="sessionSpeedSelector" label="Speed" class="session-speed" />
+                <ui:Button name="returnToGarageButton" text="Team" class="action" />
+                <ui:Button name="cautionButton" text="Caution" class="action quit-action" />
+                <ui:Button name="snapshotButton" text="Snapshot" class="action quit-action" />
+                <ui:Button name="resetCameraButton" text="Reset" class="action quit-action" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+        <ui:VisualElement class="track-content">
+            <ui:VisualElement name="raceViewport" class="race-viewport" />
+            <ui:VisualElement class="track-timing">
+                <ui:VisualElement class="timing-row timing-header">
+                    <ui:Label name="timingPositionHeader" text="Pos" class="timing-position" />
+                    <ui:Label text="Car" class="timing-car" />
+                    <ui:Label text="Driver" class="timing-driver" />
+                    <ui:Label name="timingValueHeader" text="Fastest lap" class="timing-lap" />
+                    <ui:Label text="MPH" class="timing-speed" />
+                </ui:VisualElement>
+                <ui:ScrollView name="trackTimingRows" class="timing-rows" />
+                <ui:VisualElement class="track-player-panel">
+                    <ui:VisualElement class="pit-readouts">
+                        <ui:VisualElement class="pit-tires">
+                            <ui:VisualElement class="pit-tire">
+                                <ui:Label text="LF" />
+                                <ui:Toggle name="pitTire0" tooltip="Replace LF tire" />
+                                <ui:VisualElement class="pit-tire-bar"><ui:VisualElement name="pitTireFill0" class="pit-meter-fill" /></ui:VisualElement>
+                                <ui:Label name="pitTireWear0" />
+                            </ui:VisualElement>
+                            <ui:VisualElement class="pit-tire">
+                                <ui:Label text="RF" />
+                                <ui:Toggle name="pitTire1" tooltip="Replace RF tire" />
+                                <ui:VisualElement class="pit-tire-bar"><ui:VisualElement name="pitTireFill1" class="pit-meter-fill" /></ui:VisualElement>
+                                <ui:Label name="pitTireWear1" />
+                            </ui:VisualElement>
+                            <ui:VisualElement class="pit-tire">
+                                <ui:Label text="LR" />
+                                <ui:Toggle name="pitTire2" tooltip="Replace LR tire" />
+                                <ui:VisualElement class="pit-tire-bar"><ui:VisualElement name="pitTireFill2" class="pit-meter-fill" /></ui:VisualElement>
+                                <ui:Label name="pitTireWear2" />
+                            </ui:VisualElement>
+                            <ui:VisualElement class="pit-tire">
+                                <ui:Label text="RR" />
+                                <ui:Toggle name="pitTire3" tooltip="Replace RR tire" />
+                                <ui:VisualElement class="pit-tire-bar"><ui:VisualElement name="pitTireFill3" class="pit-meter-fill" /></ui:VisualElement>
+                                <ui:Label name="pitTireWear3" />
+                            </ui:VisualElement>
+                        </ui:VisualElement>
+                        <ui:VisualElement class="pit-levels">
+                            <ui:Label name="playerCarStatus" />
+                            <ui:VisualElement class="pit-level-bar"><ui:VisualElement name="pitFuelFill" class="pit-meter-fill" /></ui:VisualElement>
+                            <ui:Toggle name="refuelAtStop" tooltip="Add fuel at the next pit stop" value="true" />
+                            <ui:Slider name="pitFuelAmount" low-value="0" high-value="18" value="18" />
+                            <ui:Label name="pitFuelAmountLabel" />
+                            <ui:Label name="pitDamageLabel" />
+                            <ui:VisualElement class="pit-level-bar"><ui:VisualElement name="pitDamageFill" class="pit-meter-fill pit-damage-fill" /></ui:VisualElement>
+                            <ui:Slider name="pitRepairAmount" low-value="0" high-value="100" value="0" />
+                            <ui:Label name="pitRepairAmountLabel" />
+                        </ui:VisualElement>
+                    </ui:VisualElement>
+                    <ui:Button name="requestPitStop" text="Pit Next Time" class="action" />
+                    <ui:Label name="playerPitStatus" class="track-pit-status" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+        <ui:VisualElement class="footer">
+            <ui:Label text="DRAG TO PAN  /  CTRL + SCROLL TO ZOOM  /  SHIFT + LEFT-DRAG TO ROTATE  /  SHIFT + RIGHT-DRAG TO TILT  /  MIDDLE-CLICK TO RESET" class="muted" />
+            <ui:Label name="snapshotStatus" class="garage-detail" />
+            <ui:Label name="trackPlayerCarLabel" text="NO. 27" class="brand" />
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

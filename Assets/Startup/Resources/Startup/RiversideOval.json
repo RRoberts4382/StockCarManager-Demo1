@@ -1,0 +1,23 @@
+{
+  "id": 1,
+  "name": "Riverside Oval",
+  "location": { "city": "Riverside", "state": "NC" },
+  "lengthMiles": 0.5,
+  "aspectRatio": 1.7894737,
+  "majorStyle": "Oval",
+  "minorStyle": "Oval",
+  "surface": "Asphalt",
+  "restrictorPlate": false,
+  "banking": { "turns12": 20, "turns34": 20, "frontStraight": 5, "backStraight": 5 },
+  "widthMeters": 9,
+  "pitStalls": 20,
+  "raceLaps": 20,
+  "weights": {
+    "surfaceRoughness": 0.5,
+    "aerodynamics": 0.4,
+    "horsepower": 0.6,
+    "brakes": 0.7,
+    "suspension": 0.8
+  },
+  "layoutPoints": []
+}
