@@ -28,4 +28,18 @@
             <ui:Label text="DESKTOP PROTOTYPE" class="muted" />
         </ui:VisualElement>
     </ui:VisualElement>
+    <ui:VisualElement name="developmentTrackPicker" class="screen title-screen" style="display: none;">
+        <ui:VisualElement class="main">
+            <ui:VisualElement class="card" style="max-height: 90%;">
+                <ui:Label text="Test Practice" class="title" />
+                <ui:Label text="Select a track to start practice." class="description" />
+                <ui:DropdownField name="developmentTracks" label="Track" class="team-results-event-picker" />
+                <ui:Label name="developmentPracticeStatus" class="description" />
+                <ui:VisualElement class="actions title-actions">
+                    <ui:Button name="startDevelopmentPractice" text="Start Practice" class="action title-primary" />
+                    <ui:Button name="exitDevelopmentPractice" text="Exit" class="action quit-action" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+    </ui:VisualElement>
 </ui:UXML>

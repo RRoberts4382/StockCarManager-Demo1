@@ -1,11 +1,31 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
 
 public sealed class TrackPreview : MonoBehaviour
 {
     private const float StartingViewSize = 25f;
     private const float CloseViewSize = 9f;
     private const int PreviewLayer = 31;
+    private const uint BristolLightingLayer = 1u << 1;
+    private Light bristolSun;
+    private Light previousSun;
+    private UniversalRenderPipelineAsset bristolPipeline;
+    private float previousShadowDistance;
+    internal const int BristolTrackId = 27;
+    internal const int OrangeCountyTrackId = 28;
+    internal const int SouthBostonTrackId = 29;
+    internal const int DaytonaTrackId = 30;
+    internal const int TexasTrackId = 31;
+    private const int BristolBaysPerRow = 20;
+    private const float BristolBayPitch = 4f;
+    private const float BristolBayCenterX = 9f;
+    private const float BristolHaulerCenterZ = 15.5f;
+    private GameObject parkedHaulers;
+    private GameObject teamPitBoxes;
+    private float pitWallSide;
+    private const float PitWallThickness = 0.30f;
     private const int SamplesPerSection = 48;
     private const float BankTransitionFraction = 0.30f;
 
@@ -60,8 +80,16 @@ public sealed class TrackPreview : MonoBehaviour
     private TrackPitTraffic pitTraffic;
     private TrackPitTraffic.Car[] trafficCars;
     private TrackPitSpline[] pitRoute;
+    private TrackPitSpline bristolFrontEntry, bristolBackExit;
+    private const int PitRibbonSegments = 128;
+    private const int PitConnectorStrips = 8;
+    private readonly Dictionary<TrackPitSpline, Vector3[]> bristolConnectorVertices = new Dictionary<TrackPitSpline, Vector3[]>();
+    private float bristolFrontJoin, bristolBackLeave, bristolBackExitLength;
+    private float bristolFrontEntryHeight, bristolBackExitHeight;
     private float[] pitLengths;
     private float[] pitHeights;
+    private float pitEntryTrackLane;
+    private float pitExitTrackLane;
     private float[] practiceStallDistances;
     private Vector3[] practiceStallPositions;
     private TrackState001Practice practice;
@@ -78,14 +106,18 @@ public sealed class TrackPreview : MonoBehaviour
         stages?.RequestCaution(SessionRun, trafficCars);
     }
 
-    internal bool CanRequestPlayerPit => SessionRun?.IsRace == true && pitStops?.CanRequest(SessionRun) == true;
+    internal bool CanRequestPlayerPit => SessionRun != null &&
+        (SessionRun.IsRace ||
+            (practice?.State is SessionTrackState.TrackOpen or SessionTrackState.Caution && !trafficCars[0].InPit)) &&
+        pitStops?.CanRequest(SessionRun) == true;
     internal string PlayerPitStatus => SessionRun.Retired(0)
         ? (crashes[0].Active || SessionRun.Vehicle(0)?.Damage >= 100f ? "Retired · damage" : "Out of fuel")
         : pitStops?.PlayerStatus ?? string.Empty;
 
     internal void RequestPlayerPit(float fuelGallons, int tireMask, float repairPoints)
     {
-        pitStops?.RequestPlayer(SessionRun, fuelGallons, tireMask, repairPoints);
+        if (CanRequestPlayerPit)
+            pitStops.RequestPlayer(SessionRun, fuelGallons, tireMask, repairPoints);
     }
     private Renderer pitSignal;
     private Material pitOpenSignal;
@@ -140,7 +172,7 @@ public sealed class TrackPreview : MonoBehaviour
 
     public void Initialize(TrackDefinition track, int playerCarNumber) => Initialize(track, playerCarNumber, null);
 
-    internal void Initialize(TrackDefinition track, int playerCarNumber, string[] sponsorNames, TeamCar playerCar = null)
+    internal void Initialize(TrackDefinition track, int playerCarNumber, string[] sponsorNames, TeamCar playerCar = null, bool night = false)
     {
         surfaceMaterial = Resources.Load<Material>("Startup/TrackSurface");
         if (surfaceMaterial == null)
@@ -151,6 +183,7 @@ public sealed class TrackPreview : MonoBehaviour
         }
 
         definition = track;
+        bool bristolNight = night && track.id == BristolTrackId;
         simulationModel = CarSimulationModels.Default;
         simulation = new CarSimulationContext(track, null, null, System.Array.Empty<SessionCarResult>());
         lapLength = track.lengthMiles * TrackDefinition.MetersPerMile;
@@ -173,7 +206,7 @@ public sealed class TrackPreview : MonoBehaviour
         raceCamera.targetTexture = Image;
         raceCamera.cullingMask = 1 << PreviewLayer;
         raceCamera.clearFlags = CameraClearFlags.SolidColor;
-        raceCamera.backgroundColor = new Color32(25, 43, 43, 255);
+        raceCamera.backgroundColor = bristolNight ? new Color32(5, 8, 15, 255) : new Color32(25, 43, 43, 255);
         raceCamera.orthographic = true;
         raceCamera.orthographicSize = StartingViewSize;
         raceCamera.farClipPlane = Mathf.Max(600f, orbitOffset.magnitude * 2f);
@@ -183,12 +216,30 @@ public sealed class TrackPreview : MonoBehaviour
         sun.transform.localRotation = Quaternion.Euler(55f, -25f, 0f);
         sun.cullingMask = 1 << PreviewLayer;
         sun.intensity = 1.1f;
+        if (UsesDetailedPavement(track.id))
+        {
+            sun.intensity = bristolNight ? 0.10f : 0.78f;
+            if (bristolNight)
+                sun.color = new Color32(167, 186, 225, 255);
+            sun.transform.localRotation = Quaternion.Euler(41f, -35f, 0f);
+            sun.shadows = bristolNight ? LightShadows.None : LightShadows.Soft;
+            sun.shadowStrength = 0.72f;
+            sun.GetUniversalAdditionalLightData().renderingLayers = BristolLightingLayer;
+            bristolSun = sun;
+            EnableBristolLighting();
+        }
 
         var grass = MakeMaterial(new Color32(69, 108, 72, 255));
         var roadColor = track.surface == "Dirt" ? new Color32(145, 92, 58, 255)
             : track.surface == "Concrete" ? new Color32(139, 145, 148, 255)
             : new Color32(52, 57, 65, 255);
-        var road = MakeMaterial(roadColor);
+        var road = MakeMaterial(track.id == BristolTrackId ? new Color32(119, 117, 112, 255) : roadColor);
+        if (UsesDetailedPavement(track.id))
+        {
+            road.SetFloat("_Smoothness", 0.12f);
+            road.SetTexture("_BaseMap", BristolPavementTexture(track.id == BristolTrackId));
+            grass.SetFloat("_Smoothness", 0.08f);
+        }
         var curb = MakeMaterial(new Color32(219, 221, 212, 255));
         var rubber = MakeMaterial(new Color32(24, 25, 30, 255));
         var glass = MakeMaterial(new Color32(43, 66, 87, 255));
@@ -200,7 +251,21 @@ public sealed class TrackPreview : MonoBehaviour
         ApplyCameraPose();
         Ring("Outer embankment", roadHalfWidth, roadHalfWidth + 3f, 0f, grass, outerEdgeAtGround: true);
         Ring("Inner embankment", -roadHalfWidth - 3f, -roadHalfWidth, 0f, grass, innerEdgeAtGround: true);
-        Ring("Road surface", -roadHalfWidth, roadHalfWidth, 0f, road);
+        if (track.id == BristolTrackId && customLayout != null)
+            AddBristolFloodlights(bristolNight);
+
+        BuildRacingLine();
+        bool bristolRubber = track.id == BristolTrackId && customLayout != null;
+        var racingSurface = road;
+        if (bristolRubber)
+        {
+            racingSurface = MakeMaterial(road.color);
+            racingSurface.SetFloat("_Smoothness", 0.12f);
+            racingSurface.SetTexture("_BaseMap", CreateBristolRacingTexture());
+        }
+        Ring("Road surface", -roadHalfWidth, roadHalfWidth, 0f, racingSurface, alongTrackUv: bristolRubber);
+        if ((track.id == DaytonaTrackId || track.id == TexasTrackId) && customLayout != null)
+            AddBankedOutsideWall();
         Ring("Inner edge", -roadHalfWidth, -roadHalfWidth + 0.24f, 0.03f, curb);
         Ring("Outer edge", roadHalfWidth - 0.24f, roadHalfWidth, 0.03f, curb);
         if (customLayout != null && System.Array.Exists(track.layoutPoints, point => point.apronWidthMeters > 0f))
@@ -212,6 +277,9 @@ public sealed class TrackPreview : MonoBehaviour
         stripe.transform.localRotation = Quaternion.LookRotation(stripeForward, stripeUp);
         if (track.pitRoad?.enabled == true && customLayout != null)
             DrawPitRoad(track.pitRoad, road, curb);
+        AddTrackScenery(track.id);
+        if (track.id == BristolTrackId)
+            AddBristolParkingLines();
 
 
 
@@ -242,7 +310,8 @@ public sealed class TrackPreview : MonoBehaviour
                 hoodAndTrunkPaint, bodyPaint, glass, rubber, i == 0 ? sponsorNames : null);
         }
 
-        BuildRacingLine();
+        if (bristolSun != null)
+            AssignBristolLighting(transform);
         SetBaseSpeeds();
         PositionCars();
         ResetView();
@@ -372,9 +441,15 @@ public sealed class TrackPreview : MonoBehaviour
     }
 
     internal void BeginSession(CarSimulationContext simulation, ICarSimulationModel model, IVehicleSpeedModel speedModel,
-        IVehicleBehaviorModel behaviorModel, int[] qualifyingOrder = null, bool usePaceTruck = false)
+        IVehicleBehaviorModel behaviorModel, int[] qualifyingOrder = null, bool usePaceTruck = false, bool fullBristolStands = false)
     {
         this.simulation = simulation;
+        if (definition.id == BristolTrackId)
+            SetBristolAttendance(fullBristolStands ? RaceSessionKind.Race : simulation.Session.kind);
+        if (definition.id == BristolTrackId && simulation.Event != null && parkedHaulers == null)
+            ParkBristolHaulers(simulation);
+        if (simulation.Event != null && teamPitBoxes == null && practiceStallPositions != null)
+            AddTeamPitBoxes(simulation);
         simulationModel = model;
         this.speedModel = speedModel;
         lapSpeedProfile = speedModel is VehicleSpeed002 ? new LapSpeedProfile(definition) : null;
@@ -382,6 +457,8 @@ public sealed class TrackPreview : MonoBehaviour
         {
             this.behaviorModel = behaviorModel;
             BuildRacingLine();
+            if (bristolRacingSurface != null)
+                PrepareBristolRubberShades();
         }
         var session = simulation.Session;
         drivingLanesReady = false;
@@ -391,6 +468,8 @@ public sealed class TrackPreview : MonoBehaviour
         snapshotTime = 0;
         collisions = new VehicleCollision001(cars.Length);
         pitCollisions = new VehicleCollision001(cars.Length);
+        if (bristolBackExit != null)
+            backExitCollisions = new VehicleCollision001(cars.Length);
         System.Array.Clear(crashes, 0, crashes.Length);
         System.Array.Clear(stoppedCarTime, 0, stoppedCarTime.Length);
         System.Array.Clear(practiceLeftStall, 0, practiceLeftStall.Length);
@@ -452,6 +531,8 @@ public sealed class TrackPreview : MonoBehaviour
             ConfigurePitField();
             pitStops = new SessionPitStops(pitTraffic, trafficCars, practiceStallDistances);
         }
+        if (bristolSun != null)
+            AssignBristolLighting(transform);
         if (isQualifying)
             SessionRun.SimulateQualifyingRivals(CarSpeed);
         PositionCars();
@@ -545,6 +626,7 @@ public sealed class TrackPreview : MonoBehaviour
             }
         }
 
+        UpdateBristolRubber();
         PositionCars();
         if (followedCar != null)
             ApplyCameraPose();
@@ -743,7 +825,7 @@ public sealed class TrackPreview : MonoBehaviour
             car.Retired = SessionRun.Retired(i);
             bool serviceBeforeRelease = (pitRoadOutside || definition.restrictorPlate) && !practiceLeftStall[i] && car.InPit &&
                 car.PitDistance == practiceStallDistances[i] && SessionRun.FlatTireMask(i) != 0;
-            if (trackOpen && !car.Retired && (serviceBeforeRelease || pitStops.NeedsFlatTireService(i) ||
+            if (trackOpen && !car.Retired && (serviceBeforeRelease || pitStops.IsRequested(i) ||
                 (!car.InPit && SessionRun.FlatTireMask(i) != 0)))
             {
                 pitStops.Advance(i, SessionRun, seconds, speed, pitOpen: true);
@@ -785,6 +867,8 @@ public sealed class TrackPreview : MonoBehaviour
     private bool drivingLanesReady;
     private VehicleCollision001 collisions;
     private VehicleCollision001 pitCollisions;
+    private VehicleCollision001 backExitCollisions;
+    private readonly bool[] backExitParticipants = new bool[CarCount];
     private readonly bool[] pitParticipants = new bool[CarCount];
     private readonly float[] pitStart = new float[CarCount];
     private readonly float[] pitEnd = new float[CarCount];
@@ -969,7 +1053,9 @@ public sealed class TrackPreview : MonoBehaviour
             collisionStartLanes[i] = drivingLanes[i];
             collisionParticipants[i] = onTrack[i];
             pitParticipants[i] = cars[i].gameObject.activeSelf && traffic?.InPit == true;
-            pitStart[i] = traffic?.PitDistance ?? 0f;
+            backExitParticipants[i] = pitParticipants[i] && traffic.BackExit;
+            pitParticipants[i] &= !backExitParticipants[i];
+            pitStart[i] = backExitParticipants[i] ? traffic.ConnectorDistance : traffic?.PitDistance ?? 0f;
             pitLaneStart[i] = traffic?.PitLane ?? 0f;
         }
 
@@ -1051,7 +1137,21 @@ public sealed class TrackPreview : MonoBehaviour
         float forward = crash.ForwardSpeed * seconds;
         float after = before + forward;
         float edge = RoadWidths(after).x * 0.5f + 2f;
-        crash.Lane = Mathf.Clamp(oldLane + crash.SideSpeed * seconds, -edge, edge);
+        float nextLane = oldLane + crash.SideSpeed * seconds;
+        if (definition.id == BristolTrackId && customLayout != null)
+        {
+            // Clear the wall with the whole car, including when it rotates broadside.
+            const float spinningCarRadius = 1.75f;
+            float outerSide = -customLayout.InsideSign;
+            float wallLimit = RoadWidths(after).x * 0.5f - spinningCarRadius;
+            if (nextLane * outerSide >= wallLimit)
+            {
+                nextLane = wallLimit * outerSide;
+                if (crash.SideSpeed * outerSide > 0f)
+                    crash.SideSpeed = 0f;
+            }
+        }
+        crash.Lane = Mathf.Clamp(nextLane, -edge, edge);
         crash.Yaw += crash.Spin * seconds;
         crash.ForwardSpeed = Mathf.MoveTowards(crash.ForwardSpeed, 0f, 7f * seconds);
         crash.SideSpeed = Mathf.MoveTowards(crash.SideSpeed, 0f, 6f * seconds);
@@ -1084,17 +1184,20 @@ public sealed class TrackPreview : MonoBehaviour
             var traffic = trafficCars?[i];
             collisionParticipants[i] &= traffic?.InPit != true && (traffic?.FlatTireLaneBlend ?? 0f) == 0f;
             collisionEndDistances[i] = traffic?.TrackDistance ?? sessionDistances[i];
-            pitParticipants[i] &= traffic?.InPit == true;
-            pitEnd[i] = traffic?.PitDistance ?? 0f;
+            pitParticipants[i] &= traffic?.InPit == true && !traffic.BackExit;
+            backExitParticipants[i] &= traffic?.InPit == true && traffic.BackExit;
+            pitEnd[i] = backExitParticipants[i] ? traffic.ConnectorDistance : traffic?.PitDistance ?? 0f;
             pitLaneEnd[i] = traffic?.PitLane ?? 0f;
         }
 
         pitCollisions.Resolve(SessionRun, lapLength, seconds, pitParticipants, pitStart, pitEnd, pitLaneStart, pitLaneEnd, wrap: false);
+        backExitCollisions?.Resolve(SessionRun, lapLength, seconds, backExitParticipants,
+            pitStart, pitEnd, pitLaneStart, pitLaneEnd, wrap: false);
         collisions.Resolve(SessionRun, lapLength, seconds, collisionParticipants, drivingDistances,
             collisionEndDistances, collisionStartLanes, drivingLanes);
         for (int i = 0; i < cars.Length; i++)
         {
-            if (collisions.HadImpact(i) || pitCollisions.HadImpact(i))
+            if (collisions.HadImpact(i) || pitCollisions.HadImpact(i) || backExitCollisions?.HadImpact(i) == true)
                 collisionFlashRemaining[i] = CollisionFlashSeconds;
 
             float impulse = collisions.CrashImpulse(i);
@@ -1210,7 +1313,7 @@ public sealed class TrackPreview : MonoBehaviour
             var traffic = isQualifying ? (i == 0 ? qualifying?.Car : null) : trafficCars?[i];
             if (traffic?.InPit == true)
             {
-                PositionPitCar(cars[i], traffic.PitDistance, traffic.PitLane);
+                PositionPitCar(cars[i], traffic.PitDistance, traffic.PitLane, traffic);
                 if (practice != null || qualifying != null)
                 {
                     float stallBlend = qualifying?.StallBlend() ?? practice.StallBlend(i);
@@ -1254,7 +1357,9 @@ public sealed class TrackPreview : MonoBehaviour
     {
         float toMerge = traffic == null ? float.PositiveInfinity
             : Mathf.Min(traffic.NextEntry - distance, distance - traffic.LastExit);
-        float lane = behaviorModel.LaneOffset(i, RoadWidths(distance).x, toMerge, racingLine(distance));
+        bool useBottomLaneMerge = traffic != null && (definition.id == DaytonaTrackId || definition.id == TexasTrackId) && toMerge < 15f;
+        float lane = behaviorModel.LaneOffset(i, RoadWidths(distance).x,
+            useBottomLaneMerge ? float.PositiveInfinity : toMerge, racingLine(distance));
         if (raceReleased && SessionRun.Elapsed < 3f)
         {
             float gridLane = raceStart.GridPosition(i, Mathf.Min(1.35f, definition.pitRoad.widthMeters * 0.25f)).Lane;
@@ -1264,6 +1369,12 @@ public sealed class TrackPreview : MonoBehaviour
             lane = stages.Lane(i, lane, Mathf.Min(1.35f, RoadWidths(distance).x * 0.2f), customLayout?.InsideSign ?? -1f);
         if (traffic != null && traffic.FlatTireLaneBlend > 0f)
             lane = Mathf.Lerp(lane, (customLayout?.InsideSign ?? -1f) * Mathf.Max(0f, RoadWidths(distance).x * 0.5f - 1.1f), traffic.FlatTireLaneBlend);
+        if (useBottomLaneMerge)
+        {
+            bool entering = traffic.NextEntry - distance <= distance - traffic.LastExit;
+            float mergeLane = entering ? pitEntryTrackLane : pitExitTrackLane;
+            lane = Mathf.Lerp(mergeLane, lane, Mathf.SmoothStep(0f, 1f, toMerge / 15f));
+        }
         return lane;
     }
 
@@ -1282,18 +1393,59 @@ public sealed class TrackPreview : MonoBehaviour
         car.localRotation = Quaternion.LookRotation(forward + Vector3.Cross(up, forward).normalized * laneSlope, up);
     }
 
-    private void PositionPitCar(Transform car, float distance, float lane = 0f)
+    private void PositionPitCar(Transform car, float distance, float lane = 0f, TrackPitTraffic.Car traffic = null)
     {
+        if (traffic?.BackExit == true)
+        {
+            PositionPitSpline(car, bristolBackExit, traffic.ConnectorDistance / bristolBackExitLength, lane, 0f, bristolBackExitHeight);
+            return;
+        }
+        if (traffic?.FrontEntry == true && distance < bristolFrontJoin)
+        {
+            PositionPitSpline(car, bristolFrontEntry, distance / bristolFrontJoin, lane, bristolFrontEntryHeight, 0f);
+            return;
+        }
         int segment = 0;
         while (segment < pitRoute.Length - 1 && distance >= pitLengths[segment])
             distance -= pitLengths[segment++];
         float fraction = Mathf.Clamp01(distance / pitLengths[segment]);
-        var spline = pitRoute[segment];
-        Vector3 position = PitPosition(spline, fraction, pitHeights[segment], pitHeights[segment + 1]);
-        Vector3 tangent = PitTangent(spline, fraction, pitHeights[segment], pitHeights[segment + 1]);
-        car.localPosition = position + Vector3.Cross(Vector3.up, tangent).normalized * lane;
+        PositionPitSpline(car, pitRoute[segment], fraction, lane, pitHeights[segment], pitHeights[segment + 1]);
+    }
+
+    private void PositionPitSpline(Transform car, TrackPitSpline spline, float fraction, float lane, float startHeight, float endHeight)
+    {
+        Vector3 position = PitPosition(spline, fraction, startHeight, endHeight);
+        Vector3 tangent = PitTangent(spline, fraction, startHeight, endHeight);
+        if (bristolConnectorVertices.TryGetValue(spline, out var vertices))
+        {
+            car.localPosition = SampleBristolConnector(vertices, fraction, lane);
+            tangent = SampleBristolConnector(vertices, fraction + 0.005f, lane) -
+                SampleBristolConnector(vertices, fraction - 0.005f, lane);
+        }
+        else
+            car.localPosition = position + Vector3.Cross(Vector3.up, tangent).normalized * lane;
         if (tangent.sqrMagnitude > 0f)
             car.localRotation = Quaternion.LookRotation(tangent);
+    }
+
+    private Vector3 SampleBristolConnector(Vector3[] vertices, float fraction, float lane)
+    {
+        int stride = PitConnectorStrips + 1;
+        float row = Mathf.Clamp01(fraction) * PitRibbonSegments;
+        float column = Mathf.Clamp01(0.5f + lane / definition.pitRoad.widthMeters) * PitConnectorStrips;
+        int sample = Mathf.Min((int)row, PitRibbonSegments - 1);
+        int strip = Mathf.Min((int)column, PitConnectorStrips - 1);
+        int index = sample * stride + strip;
+        float u = row - sample;
+        float v = column - strip;
+        // Match the diagonal used to triangulate the rendered ribbon.
+        if (u + v <= 1f)
+            return vertices[index] + u * (vertices[index + stride] - vertices[index]) +
+                v * (vertices[index + 1] - vertices[index]);
+
+        var opposite = vertices[index + stride + 1];
+        return opposite + (1f - u) * (vertices[index + 1] - opposite) +
+            (1f - v) * (vertices[index + stride] - opposite);
     }
 
     private Vector3 TrackPoint(float distance, float lane, out Vector3 forward, out Vector3 up)
@@ -1345,10 +1497,11 @@ public sealed class TrackPreview : MonoBehaviour
     private Vector2 RoadWidths(float distance) => customLayout?.Widths(Mathf.Repeat(distance, lapLength))
         ?? new Vector2(roadHalfWidth * 2f, 0f);
 
-    private void Ring(string objectName, float inner, float outer, float height, Material material, bool outerEdgeAtGround = false, bool innerEdgeAtGround = false, bool apron = false)
+    private void Ring(string objectName, float inner, float outer, float height, Material material, bool outerEdgeAtGround = false, bool innerEdgeAtGround = false, bool apron = false, bool alongTrackUv = false)
     {
         int samples = customLayout?.Samples ?? SamplesPerSection * 4;
-        var vertices = new Vector3[samples * 2];
+        var vertices = new Vector3[(samples + (alongTrackUv ? 1 : 0)) * 2];
+        var uv = alongTrackUv ? new Vector2[vertices.Length] : null;
         var triangles = new int[samples * 6];
         for (int i = 0; i < samples; i++)
         {
@@ -1361,6 +1514,11 @@ public sealed class TrackPreview : MonoBehaviour
 
             int current = i * 2;
             int next = (current + 2) % vertices.Length;
+            if (uv != null)
+            {
+                uv[current] = new Vector2(distance / lapLength, 0f);
+                uv[current + 1] = new Vector2(distance / lapLength, 1f);
+            }
             Vector2 widths = RoadWidths(distance);
             float halfWidth = widths.x * 0.5f;
             if (apron)
@@ -1394,17 +1552,399 @@ public sealed class TrackPreview : MonoBehaviour
             triangles[triangle + 5] = next + 1;
         }
 
-        AddRoadMesh(objectName, material, vertices, triangles);
+        if (uv != null)
+        {
+            vertices[samples * 2] = vertices[0];
+            vertices[samples * 2 + 1] = vertices[1];
+            uv[samples * 2] = new Vector2(1f, 0f);
+            uv[samples * 2 + 1] = new Vector2(1f, 1f);
+        }
+        AddRoadMesh(objectName, material, vertices, triangles, uv);
     }
 
-    private void AddRoadMesh(string objectName, Material material, Vector3[] vertices, int[] triangles)
+    private void AddBankedOutsideWall()
+    {
+        float side = -customLayout.InsideSign;
+        var concrete = MakeMaterial(new Color32(190, 190, 181, 255));
+        concrete.SetFloat("_Smoothness", 0.14f);
+        var steel = MakeMaterial(new Color32(95, 104, 111, 255));
+        BuildBand("Outside SAFER wall", 0f, 0.45f, -0.05f, 1.12f, concrete);
+        for (int i = 0; i < 4; i++)
+        {
+            float height = 1.55f + i * 0.85f;
+            BuildBand("Catch fence cable", 0.28f, 0.04f, height, height + 0.04f, steel);
+        }
+
+        int samples = customLayout.Samples;
+        for (int i = 0; i < 240; i++)
+        {
+            var edge = GetEdge(i * samples / 240, out var outside);
+            Box("Catch fence post", transform, edge + outside * 0.30f + Vector3.up * 2.61f,
+                new Vector3(0.09f, 3.02f, 0.09f), steel);
+        }
+
+        Vector3 GetEdge(int sample, out Vector3 outside)
+        {
+            float distance = customLayout.SampleDistance(sample);
+            var edge = TrackPoint(distance, side * RoadWidths(distance).x * 0.5f, out var forward, out _);
+            outside = Vector3.Cross(Vector3.up, forward).normalized * side;
+            return edge;
+        }
+
+        void BuildBand(string name, float offset, float thickness, float bottom, float top, Material material)
+        {
+            int count = customLayout.Samples;
+            var vertices = new Vector3[count * 4];
+            var triangles = new int[count * 24];
+            int triangle = 0;
+            for (int i = 0; i < count; i++)
+            {
+                var edge = GetEdge(i, out var outside) + outside * offset;
+                int row = i * 4;
+                int next = (i + 1) % count * 4;
+                vertices[row] = edge + Vector3.up * bottom;
+                vertices[row + 1] = vertices[row] + outside * thickness;
+                vertices[row + 2] = edge + outside * thickness + Vector3.up * top;
+                vertices[row + 3] = edge + Vector3.up * top;
+                for (int j = 0; j < 4; j++)
+                {
+                    int k = (j + 1) % 4;
+                    int a = row + j;
+                    int b = next + j;
+                    int c = next + k;
+                    int d = row + k;
+                    triangles[triangle++] = a;
+                    triangles[triangle++] = side > 0f ? d : b;
+                    triangles[triangle++] = c;
+                    triangles[triangle++] = a;
+                    triangles[triangle++] = c;
+                    triangles[triangle++] = side > 0f ? b : d;
+                }
+            }
+
+            AddRoadMesh(name, material, vertices, triangles);
+        }
+    }
+
+    private void AddRoadMesh(string objectName, Material material, Vector3[] vertices, int[] triangles, Vector2[] uv = null)
     {
         var mesh = new Mesh { name = objectName, vertices = vertices, triangles = triangles };
+        if (uv != null)
+            mesh.uv = uv;
+        else if (material.GetTexture("_BaseMap") != null)
+            SetPavementCoordinates(mesh);
         mesh.RecalculateNormals();
         roadMeshes.Add(mesh);
         var surface = CreateObject(objectName, transform);
         surface.AddComponent<MeshFilter>().sharedMesh = mesh;
-        surface.AddComponent<MeshRenderer>().sharedMaterial = material;
+        var renderer = surface.AddComponent<MeshRenderer>();
+        renderer.sharedMaterial = material;
+        if (definition.id == BristolTrackId && (objectName == "Pit entrance" || objectName == "Pit exit" ||
+            objectName == "Bristol Turn 4 entry" || objectName == "Bristol Turn 3 exit"))
+            renderer.shadowCastingMode = ShadowCastingMode.Off;
+    }
+
+    private GameObject bristolCrowd;
+
+    private void SetBristolAttendance(RaceSessionKind session)
+    {
+        if (bristolCrowd == null)
+        {
+            var model = Resources.Load<GameObject>("Startup/BristolCrowd");
+            if (model == null)
+                return;
+
+            bristolCrowd = Instantiate(model, transform, false);
+            bristolCrowd.name = "Bristol spectators";
+            foreach (var renderer in bristolCrowd.GetComponentsInChildren<MeshRenderer>(true))
+            {
+                renderer.gameObject.layer = PreviewLayer;
+                renderer.shadowCastingMode = ShadowCastingMode.Off;
+            }
+        }
+
+        var qualifying = bristolCrowd.transform.Find("AttendanceTier1");
+        var race = bristolCrowd.transform.Find("AttendanceTier2");
+        if (qualifying != null)
+            qualifying.gameObject.SetActive(session == RaceSessionKind.Qualifying || session == RaceSessionKind.Race);
+        if (race != null)
+            race.gameObject.SetActive(session == RaceSessionKind.Race);
+    }
+
+    private static bool UsesDetailedPavement(int trackId) =>
+        trackId == BristolTrackId || trackId == OrangeCountyTrackId || trackId == SouthBostonTrackId || trackId == DaytonaTrackId || trackId == TexasTrackId;
+
+    private void AddTrackScenery(int trackId)
+    {
+        if (trackId == OrangeCountyTrackId || trackId == SouthBostonTrackId || trackId == DaytonaTrackId || trackId == TexasTrackId)
+        {
+            var sceneryName = trackId switch
+            {
+                DaytonaTrackId => "DaytonaInternationalSpeedway",
+                TexasTrackId => "TexasMotorSpeedway",
+                SouthBostonTrackId => "SouthBostonSpeedway",
+                _ => "OrangeCountySpeedway"
+            };
+            string fasciaName = trackId switch
+            {
+                DaytonaTrackId => "Daytona Rising exterior facade",
+                TexasTrackId => "Grandstand facade and suite level",
+                SouthBostonTrackId => "Main center grandstand fascia",
+                _ => "Red grandstand fascia"
+            };
+            var scenery = Resources.Load<GameObject>("Startup/" + sceneryName);
+            if (scenery == null)
+            {
+                Debug.LogWarning($"Track scenery is missing: {sceneryName}.", this);
+                return;
+            }
+
+            var venue = Instantiate(scenery, transform, false);
+            // Keep the imported frontstretch on the same side as the timing line.
+            var grandstand = System.Array.Find(venue.GetComponentsInChildren<MeshRenderer>(),
+                renderer => renderer.name.StartsWith(fasciaName, System.StringComparison.Ordinal));
+            var finish = TrackPoint(definition.StartFinishFraction * lapLength, 0f, out _, out _);
+            if (grandstand != null && transform.InverseTransformPoint(grandstand.bounds.center).z * finish.z < 0f)
+            {
+                var scale = venue.transform.localScale;
+                scale.z = -scale.z;
+                venue.transform.localScale = scale;
+            }
+
+            if (trackId == TexasTrackId && customLayout != null)
+            {
+                // The scenery and layout controls share the Blender source coordinates.
+                float scale = (customLayout.ToTrackSpace(Vector3.right) - customLayout.ToTrackSpace(Vector3.zero)).x;
+                venue.transform.localScale = Vector3.Scale(venue.transform.localScale, new Vector3(scale, 1f, scale));
+                venue.transform.localPosition = customLayout.ToTrackSpace(Vector3.zero);
+            }
+
+            ApplyMatteTrackScenery(venue);
+            foreach (var child in venue.GetComponentsInChildren<Transform>(true))
+                child.gameObject.layer = PreviewLayer;
+            return;
+        }
+
+        if (trackId != BristolTrackId)
+            return;
+
+        var model = Resources.Load<GameObject>("Startup/BristolGrandstands");
+        if (model == null)
+        {
+            Debug.LogWarning("Bristol grandstands model is missing.", this);
+            return;
+        }
+
+        var stands = Instantiate(model, transform, false);
+        stands.name = "Bristol Grandstands";
+        foreach (var child in stands.GetComponentsInChildren<Transform>(true))
+            child.gameObject.layer = PreviewLayer;
+
+        ApplyMatteTrackScenery(stands);
+    }
+
+    private void ApplyMatteTrackScenery(GameObject scenery)
+    {
+        var matteMaterials = new Dictionary<Material, Material>();
+        foreach (var renderer in scenery.GetComponentsInChildren<Renderer>())
+        {
+            if (renderer.name.StartsWith("Catch fence", System.StringComparison.Ordinal))
+                renderer.shadowCastingMode = ShadowCastingMode.Off;
+
+            var slots = renderer.sharedMaterials;
+            for (int i = 0; i < slots.Length; i++)
+            {
+                var source = slots[i];
+                if (source == null)
+                    continue;
+                if (!matteMaterials.TryGetValue(source, out var matte))
+                {
+                    matte = MakeMaterial(source.color);
+                    bool glazing = source.name.StartsWith("Suite glazing", System.StringComparison.Ordinal);
+                    matte.SetFloat("_Smoothness", glazing ? 0.32f : 0.14f);
+                    bool asphalt = source.name.StartsWith("Infield • asphalt", System.StringComparison.Ordinal);
+                    bool concrete = source.name.StartsWith("Infield buildings • concrete", System.StringComparison.Ordinal);
+                    if (asphalt || concrete)
+                        matte.SetTexture("_BaseMap", BristolPavementTexture(concrete));
+                    matteMaterials.Add(source, matte);
+                }
+                slots[i] = matte;
+            }
+            renderer.sharedMaterials = slots;
+        }
+    }
+
+    private void AddBristolFloodlights(bool illuminated)
+    {
+        var structure = MakeMaterial(new Color32(68, 72, 76, 255));
+        var lens = MakeMaterial(new Color32(201, 200, 185, 255));
+        if (illuminated)
+        {
+            lens.EnableKeyword("_EMISSION");
+            lens.SetColor("_EmissionColor", new Color(1f, 0.88f, 0.66f) * 2f);
+        }
+
+        for (int i = 0; i < 32; i++)
+        {
+            float distance = (i + 0.5f) * lapLength / 32f;
+            customLayout.Sample(distance, out var forward, out _);
+            var outside = Vector3.Cross(Vector3.up, forward).normalized * -customLayout.InsideSign;
+            var surface = TrackPoint(distance, 0f, out _, out _);
+            var rim = surface + outside * 54f;
+            rim.y = 37f;
+            AddFixture("Grandstand floodlight", rim, surface - outside * 32f, 6f, 2.8f, 240f, 7200f, 106f);
+        }
+
+        foreach (int turnStart in new[] { 13, 45 })
+        for (int i = 0; i < 8; i++)
+        {
+            int control = turnStart + i * 2;
+            float distance = customLayout.ControlFraction(control) * lapLength;
+            customLayout.Sample(distance, out var forward, out _);
+            var inside = Vector3.Cross(Vector3.up, forward).normalized * customLayout.InsideSign;
+            var surface = TrackPoint(distance, 0f, out _, out _);
+            var basePosition = surface + inside * (turnStart == 13 ? 17f : 21f);
+            basePosition.y = 0f;
+            AddFixture("Inside turn floodlight", basePosition, surface, 2.4f, 0.65f, 39f, 470f, 92f);
+        }
+
+        void AddFixture(string name, Vector3 basePosition, Vector3 aim, float height, float width,
+            float range, float intensity, float angle)
+        {
+            var fixture = CreateObject(name, transform).transform;
+            fixture.localPosition = basePosition + Vector3.up * height;
+            fixture.localRotation = Quaternion.LookRotation(aim - fixture.localPosition);
+            Box("Mount", transform, basePosition + Vector3.up * (height * 0.5f),
+                new Vector3(0.16f, height, 0.16f), structure);
+            Box("Housing", fixture, Vector3.zero, new Vector3(width, width * 0.34f, 0.24f), structure);
+            Box("Lamp face", fixture, Vector3.forward * 0.13f, new Vector3(width * 0.9f, width * 0.27f, 0.03f), lens);
+            if (!illuminated)
+                return;
+
+            var light = fixture.gameObject.AddComponent<Light>();
+            light.type = LightType.Spot;
+            light.color = new Color32(255, 232, 200, 255);
+            light.intensity = intensity;
+            light.range = range;
+            light.spotAngle = angle;
+            light.innerSpotAngle = angle * 0.65f;
+            light.cullingMask = 1 << PreviewLayer;
+            light.GetUniversalAdditionalLightData().renderingLayers = BristolLightingLayer;
+        }
+    }
+
+    private void AddBristolParkingLines()
+    {
+        var vertices = new System.Collections.Generic.List<Vector3>();
+        var triangles = new System.Collections.Generic.List<int>();
+        float start = BristolBayCenterX - BristolBaysPerRow * BristolBayPitch / 2f;
+        float end = start + BristolBaysPerRow * BristolBayPitch;
+        const float lineWidth = 0.16f;
+        foreach (float side in new[] { -1f, 1f })
+        {
+            AddLine(start, end, side * 4.5f - lineWidth / 2f, side * 4.5f + lineWidth / 2f);
+            AddLine(start, end, side * 27f - lineWidth / 2f, side * 27f + lineWidth / 2f);
+            for (int i = 0; i <= BristolBaysPerRow; i++)
+            {
+                float x = start + i * BristolBayPitch;
+                AddLine(x - lineWidth / 2f, x + lineWidth / 2f,
+                    Mathf.Min(side * 4.5f, side * 27f), Mathf.Max(side * 4.5f, side * 27f));
+            }
+        }
+
+        AddRoadMesh("Bristol hauler parking lines", MakeMaterial(new Color32(213, 176, 63, 255)),
+            vertices.ToArray(), triangles.ToArray());
+
+        void AddLine(float x0, float x1, float z0, float z1)
+        {
+            const float height = -0.012f;
+            int index = vertices.Count;
+            vertices.Add(new Vector3(x0, height, z0));
+            vertices.Add(new Vector3(x0, height, z1));
+            vertices.Add(new Vector3(x1, height, z1));
+            vertices.Add(new Vector3(x1, height, z0));
+            triangles.AddRange(new[] { index, index + 1, index + 2, index, index + 2, index + 3 });
+        }
+    }
+
+    private void ParkBristolHaulers(CarSimulationContext context)
+    {
+        var model = Resources.Load<GameObject>("Startup/RaceHauler");
+        if (model == null)
+        {
+            Debug.LogWarning("Race hauler model is missing.", this);
+            return;
+        }
+
+        parkedHaulers = CreateObject("Bristol parked haulers", transform);
+        int count = BristolBaysPerRow * 2;
+        var paint = new MaterialPropertyBlock();
+        var random = new System.Random();
+        var font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        for (int i = 0; i < count; i++)
+        {
+            var entry = i < context.Cars.Count ? context.Cars[i] : null;
+            float side = i % 2 == 0 ? -1f : 1f;
+            int bay = i / 2;
+            float x = BristolBayCenterX + (bay + 0.5f - BristolBaysPerRow / 2f) * BristolBayPitch;
+            var hauler = Instantiate(model, parkedHaulers.transform, false);
+            hauler.name = entry != null ? $"Hauler No. {entry.carNumber}" : $"Guest hauler {i + 1}";
+            hauler.transform.localPosition = new Vector3(x, -0.025f, side * BristolHaulerCenterZ);
+            var tractor = hauler.transform.Find("Tractor")?.GetComponent<Renderer>();
+            var trailer = hauler.transform.Find("Trailer")?.GetComponent<Renderer>();
+            bool facesForward = tractor == null || trailer == null || tractor.bounds.center.z > trailer.bounds.center.z;
+            if (facesForward == (side > 0f))
+                hauler.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+
+            foreach (var child in hauler.GetComponentsInChildren<Transform>(true))
+                child.gameObject.layer = PreviewLayer;
+            var livery = entry == null
+                ? (HoodAndTrunk: GuestPaint(), RoofAndSides: GuestPaint())
+                : entry.car?.Paint ?? TeamLivery(entry.carNumber);
+            Color roofColor = Color.Lerp(livery.RoofAndSides, livery.HoodAndTrunk, 0.35f);
+            if (entry != null && trailer != null && font != null)
+            {
+                var bounds = trailer.bounds;
+                var roof = new Vector3(bounds.center.x, bounds.max.y + 0.035f, bounds.center.z);
+                var label = CreateObject("Hauler roof number", hauler.transform);
+                label.transform.position = roof;
+                label.transform.localRotation = Quaternion.Euler(90f, facesForward ? 0f : 180f, 0f);
+                var number = label.AddComponent<TextMesh>();
+                number.font = font;
+                number.text = entry.carNumber.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                number.anchor = TextAnchor.MiddleCenter;
+                number.fontStyle = FontStyle.Bold;
+                number.fontSize = 64;
+                number.characterSize = 0.30f;
+                number.color = 0.213f * roofColor.r + 0.715f * roofColor.g + 0.072f * roofColor.b > 0.52f
+                    ? Color.black : Color.white;
+                label.GetComponent<MeshRenderer>().sharedMaterial = GetCarDecalMaterial(font);
+            }
+            foreach (var renderer in hauler.GetComponentsInChildren<Renderer>())
+            {
+                var shared = renderer.sharedMaterials;
+                for (int j = 0; j < shared.Length; j++)
+                {
+                    var material = shared[j];
+                    if (material == null)
+                        continue;
+                    bool primary = material.name.StartsWith("Hauler Primary Paint", System.StringComparison.Ordinal);
+                    bool roof = material.name.StartsWith("Hauler Roof Paint", System.StringComparison.Ordinal);
+                    if (!primary && !roof && !material.name.StartsWith("Hauler Accent Paint", System.StringComparison.Ordinal))
+                        continue;
+
+                    Color color = roof ? roofColor : primary ? livery.RoofAndSides : livery.HoodAndTrunk;
+                    paint.Clear();
+                    paint.SetFloat("_Smoothness", roof ? 0.16f : 0.28f);
+                    paint.SetColor("_BaseColor", color);
+                    paint.SetColor("_Color", color);
+                    renderer.SetPropertyBlock(paint, j);
+                }
+            }
+        }
+
+        Color32 GuestPaint() => Color.HSVToRGB((float)random.NextDouble(),
+            0.48f + 0.36f * (float)random.NextDouble(), 0.56f + 0.36f * (float)random.NextDouble());
     }
 
     private void DrawPitRoad(TrackPitRoad pit, Material pavement, Material markings)
@@ -1429,13 +1969,15 @@ public sealed class TrackPreview : MonoBehaviour
         if (entrance != null)
         {
             entryDistance = PitAttachment(entrance.Sample(0f));
-            entryHeight = TrackPoint(entryDistance, 0f, out _, out _).y;
+            entryHeight = (UsesDetailedPavement(definition.id)) ? BristolMergeHeight(entrance.Sample(0f), entryDistance) :
+                TrackPoint(entryDistance, 0f, out _, out _).y;
             DrawPitRibbon("Pit entrance", entrance, pit.widthMeters, pavement, entryHeight, roadStart, underMainTrack: true);
         }
         if (exit != null)
         {
             exitDistance = PitAttachment(exit.Sample(1f));
-            exitHeight = TrackPoint(exitDistance, 0f, out _, out _).y;
+            exitHeight = (UsesDetailedPavement(definition.id)) ? BristolMergeHeight(exit.Sample(1f), exitDistance) :
+                TrackPoint(exitDistance, 0f, out _, out _).y;
             DrawPitRibbon("Pit exit", exit, pit.widthMeters, pavement, roadEnd, exitHeight, underMainTrack: true);
         }
         if (entrance != null && exit != null)
@@ -1444,8 +1986,13 @@ public sealed class TrackPreview : MonoBehaviour
             pitRoute = new[] { entrance, spline, exit };
             pitLengths = new[] { entrance.Length * sourceScale, spline.Length * sourceScale, exit.Length * sourceScale };
             pitHeights = new[] { entryHeight, roadStart, roadEnd, exitHeight };
+            if ((definition.id == DaytonaTrackId || definition.id == TexasTrackId))
+            {
+                pitEntryTrackLane = PitAttachmentLane(entrance.Sample(0f), entryDistance);
+                pitExitTrackLane = PitAttachmentLane(exit.Sample(1f), exitDistance);
+            }
             pitTraffic = new TrackPitTraffic(lapLength, entryDistance, exitDistance,
-                pitLengths[0], pitLengths[1], pitLengths[2], pit);
+                pitLengths[0], pitLengths[1], pitLengths[2], pit, singleThroughLane: definition.id == OrangeCountyTrackId || definition.id == SouthBostonTrackId);
             const int pitProgressSamples = 128;
             var trackDistances = new float[pitProgressSamples + 1];
             for (int i = 1; i < pitProgressSamples; i++)
@@ -1459,6 +2006,8 @@ public sealed class TrackPreview : MonoBehaviour
                 trackDistances[i] = PitAttachment(position);
             }
             pitTraffic.SetProgressAlongRoute(trackDistances);
+            if (definition.id == BristolTrackId)
+                ConfigureBristolPitRoutes(pit, spline, pavement, sourceScale);
             trafficCars = new TrackPitTraffic.Car[cars.Length];
             for (int i = 0; i < cars.Length; i++)
                 trafficCars[i] = pitTraffic.CreateTrackCar(lapLength * i / cars.Length);
@@ -1489,8 +2038,173 @@ public sealed class TrackPreview : MonoBehaviour
             Box("Pit stall", transform, position + Vector3.up * 0.055f, new Vector3(0.6f, 0.025f, 0.6f), markings);
         }
 
+        pitWallSide = Mathf.Sign(Vector3.Dot(pitCenter - trackCenter,
+            Vector3.Cross(Vector3.up, PitTangent(spline, 0.5f, roadStart, roadEnd))));
         if (practiceStallDistances != null)
+        {
             FillPracticeStalls(spline, pit, markedStalls.Length);
+            float stallSide = 0f;
+            for (int i = 0; i < Mathf.Min(markedStalls.Length, cars.Length); i++)
+            {
+                float fraction = Mathf.Clamp01((practiceStallDistances[i] - pitLengths[0]) / pitLengths[1]);
+                var center = PitPosition(spline, fraction, roadStart, roadEnd);
+                var across = Vector3.Cross(Vector3.up, PitTangent(spline, fraction, roadStart, roadEnd)).normalized;
+                stallSide += Vector3.Dot(practiceStallPositions[i] - center, across);
+            }
+            if (Mathf.Abs(stallSide) > 0.1f)
+                pitWallSide = Mathf.Sign(stallSide);
+        }
+
+        if (definition.id != BristolTrackId)
+            DrawPitWall(spline, pit.widthMeters, roadStart, roadEnd);
+    }
+
+    private float BristolMergeHeight(Vector3 source, float distance)
+    {
+        var center = TrackPoint(distance, 0f, out var forward, out _);
+        var across = Vector3.Cross(Vector3.up, forward).normalized;
+        float halfWidth = RoadWidths(distance).x * 0.5f;
+        var edge = TrackPoint(distance, halfWidth * customLayout.InsideSign, out _, out _);
+        float edgeOffset = Vector3.Dot(edge - center, across);
+        float offset = Vector3.Dot(customLayout.ToTrackSpace(source) - center, across);
+        float blend = Mathf.Clamp01(offset / edgeOffset);
+        return Mathf.Lerp(center.y, edge.y, blend) - 0.025f;
+    }
+
+    private void ConfigureBristolPitRoutes(TrackPitRoad pit, TrackPitSpline road, Material pavement, float scale)
+    {
+        // The saved route runs from Turn 2 around the apron to Turn 1.
+        // Mirror its turn connectors to connect the opposite ends of the two straights.
+        var front = Mirror(pit.entrance);
+        var back = Mirror(pit.exit);
+        float join = road.ClosestFraction(TrackPitSpline.Position(front[front.Length - 1]));
+        float leave = road.ClosestFraction(TrackPitSpline.Position(back[0]));
+        Vector3 frontEnd = road.Sample(join);
+        Vector3 backStart = road.Sample(leave);
+        front[front.Length - 1] = new TrackPitPoint { x = frontEnd.x, z = frontEnd.z };
+        back[0] = new TrackPitPoint { x = backStart.x, z = backStart.z };
+        bristolFrontEntry = new TrackPitSpline(front);
+        bristolBackExit = new TrackPitSpline(back);
+        bristolFrontJoin = pitLengths[0] + join * pitLengths[1];
+        bristolBackLeave = pitLengths[0] + leave * pitLengths[1];
+        bristolBackExitLength = bristolBackExit.Length * scale;
+        float frontEntry = PitAttachment(bristolFrontEntry.Sample(0f));
+        float backExit = PitAttachment(bristolBackExit.Sample(1f));
+        bristolFrontEntryHeight = BristolMergeHeight(bristolFrontEntry.Sample(0f), frontEntry);
+        bristolBackExitHeight = BristolMergeHeight(bristolBackExit.Sample(1f), backExit);
+        pitTraffic.ConfigureSplitRoad(frontEntry, bristolFrontJoin, bristolBackLeave, backExit,
+            bristolBackExitLength, bristolFrontEntry.Length * scale);
+        DrawPitRibbon("Bristol Turn 4 entry", bristolFrontEntry, pit.widthMeters, pavement, bristolFrontEntryHeight, 0f, underMainTrack: true);
+        DrawPitRibbon("Bristol Turn 3 exit", bristolBackExit, pit.widthMeters, pavement, 0f, bristolBackExitHeight, underMainTrack: true);
+
+        TrackPitPoint[] Mirror(TrackPitPoint[] points) =>
+            System.Array.ConvertAll(points, point => new TrackPitPoint { x = -point.x, z = -point.z });
+    }
+
+    private void DrawPitWall(TrackPitSpline spline, float width, float roadStart, float roadEnd,
+        float startFraction = 0.035f, float endFraction = 0.965f)
+    {
+        const int segments = 96;
+        const float wallHeight = 0.95f;
+        var vertices = new Vector3[(segments + 1) * 4];
+        var triangles = new int[segments * 24 + 12];
+        int index = 0;
+        for (int i = 0; i <= segments; i++)
+        {
+            float fraction = Mathf.Lerp(startFraction, endFraction, i / (float)segments);
+            var forward = PitTangent(spline, fraction, roadStart, roadEnd);
+            var across = Vector3.Cross(Vector3.up, forward).normalized;
+            var edge = PitPosition(spline, fraction, roadStart, roadEnd) + across * (pitWallSide * width * 0.5f);
+            var center = edge + across * (pitWallSide * PitWallThickness * 0.5f);
+            var half = across * (PitWallThickness * 0.5f);
+            int k = i * 4;
+            vertices[k] = center - half - Vector3.up * 0.06f;
+            vertices[k + 1] = center - half + Vector3.up * wallHeight;
+            vertices[k + 2] = center + half + Vector3.up * wallHeight;
+            vertices[k + 3] = center + half - Vector3.up * 0.06f;
+            if (i == 0)
+                continue;
+            for (int j = 0; j < 4; j++)
+            {
+                int next = (j + 1) % 4;
+                AddQuad(k - 4 + j, k + j, k + next, k - 4 + next);
+            }
+        }
+        AddQuad(0, 1, 2, 3);
+        int last = segments * 4;
+        AddQuad(last, last + 3, last + 2, last + 1);
+        AddRoadMesh("Concrete pit wall", MakeMaterial(new Color32(177, 173, 163, 255)), vertices, triangles);
+
+        void AddQuad(int a, int b, int c, int d)
+        {
+            triangles[index++] = a;
+            triangles[index++] = b;
+            triangles[index++] = c;
+            triangles[index++] = a;
+            triangles[index++] = c;
+            triangles[index++] = d;
+        }
+    }
+
+    private void AddTeamPitBoxes(CarSimulationContext context)
+    {
+        var model = Resources.Load<GameObject>("Startup/TeamPitBox");
+        if (model == null)
+            return;
+
+        teamPitBoxes = CreateObject("Team pit boxes", transform);
+        var paint = new MaterialPropertyBlock();
+        int count = Mathf.Min(context.Cars.Count, practiceStallPositions.Length);
+        for (int i = 0; i < count; i++)
+        {
+            var entry = context.Cars[i];
+            float fraction = Mathf.Clamp01((practiceStallDistances[i] - pitLengths[0]) / pitLengths[1]);
+            var center = PitPosition(pitRoute[1], fraction, pitHeights[1], pitHeights[2]);
+            var forward = PitTangent(pitRoute[1], fraction, pitHeights[1], pitHeights[2]);
+            var outward = Vector3.Cross(Vector3.up, forward).normalized * pitWallSide;
+            var box = Instantiate(model, teamPitBoxes.transform, false);
+            box.name = $"Pit box No. {entry.carNumber}";
+            box.transform.localPosition = center;
+            box.transform.localRotation = Quaternion.LookRotation(-outward, Vector3.up);
+            var renderers = box.GetComponentsInChildren<Renderer>();
+            var worldOutward = transform.TransformDirection(outward);
+            var stallCenter = transform.TransformPoint(center);
+            float inwardReach = 0f;
+            foreach (var renderer in renderers)
+            {
+                // Include the canopy and ladder, even when the imported pivot is off-center.
+                var bounds = renderer.localBounds;
+                var pose = renderer.transform;
+                float projectedExtent =
+                    Mathf.Abs(Vector3.Dot(pose.TransformVector(Vector3.right * bounds.extents.x), worldOutward)) +
+                    Mathf.Abs(Vector3.Dot(pose.TransformVector(Vector3.up * bounds.extents.y), worldOutward)) +
+                    Mathf.Abs(Vector3.Dot(pose.TransformVector(Vector3.forward * bounds.extents.z), worldOutward));
+                float projectedCenter = Vector3.Dot(pose.TransformPoint(bounds.center) - stallCenter, worldOutward);
+                inwardReach = Mathf.Max(inwardReach, projectedExtent - projectedCenter);
+            }
+
+            const float wallClearance = 0.30f;
+            float wallBack = definition.pitRoad.widthMeters * 0.5f + PitWallThickness;
+            box.transform.localPosition += outward * (wallBack + inwardReach + wallClearance);
+            foreach (var child in box.GetComponentsInChildren<Transform>(true))
+                child.gameObject.layer = PreviewLayer;
+
+            var livery = entry.car?.Paint ?? TeamLivery(entry.carNumber);
+            foreach (var renderer in renderers)
+            {
+                var shared = renderer.sharedMaterials;
+                for (int j = 0; j < shared.Length; j++)
+                {
+                    string name = shared[j]?.name;
+                    if (name != "Pit Box Primary" && name != "Pit Box Accent")
+                        continue;
+                    Color color = name == "Pit Box Primary" ? livery.RoofAndSides : livery.HoodAndTrunk;
+                    paint.SetColor("_BaseColor", color);
+                    paint.SetColor("_Color", color);
+                    renderer.SetPropertyBlock(paint, j);
+                }
+            }
+        }
     }
 
     private void ConfigurePitField()
@@ -1538,14 +2252,24 @@ public sealed class TrackPreview : MonoBehaviour
     private float PitAttachment(Vector3 source) => Mathf.Repeat(
         TrackUtilityGeometry.ClosestMainDistance(customLayout, lapLength, customLayout.ToTrackSpace(source)), lapLength);
 
+    private float PitAttachmentLane(Vector3 source, float distance)
+    {
+        Vector3 center = TrackPoint(distance, 0f, out _, out _);
+        Vector3 across = TrackPoint(distance, 1f, out _, out _) - center;
+        Vector3 offset = customLayout.ToTrackSpace(source) - center;
+        across.y = 0f;
+        return Vector3.Dot(offset, across) / across.sqrMagnitude;
+    }
+
     private static float PitHeight(float startHeight, float endHeight, float fraction) =>
         Mathf.SmoothStep(startHeight, endHeight, fraction) + 0.02f;
 
     private void DrawPitRibbon(string objectName, TrackPitSpline spline, float width, Material material, float startHeight, float endHeight,
         bool underMainTrack = false)
     {
-        const int segments = 128;
-        int strips = underMainTrack ? 8 : 1;
+        const int segments = PitRibbonSegments;
+        int strips = underMainTrack ? PitConnectorStrips : 1;
+        bool bristolConnector = underMainTrack && (UsesDetailedPavement(definition.id));
         int stride = strips + 1;
         var vertices = new Vector3[(segments + 1) * stride];
         var clearance = new float[vertices.Length];
@@ -1559,7 +2283,9 @@ public sealed class TrackPreview : MonoBehaviour
             {
                 int index = i * stride + j;
                 vertices[index] = center + across * (width * (j / (float)strips - 0.5f));
-                if (underMainTrack)
+                if (bristolConnector)
+                    vertices[index].y = BristolConnectorHeight(vertices[index], out clearance[index]);
+                else if (underMainTrack)
                     clearance[index] = MainTrackClearance(vertices[index]);
             }
         }
@@ -1573,11 +2299,15 @@ public sealed class TrackPreview : MonoBehaviour
                 AddPitTriangle(vertex + 1, vertex + stride, vertex + stride + 1);
             }
         }
+        if (bristolConnector)
+            bristolConnectorVertices[spline] = vertices;
         AddRoadMesh(objectName, material, vertices, triangles.ToArray());
 
         void AddPitTriangle(int a, int b, int c)
         {
-            if (underMainTrack && (clearance[a] < 0f || clearance[b] < 0f || clearance[c] < 0f))
+            if (underMainTrack && (bristolConnector
+                ? clearance[a] < 0f && clearance[b] < 0f && clearance[c] < 0f
+                : clearance[a] < 0f || clearance[b] < 0f || clearance[c] < 0f))
                 return;
             triangles.Add(a);
             triangles.Add(b);
@@ -1585,11 +2315,35 @@ public sealed class TrackPreview : MonoBehaviour
         }
     }
 
+    private float BristolConnectorHeight(Vector3 vertex, out float clearance)
+    {
+        float distance = TrackUtilityGeometry.ClosestMainDistance(customLayout, lapLength, vertex);
+        var center = TrackPoint(distance, 0f, out var forward, out _);
+        var across = Vector3.Cross(Vector3.up, forward).normalized;
+        float halfWidth = RoadWidths(distance).x * 0.5f;
+        float offset = Vector3.Dot(vertex - center, across);
+        var edge = TrackPoint(distance, Mathf.Sign(offset) * halfWidth, out _, out _);
+        float edgeOffset = Mathf.Abs(Vector3.Dot(edge - center, across));
+        clearance = Mathf.Abs(offset) - edgeOffset;
+        if (clearance <= 0f)
+            return Mathf.Lerp(center.y, edge.y, Mathf.Abs(offset) / edgeOffset) - 0.005f;
+
+        float apronWidth = offset * customLayout.InsideSign > 0f ? RoadWidths(distance).y : 0f;
+        float blend = Mathf.SmoothStep(0f, 1f, (clearance - apronWidth) / 3f);
+        return Mathf.Lerp(edge.y + 0.002f, vertex.y, blend);
+    }
+
     private float MainTrackClearance(Vector3 vertex)
     {
         float distance = TrackUtilityGeometry.ClosestMainDistance(customLayout, lapLength, vertex);
         Vector3 center = TrackPoint(distance, 0f, out var forward, out _);
         Vector3 across = Vector3.Cross(Vector3.up, forward).normalized;
+        if (definition.id == BristolTrackId)
+        {
+            float halfWidth = RoadWidths(distance).x * 0.5f;
+            var edge = TrackPoint(distance, halfWidth, out _, out _);
+            return Mathf.Abs(Vector3.Dot(vertex - center, across)) - Mathf.Abs(Vector3.Dot(edge - center, across));
+        }
         return Mathf.Abs(Vector3.Dot(vertex - center, across)) - RoadWidths(distance).x * 0.5f;
     }
 
@@ -1612,6 +2366,118 @@ public sealed class TrackPreview : MonoBehaviour
     {
         return (PitPosition(spline, fraction + 0.005f, startHeight, endHeight) -
             PitPosition(spline, fraction - 0.005f, startHeight, endHeight)).normalized;
+    }
+
+    private Texture2D bristolConcrete, bristolAsphalt, bristolRacingSurface;
+
+    private const int RubberBuildupLaps = 50;
+    private const int RacingTextureLength = 2048;
+    private const int RacingTextureWidth = 128;
+    private Color32[] cleanRacingPixels, rubberedRacingPixels, racingPixels;
+    private int displayedRubberLaps = -1;
+
+    private Texture2D CreateBristolRacingTexture()
+    {
+        bristolRacingSurface = new Texture2D(RacingTextureLength, RacingTextureWidth, TextureFormat.RGBA32, true)
+        {
+            wrapModeV = TextureWrapMode.Clamp
+        };
+        PrepareBristolRubberShades();
+        UpdateBristolRubber();
+        return bristolRacingSurface;
+    }
+
+    private void PrepareBristolRubberShades()
+    {
+        const int lengthSamples = RacingTextureLength;
+        const int widthSamples = RacingTextureWidth;
+        cleanRacingPixels = new Color32[lengthSamples * widthSamples];
+        rubberedRacingPixels = new Color32[cleanRacingPixels.Length];
+        racingPixels = new Color32[cleanRacingPixels.Length];
+        displayedRubberLaps = -1;
+        var random = new System.Random(27);
+        for (int x = 0; x < lengthSamples; x++)
+        {
+            float distance = (x + 0.5f) * lapLength / lengthSamples;
+            customLayout.Sample(Mathf.Repeat(distance - 18f, lapLength), out var before, out _);
+            customLayout.Sample(Mathf.Repeat(distance + 18f, lapLength), out var after, out _);
+            float bend = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(2f, 23f, Vector3.Angle(before, after)));
+            float roadWidth = RoadWidths(distance).x;
+            float line = racingLine(distance);
+            float pathCenter = 0.5f + (behaviorModel.LaneOffset(0, roadWidth, float.PositiveInfinity, line)
+                + behaviorModel.LaneOffset(1, roadWidth, float.PositiveInfinity, line)) / (2f * roadWidth);
+            for (int y = 0; y < widthSamples; y++)
+            {
+                float lane = (y + 0.5f) / widthSamples;
+
+                float mottling = Mathf.PerlinNoise(x * 0.051f, y * 0.14f);
+                float grooveCenter = pathCenter + 0.025f * (mottling - 0.5f);
+                float fade = 1f - Mathf.SmoothStep(0f, 1f, Mathf.Abs(lane - grooveCenter) / 0.18f);
+                float rubber = bend * fade * (0.62f + 0.38f * mottling);
+                int baseShade = (int)(225f + 20f * mottling) + random.Next(-9, 10);
+                byte shade = (byte)Mathf.RoundToInt(Mathf.Lerp(baseShade, 139f, rubber));
+                int index = y * lengthSamples + x;
+                byte clean = (byte)baseShade;
+                cleanRacingPixels[index] = new Color32(clean, clean, clean, 255);
+                rubberedRacingPixels[index] = new Color32(shade, shade, shade, 255);
+            }
+        }
+    }
+
+    private void UpdateBristolRubber()
+    {
+        if (bristolRacingSurface == null || displayedRubberLaps == RubberBuildupLaps)
+            return;
+
+        int laps = Mathf.Min(RubberBuildupLaps, SessionRun?.LeaderLaps ?? 0);
+        if (laps == displayedRubberLaps)
+            return;
+
+        float amount = laps / (float)RubberBuildupLaps;
+        for (int i = 0; i < racingPixels.Length; i++)
+            racingPixels[i] = Color32.Lerp(cleanRacingPixels[i], rubberedRacingPixels[i], amount);
+        bristolRacingSurface.SetPixels32(racingPixels);
+        bristolRacingSurface.Apply();
+        displayedRubberLaps = laps;
+    }
+
+    private Texture2D BristolPavementTexture(bool concrete)
+    {
+        ref Texture2D cached = ref (concrete ? ref bristolConcrete : ref bristolAsphalt);
+        if (cached != null)
+            return cached;
+        const int size = 128;
+        var pixels = new Color32[size * size];
+        var random = new System.Random(concrete ? 27 : 28);
+        for (int y = 0; y < size; y++)
+        for (int x = 0; x < size; x++)
+        {
+            const float frequency = 0.067f;
+            float span = size * frequency;
+            float u = x / (float)size;
+            float v = y / (float)size;
+            float sampleX = x * frequency;
+            float sampleY = y * frequency;
+            float top = Mathf.Lerp(Mathf.PerlinNoise(sampleX, sampleY), Mathf.PerlinNoise(sampleX - span, sampleY), u);
+            float bottom = Mathf.Lerp(Mathf.PerlinNoise(sampleX, sampleY - span), Mathf.PerlinNoise(sampleX - span, sampleY - span), u);
+            float weathering = Mathf.Lerp(top, bottom, v);
+            int value = (int)(222 + 22 * weathering + random.Next(-8, 9));
+            byte shade = (byte)value;
+            pixels[y * size + x] = new Color32(shade, shade, shade, 255);
+        }
+        cached = new Texture2D(size, size, TextureFormat.RGBA32, true);
+        cached.SetPixels32(pixels);
+        cached.Apply(true, true);
+        return cached;
+    }
+
+    private static void SetPavementCoordinates(Mesh mesh)
+    {
+        var vertices = mesh.vertices;
+        var uv = new Vector2[vertices.Length];
+        for (int i = 0; i < vertices.Length; i++)
+            uv[i] = new Vector2(vertices[i].x, vertices[i].z) / 16f;
+        mesh.uv = uv;
     }
 
     private Material MakeMaterial(Color color)
@@ -1818,6 +2684,39 @@ public sealed class TrackPreview : MonoBehaviour
         return item;
     }
 
+    private static void AssignBristolLighting(Transform root)
+    {
+        foreach (var renderer in root.GetComponentsInChildren<Renderer>(true))
+            renderer.renderingLayerMask = BristolLightingLayer;
+    }
+
+    private void OnEnable() => EnableBristolLighting();
+
+    private void EnableBristolLighting()
+    {
+        if (bristolSun == null || RenderSettings.sun == bristolSun)
+            return;
+
+        previousSun = RenderSettings.sun;
+        RenderSettings.sun = bristolSun;
+        bristolPipeline = GraphicsSettings.currentRenderPipeline as UniversalRenderPipelineAsset;
+        if (bristolPipeline != null)
+        {
+            previousShadowDistance = bristolPipeline.shadowDistance;
+            bristolPipeline.shadowDistance = Mathf.Max(previousShadowDistance, raceCamera.farClipPlane);
+        }
+    }
+
+    private void OnDisable()
+    {
+        if (bristolSun == null || RenderSettings.sun != bristolSun)
+            return;
+
+        RenderSettings.sun = previousSun;
+        if (bristolPipeline != null)
+            bristolPipeline.shadowDistance = previousShadowDistance;
+    }
+
     private void OnDestroy()
     {
         if (raceCamera != null)
@@ -1828,6 +2727,12 @@ public sealed class TrackPreview : MonoBehaviour
             Destroy(Image);
         }
 
+        if (bristolRacingSurface != null)
+            Destroy(bristolRacingSurface);
+        if (bristolConcrete != null)
+            Destroy(bristolConcrete);
+        if (bristolAsphalt != null)
+            Destroy(bristolAsphalt);
         foreach (var mesh in roadMeshes)
             Destroy(mesh);
         foreach (var material in materials)

@@ -317,6 +317,7 @@ internal sealed class TrackState001Stages
         if (lead >= restartAt && paceReturning && caughtUp && fieldSingleFile)
         {
             State = SessionTrackState.TrackOpen;
+            pit.CombinedRoute = false;
             PitOpen = true;
             if (overtime)
             {
@@ -370,6 +371,7 @@ internal sealed class TrackState001Stages
 
     private void BeginYellow(float lapAnchor, RaceSessionRun run, TrackPitTraffic.Car[] cars)
     {
+        pit.CombinedRoute = true;
         freePassCar = -1;
         freePassInProgress = false;
         freePassLaneBlend = 0f;

@@ -18,6 +18,11 @@ public sealed class StartupMenu : MonoBehaviour
     private Career activeCareer;
     private ScheduledRace activeRace;
     private RaceSession activeSession;
+    private static readonly bool StartInDevelopmentPractice = true;
+    private bool developmentPractice;
+    private VisualElement developmentTrackPicker;
+    private const string DevelopmentTrackPreference = "SCM.DevelopmentPractice.TrackId";
+    private List<TrackCatalog.Entry> developmentTracks;
     private RaceEventView raceEventView;
     private ScheduledRace selectedEvent;
     private Button addTeamCarButton;
@@ -72,6 +77,9 @@ public sealed class StartupMenu : MonoBehaviour
     private VisualElement titleScreen;
     private VisualElement garageScreen;
     private VisualElement trackScreen;
+    private Label trackFpsLabel;
+    private double fpsSampleStart;
+    private int fpsSampleFrames;
     private VisualElement raceViewport;
     private Button returnToGarageButton;
     private TrackPreview trackPreview;
@@ -132,10 +140,31 @@ public sealed class StartupMenu : MonoBehaviour
         garageLayout.CloneTree(root);
         trackLayout.CloneTree(root);
         titleScreen = root.Q("titleScreen");
+        developmentTrackPicker = root.Q("developmentTrackPicker");
+        developmentTrackPicker.style.display = DisplayStyle.None;
+        developmentTrackPicker.Q<Button>("exitDevelopmentPractice").clicked += Quit;
+        var practiceTrack = developmentTrackPicker.Q<DropdownField>("developmentTracks");
+        var startPractice = developmentTrackPicker.Q<Button>("startDevelopmentPractice");
+        practiceTrack.RegisterValueChangedCallback(_ =>
+        {
+            int index = practiceTrack.index;
+            if (index < 0 || index >= developmentTracks.Count)
+                return;
+
+            PlayerPrefs.SetInt(DevelopmentTrackPreference, developmentTracks[index].Definition.id);
+            PlayerPrefs.Save();
+        });
+        startPractice.clicked += () =>
+        {
+            int index = practiceTrack.index;
+            if (index >= 0 && index < developmentTracks.Count)
+                StartDevelopmentPractice(developmentTracks[index]);
+        };
         garageScreen = root.Q("garageScreen");
         garageScreen.style.display = DisplayStyle.None;
 
         trackScreen = root.Q("trackScreen");
+        trackFpsLabel = trackScreen.Q<Label>("trackFpsLabel");
         trackScreen.style.display = DisplayStyle.None;
         raceViewport = trackScreen.Q("raceViewport");
         trackTimingRows = trackScreen.Q<ScrollView>("trackTimingRows");
@@ -265,6 +294,77 @@ public sealed class StartupMenu : MonoBehaviour
         garageSettings.clicked += () => OpenSettings(garageScreen, garageSettings);
         settings.RestorePalette();
         ApplyDisplaySettings();
+    }
+
+    private void Start()
+    {
+        if (!StartInDevelopmentPractice)
+            return;
+
+        ShowDevelopmentTrackPicker();
+    }
+
+    private void ShowDevelopmentTrackPicker(string message = null)
+    {
+        catalog.Refresh();
+        var dropdown = developmentTrackPicker.Q<DropdownField>("developmentTracks");
+        var start = developmentTrackPicker.Q<Button>("startDevelopmentPractice");
+        developmentTracks = catalog.Entries.Where(entry => entry.Definition.id >= TrackPreview.BristolTrackId &&
+            entry.Definition.pitRoad is { enabled: true, entrance: { Length: >= 2 }, exit: { Length: >= 2 } }).ToList();
+        int savedId = PlayerPrefs.GetInt(DevelopmentTrackPreference, -1);
+        int selected = developmentTracks.FindIndex(entry => entry.Definition.id == savedId);
+        bool available = developmentTracks.Count > 0;
+        var choices = developmentTracks.Select(entry => entry.Definition.name).ToList();
+        foreach (var group in developmentTracks.Select((entry, index) => (entry, index)).GroupBy(item => item.entry.Definition.name))
+        {
+            if (group.Count() > 1)
+                foreach (var item in group)
+                    choices[item.index] = item.entry.ToString();
+        }
+        dropdown.choices = choices;
+        dropdown.SetValueWithoutNotify(available ? choices[Mathf.Max(0, selected)] : string.Empty);
+        dropdown.SetEnabled(available);
+        start.SetEnabled(available);
+
+        var status = developmentTrackPicker.Q<Label>("developmentPracticeStatus");
+        status.text = message ?? (!available ? "No test tracks with complete pit roads were found." : string.Empty);
+        status.style.display = string.IsNullOrEmpty(status.text) ? DisplayStyle.None : DisplayStyle.Flex;
+        titleScreen.style.display = DisplayStyle.None;
+        developmentTrackPicker.style.display = DisplayStyle.Flex;
+        settings.RestorePalette();
+        (available ? start : developmentTrackPicker.Q<Button>("exitDevelopmentPractice")).Focus();
+    }
+
+    private void StartDevelopmentPractice(TrackCatalog.Entry track)
+    {
+        int developmentTrackId = track.Definition.id;
+        PlayerPrefs.SetInt(DevelopmentTrackPreference, developmentTrackId);
+        PlayerPrefs.Save();
+        developmentTrackPicker.style.display = DisplayStyle.None;
+        var career = new Career { playerName = "Player", teamName = "Player Team" };
+        career.InitializeCars(new System.Random(developmentTrackId));
+        var car = career.cars[0];
+        var session = new RaceSession { kind = RaceSessionKind.Practice, name = "Practice", minutes = 999 };
+        var race = new ScheduledRace { trackId = developmentTrackId, trackName = track.Definition.name, carNumber = car.number };
+        developmentPractice = true;
+        OpenTrack(track, true, car.number);
+        if (trackPreview.Image == null || !trackPreview.HasSessionPitRoad)
+        {
+            ReturnToGarage();
+            ShowDevelopmentTrackPicker("Could not open practice at " + track.Definition.name + ".");
+            return;
+        }
+
+        titleScreen.style.display = DisplayStyle.None;
+        returnToGarageButton.text = "Leave Session";
+        activeSession = session;
+        var simulation = new CarSimulationContext(track.Definition, race, session,
+            TrackPreview.CreateTimingEntries(car, career));
+        trackPreview.BeginSession(simulation, new TrackState001(), settings.SpeedModel, settings.BehaviorModel);
+        RefreshTrackTiming();
+        sessionSpeedSelector.SetValueWithoutNotify(sessionSpeedSelector.choices[0]);
+        sessionSpeedSelector.style.display = DisplayStyle.Flex;
+        UpdateSessionLabel();
     }
 
     private void ApplyDisplaySettings()
@@ -2414,7 +2514,10 @@ public sealed class StartupMenu : MonoBehaviour
 
         raceEventView.Screen.style.display = DisplayStyle.None;
         returnToGarageButton.text = "Leave Session";
-        OpenTrack(track, true, activeRace.carNumber);
+        bool night = activeRace.trackId == TrackPreview.BristolTrackId &&
+            activeCareer.schedule.races.TakeWhile(race => race != activeRace)
+                .Count(race => race.trackId == activeRace.trackId) == 1;
+        OpenTrack(track, true, activeRace.carNumber, night);
         if (trackPreview.Image == null)
         {
             ReturnToGarage();
@@ -2442,7 +2545,10 @@ public sealed class StartupMenu : MonoBehaviour
     private void Update()
     {
         if (trackPreview != null && trackPreview.gameObject.activeSelf)
+        {
+            UpdateTrackFps();
             RefreshTrackTiming();
+        }
         if (activeSession == null || trackPreview?.SessionRun == null)
             return;
 
@@ -2450,10 +2556,29 @@ public sealed class StartupMenu : MonoBehaviour
         if (trackPreview.SessionComplete)
         {
             var session = activeSession;
+            if (developmentPractice)
+            {
+                ReturnToGarage();
+                return;
+            }
             var results = trackPreview.SessionRun.Results();
             ReturnToGarage();
             CompleteSession(session, results);
         }
+    }
+
+    private void UpdateTrackFps()
+    {
+        const double sampleSeconds = 0.5;
+        fpsSampleFrames++;
+        double now = Time.unscaledTimeAsDouble;
+        double elapsed = now - fpsSampleStart;
+        if (elapsed < sampleSeconds)
+            return;
+
+        trackFpsLabel.text = $"FPS {fpsSampleFrames / elapsed:F0}";
+        fpsSampleStart = now;
+        fpsSampleFrames = 0;
     }
 
     private void RefreshTrackTiming()
@@ -2932,7 +3057,7 @@ public sealed class StartupMenu : MonoBehaviour
         return names;
     }
 
-    private void OpenTrack(TrackCatalog.Entry track, bool restart, int carNumber)
+    private void OpenTrack(TrackCatalog.Entry track, bool restart, int carNumber, bool night = false)
     {
         if (track == null)
             return;
@@ -2952,7 +3077,7 @@ public sealed class StartupMenu : MonoBehaviour
             timingCells.Clear();
             trackTimingRows.Clear();
             trackPreview = preview.AddComponent<TrackPreview>();
-            trackPreview.Initialize(track.Definition, carNumber, ActiveSponsorNames(), EventCar(activeRace));
+            trackPreview.Initialize(track.Definition, carNumber, ActiveSponsorNames(), EventCar(activeRace), night);
             previewTrack = track;
             previewCarNumber = carNumber;
             if (trackPreview.Image != null)
@@ -2963,6 +3088,9 @@ public sealed class StartupMenu : MonoBehaviour
         trackScreen.Q<Label>("trackPlayerCarLabel").text = $"NO. {carNumber}";
         trackPreview.gameObject.SetActive(true);
         garageScreen.style.display = DisplayStyle.None;
+        fpsSampleStart = Time.unscaledTimeAsDouble;
+        fpsSampleFrames = 0;
+        trackFpsLabel.text = "FPS --";
         trackScreen.style.display = DisplayStyle.Flex;
         returnToGarageButton.Focus();
     }
@@ -3090,6 +3218,12 @@ public sealed class StartupMenu : MonoBehaviour
         snapshotStatus.text = string.Empty;
         snapshotStatus.tooltip = null;
         trackScreen.style.display = DisplayStyle.None;
+        if (developmentPractice)
+        {
+            developmentPractice = false;
+            ShowDevelopmentTrackPicker();
+            return;
+        }
         if (activeRace != null)
         {
             raceEventView.Screen.style.display = DisplayStyle.Flex;

@@ -3,7 +3,7 @@
     <ui:VisualElement name="trackScreen" class="screen">
         <ui:VisualElement class="header">
             <ui:Label text="SCM  /  RACE OPERATIONS" class="brand" />
-            <ui:Label text="DEMO 01" class="muted" />
+            <ui:Label name="trackFpsLabel" text="FPS --" class="muted" picking-mode="Ignore" />
         </ui:VisualElement>
         <ui:VisualElement class="track-heading">
             <ui:VisualElement class="track-heading-labels">

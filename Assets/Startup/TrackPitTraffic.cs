@@ -9,6 +9,7 @@ internal sealed class TrackPitTraffic
     private readonly float speedLimit;
     private readonly float[] boundaries;
     private readonly float laneOffset;
+    private readonly bool singleThroughLane;
     private float outsideLane;
     private Car[] field;
     private float[] stalls;
@@ -32,15 +33,20 @@ internal sealed class TrackPitTraffic
         public float NextEntry = float.PositiveInfinity;
         public float LastExit = float.NegativeInfinity;
         public bool InPit;
+        public bool FrontEntry;
+        public bool BackExit;
+        public float ConnectorDistance;
+        public float ConnectorEntryLane;
         public bool Retired;
         public float FlatTireLaneBlend;
         public double Odometer;
     }
 
     public TrackPitTraffic(float lapLength, float entryDistance, float exitDistance,
-        float entryLength, float roadLength, float exitLength, TrackPitRoad road)
+        float entryLength, float roadLength, float exitLength, TrackPitRoad road, bool singleThroughLane = false)
     {
         this.lapLength = lapLength;
+        this.singleThroughLane = singleThroughLane;
         this.entryDistance = entryDistance;
         bypassDistance = Mathf.Repeat(exitDistance - entryDistance, lapLength);
         speedLimit = road.speedLimitMph * MphToMetersPerSecond;
@@ -73,15 +79,41 @@ internal sealed class TrackPitTraffic
                 return;
             distance += bypassDistance;
         }
-        car.NextEntry = entryDistance + Mathf.Ceil((distance - entryDistance) / lapLength) * lapLength;
+        float entry = EntryFor(car);
+        car.NextEntry = entry + Mathf.Ceil((distance - entry) / lapLength) * lapLength;
     }
 
-    public float NextEntryDistance(Car car) =>
-        entryDistance + Mathf.Ceil((car.TrackDistance - entryDistance) / lapLength) * lapLength;
+    public float NextEntryDistance(Car car)
+    {
+        float entry = EntryFor(car);
+        return entry + Mathf.Ceil((car.TrackDistance - entry) / lapLength) * lapLength;
+    }
 
-    public float DistanceToEntry(Car car) => Mathf.Repeat(entryDistance - car.TrackDistance, lapLength);
+    public float DistanceToEntry(Car car) => Mathf.Repeat(EntryFor(car) - car.TrackDistance, lapLength);
 
     private float[] progressAlongRoute;
+    private float frontEntryLength, frontEntry, frontJoin, backLeave, backExit, backExitLength;
+    private bool splitRoad;
+    public bool CombinedRoute { get; set; }
+
+    public void ConfigureSplitRoad(float entry, float join, float leave, float exit, float exitLength, float entryLength)
+    {
+        splitRoad = true;
+        frontEntry = entry;
+        frontJoin = join;
+        frontEntryLength = entryLength;
+        backLeave = leave;
+        backExit = exit;
+        backExitLength = exitLength;
+    }
+
+    private bool UsesFrontEntry(Car car) =>
+        splitRoad && !CombinedRoute && car.FieldIndex >= 0 && stalls[car.FieldIndex] >= frontJoin;
+
+    private float EntryFor(Car car) => UsesFrontEntry(car) ? frontEntry : entryDistance;
+
+    private bool CanUseBackExit(Car car, float stopAt) => splitRoad && !CombinedRoute &&
+        car.FieldIndex >= 0 && !car.FrontEntry && car.PitDistance <= backLeave && stopAt != stalls[car.FieldIndex];
 
     public void SetProgressAlongRoute(float[] trackDistances)
     {
@@ -101,13 +133,32 @@ internal sealed class TrackPitTraffic
         if (!car.InPit)
             return car.TrackDistance;
 
-        float fraction = Mathf.Clamp01(car.PitDistance / RouteLength);
+        if (car.BackExit)
+        {
+            float leave = RouteProgress(backLeave);
+            float exit = Mathf.Repeat(backExit - entryDistance, lapLength);
+            return car.TrackDistance + Mathf.Lerp(leave, exit, car.ConnectorDistance / backExitLength);
+        }
+        float progress = RouteProgress(car.PitDistance);
+        if (!car.FrontEntry)
+            return car.TrackDistance + progress;
+
+        float entry = Mathf.Repeat(frontEntry - entryDistance, lapLength);
+        float join = RouteProgress(frontJoin);
+        return car.TrackDistance + (car.PitDistance < frontJoin
+            ? Mathf.Lerp(0f, Mathf.Max(0f, join - entry), car.PitDistance / frontJoin)
+            : Mathf.Max(0f, progress - entry));
+    }
+
+    private float RouteProgress(float pitDistance)
+    {
+        float fraction = Mathf.Clamp01(pitDistance / RouteLength);
         if (progressAlongRoute == null)
-            return car.TrackDistance + fraction * bypassDistance;
+            return fraction * bypassDistance;
 
         float sample = fraction * (progressAlongRoute.Length - 1);
         int lower = System.Math.Min((int)sample, progressAlongRoute.Length - 2);
-        return car.TrackDistance + Mathf.Lerp(progressAlongRoute[lower], progressAlongRoute[lower + 1], sample - lower);
+        return Mathf.Lerp(progressAlongRoute[lower], progressAlongRoute[lower + 1], sample - lower);
     }
 
     public void ConfigureField(Car[] cars, float[] stalls, float[] stallLanes, float inside)
@@ -132,16 +183,20 @@ internal sealed class TrackPitTraffic
 
         const float clearance = 3.4f;
         bool departing = car.PitDistance == stalls[index] && stopAt != stalls[index];
-        float target = stopAt <= RoadEnd ? -outsideLane : outsideLane;
+        // Use the side opposite the stall row as the through lane.
+        float throughLane = Mathf.Abs(stallLanes[index]) > 0.1f
+            ? -Mathf.Sign(stallLanes[index]) * laneOffset : outsideLane;
+        float target = throughLane;
+        float lookAhead = Mathf.Max(clearance + 3f, speed * 1.5f);
         bool approachingStall = stopAt <= RoadEnd && stopAt - car.PitDistance < 12f;
         if (approachingStall)
             target = stallLanes[index];
-        else if (!LaneAvailable(target, clearance + 3f))
+        else if (!singleThroughLane && !LaneAvailable(target, lookAhead))
         {
             float alternate = -target;
-            if (LaneAvailable(alternate, clearance + 3f))
+            if (LaneAvailable(alternate, lookAhead))
                 target = alternate;
-            else if (departing)
+            else if (departing && !singleThroughLane)
                 return 0f;
             else
                 target = car.PitLane;
@@ -151,25 +206,26 @@ internal sealed class TrackPitTraffic
         float nextLane = Mathf.MoveTowards(car.PitLane, target * blend, 3f * seconds);
         if (LaneAvailable(nextLane, clearance, merging: true))
             car.PitLane = nextLane;
-        else if (departing)
+        else if (departing && !singleThroughLane)
             return 0f;
+
 
         foreach (var other in field)
         {
-            if (other == car || !other.InPit || Mathf.Abs(other.PitLane - car.PitLane) >= 1.85f)
+            if (other == car || !other.InPit || other.BackExit || (other.FrontEntry != car.FrontEntry && Mathf.Min(other.PitDistance, car.PitDistance) < frontJoin) || Mathf.Abs(other.PitLane - car.PitLane) >= 1.85f)
                 continue;
             float gap = other.PitDistance - car.PitDistance;
             if (gap > 0f || (gap == 0f && other.FieldIndex < index))
                 speed = Mathf.Min(speed, Mathf.Max(0f, gap - clearance) / seconds);
         }
 
-        return speed;
+        return singleThroughLane && departing ? Mathf.Min(speed, 4f) : speed;
 
         bool LaneAvailable(float lane, float ahead, bool merging = false)
         {
             foreach (var other in field)
             {
-                if (other == car || !other.InPit)
+                if (other == car || !other.InPit || other.BackExit || (other.FrontEntry != car.FrontEntry && Mathf.Min(other.PitDistance, car.PitDistance) < frontJoin))
                     continue;
                 float gap = other.PitDistance - car.PitDistance;
                 float separation = Mathf.Abs(other.PitLane - lane);
@@ -200,7 +256,35 @@ internal sealed class TrackPitTraffic
                 car.TrackDistance = car.NextEntry;
                 car.NextEntry = float.PositiveInfinity;
                 car.PitDistance = 0f;
+                car.FrontEntry = UsesFrontEntry(car);
+                car.BackExit = false;
+                car.ConnectorDistance = 0f;
                 car.InPit = true;
+                continue;
+            }
+
+            if (car.BackExit)
+            {
+                float travel = Mathf.Min(backExitLength - car.ConnectorDistance, seconds * trackSpeed);
+                foreach (var other in field)
+                {
+                    if (!other.InPit || !other.BackExit || other == car)
+                        continue;
+                    float gap = other.ConnectorDistance - car.ConnectorDistance;
+                    if (gap > 0f || (gap == 0f && other.FieldIndex < car.FieldIndex))
+                        travel = Mathf.Min(travel, Mathf.Max(0f, gap - 3.4f));
+                }
+                float exitLane = car.ConnectorEntryLane * (1f - Mathf.Clamp01((car.ConnectorDistance + travel) / backExitLength));
+                car.PitLane = Mathf.MoveTowards(car.PitLane, exitLane, 3f * seconds);
+                car.ConnectorDistance += travel;
+                car.Odometer += travel;
+                if (car.ConnectorDistance < backExitLength)
+                    return;
+                seconds -= travel / trackSpeed;
+                car.BackExit = false;
+                car.InPit = false;
+                car.TrackDistance += Mathf.Repeat(backExit - entryDistance, lapLength);
+                car.LastExit = car.TrackDistance;
                 continue;
             }
 
@@ -209,11 +293,27 @@ internal sealed class TrackPitTraffic
             speed = TrafficSpeed(car, seconds, speed, stopAt);
             bool stopInSegment = stopAt >= car.PitDistance && stopAt <= boundaries[segment];
             float target = stopInSegment ? stopAt : boundaries[segment];
-            float remaining = target - car.PitDistance;
+            bool takeBackExit = CanUseBackExit(car, stopAt) && backLeave <= target;
+            if (takeBackExit)
+            {
+                target = backLeave;
+                foreach (var other in field)
+                {
+                    if (other.InPit && other.BackExit)
+                        target = Mathf.Min(target, Mathf.Max(car.PitDistance, backLeave + other.ConnectorDistance - 3.4f));
+                }
+                takeBackExit = target == backLeave;
+            }
+            bool waitingForBackExit = !takeBackExit && target < (stopInSegment ? stopAt : boundaries[segment]);
+            float distanceScale = car.FrontEntry && car.PitDistance < frontJoin
+                ? frontEntryLength / frontJoin : 1f;
+            if (distanceScale != 1f && target > frontJoin)
+                target = frontJoin;
+            float remaining = (target - car.PitDistance) * distanceScale;
             if (remaining > speed * seconds)
             {
                 car.Odometer += speed * seconds;
-                car.PitDistance += speed * seconds;
+                car.PitDistance += speed * seconds / distanceScale;
                 return;
             }
 
@@ -222,13 +322,24 @@ internal sealed class TrackPitTraffic
             seconds -= remaining / speed;
             car.Odometer += remaining;
             car.PitDistance = target;
+            if (waitingForBackExit)
+                return;
+            if (takeBackExit)
+            {
+                car.BackExit = true;
+                car.ConnectorDistance = 0f;
+                car.ConnectorEntryLane = car.PitLane;
+                continue;
+            }
+            if (target < (stopInSegment ? stopAt : boundaries[segment]))
+                continue;
             if (stopInSegment)
                 return;
 
             if (segment == 2)
             {
                 car.InPit = false;
-                car.TrackDistance += bypassDistance;
+                car.TrackDistance += car.FrontEntry ? Mathf.Repeat(ExitDistance - frontEntry, lapLength) : bypassDistance;
                 car.LastExit = car.TrackDistance;
             }
         }

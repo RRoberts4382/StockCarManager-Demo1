@@ -30,7 +30,7 @@ internal sealed class SessionPitStops
     }
 
     public bool CanRequest(RaceSessionRun run) =>
-        run.RemainingRaceMeters > 0 && !run.Finished(0) && !stops[0].Requested && !stops[0].Servicing && run.Fuel(0) > 0;
+        (run.IsRace ? run.RemainingRaceMeters > 0 : run.Remaining > 0) && !run.Finished(0) && !run.Retired(0) && !stops[0].Requested && !stops[0].Servicing && run.Fuel(0) > 0;
 
     public string PlayerStatus { get; private set; } = string.Empty;
 
