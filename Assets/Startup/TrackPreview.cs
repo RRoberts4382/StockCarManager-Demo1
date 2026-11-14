@@ -485,12 +485,15 @@ public sealed class TrackPreview : MonoBehaviour
         };
         for (int i = 0; i < entries.Length; i++)
         {
+            string teamName = i == 0 ? career.teamName : RivalTeams[(i - 1) / 3];
+            var driver = i == 0 ? career.Driver : career.RivalDriver(teamName, rivalDrivers[i - 1]);
             entries[i] = new SessionCarResult
             {
                 car = i == 0 ? playerCar : career.rivalCars.Find(item => item.number == i),
                 carNumber = i == 0 ? playerCar.number : i < playerCar.number ? i : i + 1,
-                driverName = i == 0 ? career.Driver?.FullName ?? career.playerName : rivalDrivers[i - 1],
-                teamName = i == 0 ? career.teamName : RivalTeams[(i - 1) / 3]
+                driver = driver,
+                driverName = driver?.FullName ?? (i == 0 ? career.playerName : rivalDrivers[i - 1]),
+                teamName = teamName
             };
         }
         return entries;

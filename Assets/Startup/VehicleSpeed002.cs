@@ -3,8 +3,8 @@ using System;
 internal sealed class VehicleSpeed002 : IVehicleSpeedModel
 {
     private const float ReferenceSpeed = 63f;
-    private const float ReferenceRating = 1f;
-    private const float SpeedPerRatingPoint = 0.5f;
+    private const float ReferenceEffectiveValue = 1f;
+    private const float SpeedPerEffectiveValuePoint = 0.5f;
 
     public string Id => "vehicle-speed-002";
     public string Name => "VehicleSpeed002";
@@ -20,12 +20,12 @@ internal sealed class VehicleSpeed002 : IVehicleSpeedModel
             return reference;
 
         float weightedPerformance =
-            weights.aerodynamics * (car.GetComponent(CarComponent.Aerodynamics).EffectiveValue - ReferenceRating) +
-            weights.horsepower * (car.GetComponent(CarComponent.Engine).EffectiveValue - ReferenceRating) +
-            weights.brakes * (car.GetComponent(CarComponent.Brakes).EffectiveValue - ReferenceRating) +
-            weights.suspension * (car.GetComponent(CarComponent.Suspension).EffectiveValue - ReferenceRating);
+            weights.aerodynamics * (car.GetComponent(CarComponent.Aerodynamics).EffectiveValue - ReferenceEffectiveValue) +
+            weights.horsepower * (car.GetComponent(CarComponent.Engine).EffectiveValue - ReferenceEffectiveValue) +
+            weights.brakes * (car.GetComponent(CarComponent.Brakes).EffectiveValue - ReferenceEffectiveValue) +
+            weights.suspension * (car.GetComponent(CarComponent.Suspension).EffectiveValue - ReferenceEffectiveValue);
 
-        return reference + SpeedPerRatingPoint * weightedPerformance;
+        return reference + SpeedPerEffectiveValuePoint * weightedPerformance;
     }
 
     public float LapSpeedFactor(CarSimulationContext context, int carIndex, Random random) =>

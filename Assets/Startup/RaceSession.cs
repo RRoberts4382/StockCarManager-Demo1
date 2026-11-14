@@ -86,6 +86,7 @@ internal sealed class RaceSession
 internal sealed class SessionCarResult
 {
     [NonSerialized] public TeamCar car;
+    [NonSerialized] public Driver driver;
     public double Fuel = SessionFuel.TankCapacity;
     [NonSerialized] public double InstantSpeed;
     public string carName = string.Empty;

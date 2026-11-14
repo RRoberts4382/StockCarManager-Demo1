@@ -13,17 +13,17 @@ internal sealed class EmployeePortraits : IDisposable
     private readonly Dictionary<(int Atlas, int Tile, bool Mirror, Color32 Fabric, Color32 Trim), Texture2D> portraits =
         new Dictionary<(int, int, bool, Color32, Color32), Texture2D>();
 
-    public Texture2D Get(Employee employee, Color32 fabric, Color32 trim)
+    public Texture2D Get(string fullName, int age, string gender, string city, string state, Color32 fabric, Color32 trim)
     {
         uint identity = 2166136261;
-        string description = $"{employee.FullName}|{employee.age}|{employee.gender}|{employee.hometownCity}|{employee.hometownState}";
+        string description = $"{fullName}|{age}|{gender}|{city}|{state}";
         foreach (char character in description)
             identity = unchecked((identity ^ character) * 16777619);
 
         int atlasIndex = (int)(identity % (uint)atlases.Length);
         bool mirror = (identity & 2) != 0;
-        int row = employee.gender == "Woman" ? 0 : employee.gender == "Man" ? 1 : 2;
-        int column = employee.age < 29 ? 0 : employee.age < 40 ? 1 : employee.age < 54 ? 2 : 3;
+        int row = gender == "Woman" ? 0 : gender == "Man" ? 1 : 2;
+        int column = age < 29 ? 0 : age < 40 ? 1 : age < 54 ? 2 : 3;
         var key = (atlasIndex, row * Columns + column, mirror, fabric, trim);
         if (portraits.TryGetValue(key, out var portrait))
             return portrait;

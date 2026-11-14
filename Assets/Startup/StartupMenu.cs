@@ -23,10 +23,11 @@ public sealed class StartupMenu : MonoBehaviour
     private Button addTeamCarButton;
     private TeamCar selectedTeamCar;
     private readonly CarThumbnails carThumbnails = new CarThumbnails();
-    private Employee selectedEmployee;
+    private System.Action pendingDismissal;
     private readonly EmployeePortraits employeePortraits = new EmployeePortraits();
     private static readonly EmployeeRole[] EmployeeRoles =
-        (EmployeeRole[])System.Enum.GetValues(typeof(EmployeeRole));
+        System.Enum.GetValues(typeof(EmployeeRole)).Cast<EmployeeRole>()
+            .Where(role => role != EmployeeRole.Driver).ToArray();
     private int previewCarNumber;
     private Button startRaceButton;
     private Button simulateEventButton;
@@ -184,27 +185,21 @@ public sealed class StartupMenu : MonoBehaviour
         simulateEventButton = garageScreen.Q<Button>("simulateEventButton");
         simulateEventButton.clicked += SimulateEvent;
         garageScreen.Q<Button>("eventCarPicker").clicked += ShowRaceCarPicker;
-        garageScreen.Q<Button>("carPaintButton").clicked += ShowCarPaint;
         garageScreen.Q<Button>("carOptionsClose").clicked += CloseCarOptions;
         scheduleTrackOutline = garageScreen.Q("scheduleTrackOutline");
         scheduleTrackOutline.generateVisualContent += DrawScheduleTrackOutline;
         addTeamCarButton = garageScreen.Q<Button>("addTeamCarButton");
         addTeamCarButton.clicked += OpenCarMarket;
-        garageScreen.Q<Button>("fireEmployeeButton").clicked += PromptFireEmployee;
         garageScreen.Q<Button>("recruitEmployeeButton").clicked += OpenRecruitment;
+        garageScreen.Q<Button>("recruitDriverButton").clicked += OpenDriverRecruitment;
         garageScreen.Q<Button>("recruitmentBackButton").clicked += CloseRecruitment;
         var recruitmentFilter = garageScreen.Q<DropdownField>("recruitmentPositionFilter");
         recruitmentFilter.choices = new[] { "All positions" }.Concat(EmployeeRoles.Select(Employee.NameOf)).ToList();
         recruitmentFilter.SetValueWithoutNotify(recruitmentFilter.choices[0]);
         recruitmentFilter.RegisterValueChangedCallback(_ => DisplayRecruitment(resetScroll: true));
         garageScreen.Q<Button>("cancelFireEmployeeButton").clicked += CancelFireEmployee;
-        garageScreen.Q<Button>("confirmFireEmployeeButton").clicked += FireEmployee;
-        var rolePicker = garageScreen.Q<DropdownField>("employeeRolePicker");
-        rolePicker.choices = EmployeeRoles.Select(Employee.NameOf).ToList();
-        rolePicker.RegisterValueChangedCallback(_ => RefreshEmployeeRoleButton());
-        garageScreen.Q<Button>("assignEmployeeRoleButton").clicked += AssignEmployeeRole;
+        garageScreen.Q<Button>("confirmFireEmployeeButton").clicked += () => pendingDismissal?.Invoke();
         garageScreen.Q<Button>("carMarketBackButton").clicked += CloseCarMarket;
-        garageScreen.Q<Button>("repairUpgradeButton").clicked += OpenCarMaintenance;
         garageScreen.Q<Button>("carMaintenanceBackButton").clicked += CloseCarMarket;
         garageScreen.Q<Button>("buyNewChassisButton").clicked += BuyNewChassis;
         raceViewport.RegisterCallback<WheelEvent>(ZoomTrack);
@@ -515,7 +510,7 @@ public sealed class StartupMenu : MonoBehaviour
         var season = activeCareer.schedule;
         var races = season.races ?? new List<ScheduledRace>();
         int finished = races.Count(race => race.completed);
-        long annualPayroll = activeCareer.employees.Sum(employee => employee.annualSalary);
+        long annualPayroll = activeCareer.AnnualPayroll;
         long payroll = races.Count > 0 && finished < races.Count
             ? RaceFinances.PayrollInstallment(annualPayroll, races.Count, finished + 1) : 0;
         long winnings = races.Where(race => race.completed && !race.playerSkipped).Sum(race =>
@@ -692,7 +687,6 @@ public sealed class StartupMenu : MonoBehaviour
         garageScreen.Q<Label>("careerPlayerLabel").text = string.IsNullOrEmpty(hometown)
             ? career.playerName : $"{career.playerName}  /  {hometown}";
         garageScreen.Q<Label>("careerSeriesLabel").text = careerSetup.SeriesName(career);
-        selectedEmployee = null;
         CancelFireEmployee();
         SetEmployeeStatus(null);
         RefreshDriverLabel(career);
@@ -758,22 +752,49 @@ public sealed class StartupMenu : MonoBehaviour
         int liveryNumber = career.cars[0].number;
         Vector2 scroll = roster.scrollOffset;
         roster.Clear();
+        foreach (var driver in career.drivers)
+        {
+            var card = new VisualElement();
+            card.AddToClassList("employee-card");
+            var portrait = CreateStaffPortrait(driver.FullName, driver.age, driver.gender,
+                driver.hometownCity, driver.hometownState, liveryNumber, "employee-portrait");
+            if (portrait != null)
+                card.Add(portrait);
+            card.Add(new Label($"{driver.FullName} · Driver"));
+            card.Add(new Label($"{driver.age}, {driver.gender} · {driver.hometownCity}, {driver.hometownState}"));
+            card.Add(new Label($"{RaceFinances.Dollars(driver.annualSalary)} per year"));
+            card.Add(new Label($"Aggression {driver.personalityTraits.aggression:P0}"));
+            AddFireButton(card, "Fire Driver", driver.FullName, career.drivers, driver);
+            roster.Add(card);
+        }
         foreach (var employee in career.employees)
         {
-            var card = new Button(() =>
-            {
-                selectedEmployee = employee;
-                CancelFireEmployee();
-                SetEmployeeStatus(null);
-                RefreshEmployeeSelection(roster);
-            }) { userData = employee };
+            var card = new VisualElement();
             card.AddToClassList("employee-card");
-            card.AddToClassList("nav-button");
             AddEmployeeCardDetails(card, employee, liveryNumber);
+            AddFireButton(card, "Fire Employee", $"{employee.FullName}, {employee.RoleName}", career.employees, employee);
             roster.Add(card);
         }
         roster.schedule.Execute(() => roster.scrollOffset = scroll);
-        RefreshEmployeeSelection(roster);
+        settings?.RestorePalette();
+    }
+
+    private void AddFireButton<T>(VisualElement card, string label, string name, List<T> roster, T person)
+    {
+        var actions = new VisualElement();
+        actions.AddToClassList("staff-card-actions");
+        var button = new Button(() =>
+        {
+            SetEmployeeStatus(null);
+            pendingDismissal = () => DismissStaff(roster, person, name);
+            garageScreen.Q<Label>("fireEmployeeQuestion").text = $"Fire {name}?";
+            garageScreen.Q("fireEmployeePrompt").style.display = DisplayStyle.Flex;
+            garageScreen.Q<Button>("cancelFireEmployeeButton").Focus();
+        }) { text = label };
+        button.AddToClassList("nav-button");
+        button.AddToClassList("staff-card-fire-button");
+        actions.Add(button);
+        card.Add(actions);
     }
 
     private void AddEmployeeCardDetails(VisualElement card, Employee employee, int liveryNumber)
@@ -802,10 +823,15 @@ public sealed class StartupMenu : MonoBehaviour
         }
     }
 
-    private Image CreateEmployeePortrait(Employee employee, int liveryNumber, string styleClass)
+    private Image CreateEmployeePortrait(Employee employee, int liveryNumber, string styleClass) =>
+        CreateStaffPortrait(employee.FullName, employee.age, employee.gender, employee.hometownCity,
+            employee.hometownState, liveryNumber, styleClass);
+
+    private Image CreateStaffPortrait(string fullName, int age, string gender, string city, string state,
+        int liveryNumber, string styleClass)
     {
         var livery = TrackPreview.TeamLivery(liveryNumber);
-        var texture = employeePortraits.Get(employee, livery.RoofAndSides, livery.HoodAndTrunk);
+        var texture = employeePortraits.Get(fullName, age, gender, city, state, livery.RoofAndSides, livery.HoodAndTrunk);
         if (texture == null)
             return null;
 
@@ -821,8 +847,40 @@ public sealed class StartupMenu : MonoBehaviour
         return candidate;
     }
 
+    private bool recruitingDrivers;
+
+    private void OpenDriverRecruitment()
+    {
+        if (HasDriver(activeCareer))
+            return;
+
+        recruitingDrivers = true;
+        activeCareer.driverCandidates ??= new List<Driver>();
+        var candidates = activeCareer.driverCandidates;
+        int previousCount = candidates.Count;
+        var random = new System.Random();
+        while (candidates.Count < 10)
+            candidates.Add(Driver.Create(random, null));
+
+        string message = null;
+        if (candidates.Count != previousCount)
+        {
+            try
+            {
+                careerSetup.SaveProgress(activeCareer);
+            }
+            catch (System.Exception ex) when (ex is IOException || ex is System.UnauthorizedAccessException)
+            {
+                candidates.RemoveRange(previousCount, candidates.Count - previousCount);
+                message = "Could not save driver candidates. " + ex.Message;
+            }
+        }
+        ShowRecruitment(message);
+    }
+
     private void OpenRecruitment()
     {
+        recruitingDrivers = false;
         CancelFireEmployee();
         var career = activeCareer;
         career.recruitCandidates ??= new List<Employee>();
@@ -850,11 +908,18 @@ public sealed class StartupMenu : MonoBehaviour
             }
         }
 
+        ShowRecruitment(message);
+    }
+
+    private void ShowRecruitment(string message)
+    {
+        CancelFireEmployee();
         garageScreen.Q("garageBody").style.display = DisplayStyle.None;
         garageScreen.Q("employeesPage").style.display = DisplayStyle.None;
         garageScreen.Q("recruitmentPage").style.display = DisplayStyle.Flex;
+        garageScreen.Q("recruitmentPositionFilter").style.display = recruitingDrivers ? DisplayStyle.None : DisplayStyle.Flex;
         garageScreen.Q("garageFooter").SetEnabled(false);
-        DisplayRecruitment(message);
+        DisplayRecruitment(message, resetScroll: true);
         garageScreen.Q<Button>("recruitmentBackButton").Focus();
     }
 
@@ -862,7 +927,8 @@ public sealed class StartupMenu : MonoBehaviour
     {
         int employeesPage = System.Array.FindIndex(garagePages, page => page.name == "employeesPage");
         DisplayGaragePage(employeesPage);
-        garageScreen.Q<Button>("recruitEmployeeButton").Focus();
+        garageScreen.Q<Button>(recruitingDrivers && !HasDriver(activeCareer)
+            ? "recruitDriverButton" : "recruitEmployeeButton").Focus();
     }
 
     private void DisplayRecruitment(string message = null, bool resetScroll = false)
@@ -871,12 +937,13 @@ public sealed class StartupMenu : MonoBehaviour
         Vector2 scroll = resetScroll ? Vector2.zero : roster.scrollOffset;
         roster.Clear();
         int filterIndex = garageScreen.Q<DropdownField>("recruitmentPositionFilter").index;
-        var candidates = activeCareer.recruitCandidates
+        var candidates = recruitingDrivers ? System.Array.Empty<Employee>() : activeCareer.recruitCandidates
             .Where(candidate => filterIndex <= 0 || candidate.role == EmployeeRoles[filterIndex - 1])
             .OrderBy(candidate => candidate.role).ThenBy(candidate => candidate.FullName).ToArray();
 
+        var drivers = recruitingDrivers ? activeCareer.driverCandidates.OrderBy(candidate => candidate.FullName).ToArray() : System.Array.Empty<Driver>();
         var status = garageScreen.Q<Label>("recruitmentStatus");
-        status.text = message ?? (candidates.Length == 0 ? "No candidates available for this position." : string.Empty);
+        status.text = message ?? (candidates.Length + drivers.Length == 0 ? "No candidates available." : string.Empty);
         status.style.display = string.IsNullOrEmpty(status.text) ? DisplayStyle.None : DisplayStyle.Flex;
 
         var heading = MakeRow();
@@ -884,41 +951,57 @@ public sealed class StartupMenu : MonoBehaviour
         heading.Add(new VisualElement());
         heading[0].AddToClassList("recruitment-photo-cell");
         AddCell(heading, "Candidate", "recruitment-candidate");
-        AddCell(heading, "Desired position");
-        AddCell(heading, "Skills", "recruitment-skills");
+        if (!recruitingDrivers)
+            AddCell(heading, "Desired position");
+        AddCell(heading, recruitingDrivers ? "Personality" : "Skills", "recruitment-skills");
         AddCell(heading, "Annual salary");
         var actionSpace = new VisualElement();
         actionSpace.AddToClassList("recruitment-action");
         heading.Add(actionSpace);
         roster.Add(heading);
 
+        foreach (var driver in drivers)
+        {
+            var portrait = CreateStaffPortrait(driver.FullName, driver.age, driver.gender, driver.hometownCity,
+                driver.hometownState, activeCareer.cars[0].number, "recruitment-portrait");
+            AddCandidate(portrait, driver.FullName, driver.age, driver.gender, driver.hometownCity, driver.hometownState,
+                null, $"Aggression {driver.personalityTraits.aggression:P0}", driver.annualSalary, () => HireDriver(driver));
+        }
+
         foreach (var candidate in candidates)
+        {
+            AddCandidate(CreateEmployeePortrait(candidate, candidate.recruitLiveryNumber, "recruitment-portrait"),
+                candidate.FullName, candidate.age, candidate.gender, candidate.hometownCity, candidate.hometownState,
+                candidate.RoleName, $"Engines {candidate.engines:F2}  /  Suspensions {candidate.suspensions:F2}\n" +
+                $"Transmissions {candidate.transmissions:F2}  /  Bodywork {candidate.bodywork:F2}\nBrakes {candidate.brakes:F2}",
+                candidate.annualSalary, () => HireEmployee(candidate));
+        }
+
+        roster.schedule.Execute(() => roster.scrollOffset = scroll);
+        settings?.RestorePalette();
+
+        void AddCandidate(Image portrait, string name, int age, string gender, string city, string state,
+            string role, string details, long salary, System.Action hireCandidate)
         {
             var row = MakeRow();
             var photo = new VisualElement();
             photo.AddToClassList("recruitment-photo-cell");
-            var portrait = CreateEmployeePortrait(candidate, candidate.recruitLiveryNumber, "recruitment-portrait");
             if (portrait != null)
                 photo.Add(portrait);
             row.Add(photo);
-            AddCell(row, $"{candidate.FullName}\n{candidate.age} / {candidate.gender}\n{candidate.hometownCity}, {candidate.hometownState}",
-                "recruitment-candidate");
-            AddCell(row, candidate.RoleName);
-            AddCell(row, $"Engines {candidate.engines:F2}  /  Suspensions {candidate.suspensions:F2}\n" +
-                $"Transmissions {candidate.transmissions:F2}  /  Bodywork {candidate.bodywork:F2}\nBrakes {candidate.brakes:F2}",
-                "recruitment-skills");
-            AddCell(row, RaceFinances.Dollars(candidate.annualSalary));
+            AddCell(row, $"{name}\n{age} / {gender}\n{city}, {state}", "recruitment-candidate");
+            if (role != null)
+                AddCell(row, role);
+            AddCell(row, details, "recruitment-skills");
+            AddCell(row, RaceFinances.Dollars(salary));
             var action = new VisualElement();
             action.AddToClassList("recruitment-action");
-            var hire = new Button(() => HireEmployee(candidate)) { text = "Hire" };
+            var hire = new Button(hireCandidate) { text = "Hire" };
             hire.AddToClassList("nav-button");
             action.Add(hire);
             row.Add(action);
             roster.Add(row);
         }
-
-        roster.schedule.Execute(() => roster.scrollOffset = scroll);
-        settings?.RestorePalette();
 
         VisualElement MakeRow()
         {
@@ -937,6 +1020,37 @@ public sealed class StartupMenu : MonoBehaviour
                 cell.AddToClassList(styleClass);
             row.Add(cell);
         }
+    }
+
+    private void HireDriver(Driver candidate)
+    {
+        var career = activeCareer;
+        if (HasDriver(career))
+            return;
+
+        int index = career.driverCandidates.IndexOf(candidate);
+        if (index < 0)
+            return;
+
+        career.driverCandidates[index] = Driver.Create(new System.Random(), null);
+        career.drivers.Add(candidate);
+        try
+        {
+            careerSetup.SaveProgress(career);
+        }
+        catch (System.Exception ex) when (ex is IOException || ex is System.UnauthorizedAccessException)
+        {
+            career.drivers.Remove(candidate);
+            career.driverCandidates[index] = candidate;
+            DisplayRecruitment("Could not save the hire. " + ex.Message);
+            return;
+        }
+
+        DisplayEmployees(career);
+        RefreshDriverLabel(career);
+        RefreshSchedule();
+        CloseRecruitment();
+        SetEmployeeStatus($"{candidate.FullName} was hired as a driver.");
     }
 
     private void HireEmployee(Employee candidate)
@@ -961,114 +1075,41 @@ public sealed class StartupMenu : MonoBehaviour
             return;
         }
 
-        selectedEmployee = candidate;
         DisplayEmployees(career);
         RefreshDriverLabel(career);
         RefreshSchedule();
         DisplayRecruitment($"{candidate.FullName} was hired as {candidate.RoleName}.");
     }
 
-    private void RefreshEmployeeSelection(ScrollView roster)
-    {
-        roster.Query<Button>(className: "employee-card").ForEach(card =>
-            card.EnableInClassList("nav-button-selected", card.userData == selectedEmployee));
-        var rolePicker = garageScreen.Q<DropdownField>("employeeRolePicker");
-        rolePicker.SetEnabled(selectedEmployee != null);
-        rolePicker.SetValueWithoutNotify(selectedEmployee?.RoleName);
-        RefreshEmployeeRoleButton();
-        garageScreen.Q<Button>("fireEmployeeButton").SetEnabled(CanFireEmployee);
-        settings?.RestorePalette();
-    }
-
-    private void RefreshEmployeeRoleButton()
-    {
-        int index = garageScreen.Q<DropdownField>("employeeRolePicker").index;
-        garageScreen.Q<Button>("assignEmployeeRoleButton").SetEnabled(selectedEmployee != null &&
-            index >= 0 && EmployeeRoles[index] != selectedEmployee.role);
-    }
-
-    private void AssignEmployeeRole()
-    {
-        var employee = selectedEmployee;
-        int index = garageScreen.Q<DropdownField>("employeeRolePicker").index;
-        if (employee == null || !activeCareer.employees.Contains(employee) || index < 0 || EmployeeRoles[index] == employee.role)
-            return;
-
-        var oldRole = employee.role;
-        long oldSalary = employee.annualSalary;
-        var newRole = EmployeeRoles[index];
-        employee.annualSalary = employee.SalaryForRole(newRole);
-        employee.role = newRole;
-        try
-        {
-            careerSetup.SaveProgress(activeCareer);
-        }
-        catch (System.Exception ex) when (ex is IOException || ex is System.UnauthorizedAccessException)
-        {
-            employee.role = oldRole;
-            employee.annualSalary = oldSalary;
-            DisplayEmployees(activeCareer);
-            SetEmployeeStatus("Could not save the position change. " + ex.Message);
-            return;
-        }
-
-        CancelFireEmployee();
-        DisplayEmployees(activeCareer);
-        RefreshDriverLabel(activeCareer);
-        RefreshSchedule();
-        SetEmployeeStatus($"{employee.FullName} is now {employee.RoleName} at {RaceFinances.Dollars(employee.annualSalary)} per year.");
-    }
-
-    private bool CanFireEmployee => selectedEmployee != null && activeCareer?.employees.Count > 1 &&
-        activeCareer.employees.Contains(selectedEmployee);
-
-    private void PromptFireEmployee()
-    {
-        if (!CanFireEmployee)
-            return;
-
-        string message = $"Fire {selectedEmployee.FullName}, {selectedEmployee.RoleName}?";
-        if (selectedEmployee.role == EmployeeRole.Driver && activeCareer.employees.Count(employee => employee.role == EmployeeRole.Driver) == 1)
-            message += " Your team will need a driver to enter another race.";
-        garageScreen.Q<Label>("fireEmployeeQuestion").text = message;
-        garageScreen.Q("fireEmployeePrompt").style.display = DisplayStyle.Flex;
-        garageScreen.Q<Button>("fireEmployeeButton").SetEnabled(false);
-        garageScreen.Q<Button>("cancelFireEmployeeButton").Focus();
-    }
-
     private void CancelFireEmployee()
     {
+        pendingDismissal = null;
         garageScreen.Q("fireEmployeePrompt").style.display = DisplayStyle.None;
-        garageScreen.Q<Button>("fireEmployeeButton").SetEnabled(CanFireEmployee);
     }
 
-    private void FireEmployee()
+    private void DismissStaff<T>(List<T> roster, T person, string name)
     {
-        if (!CanFireEmployee || garageScreen.Q("fireEmployeePrompt").style.display == DisplayStyle.None)
+        CancelFireEmployee();
+        int index = roster.IndexOf(person);
+        if (index < 0)
             return;
 
-        var employee = selectedEmployee;
-        var employees = activeCareer.employees;
-        int index = employees.IndexOf(employee);
-        employees.RemoveAt(index);
+        roster.RemoveAt(index);
         try
         {
             careerSetup.SaveProgress(activeCareer);
         }
         catch (System.Exception ex) when (ex is IOException || ex is System.UnauthorizedAccessException)
         {
-            employees.Insert(index, employee);
-            CancelFireEmployee();
+            roster.Insert(index, person);
             SetEmployeeStatus("Could not save the dismissal. " + ex.Message);
             return;
         }
 
-        selectedEmployee = null;
-        CancelFireEmployee();
         DisplayEmployees(activeCareer);
         RefreshDriverLabel(activeCareer);
         RefreshSchedule();
-        SetEmployeeStatus($"{employee.FullName} was dismissed.");
+        SetEmployeeStatus($"{name} was dismissed.");
     }
 
     private void SetEmployeeStatus(string message)
@@ -1082,6 +1123,7 @@ public sealed class StartupMenu : MonoBehaviour
 
     private void RefreshDriverLabel(Career career)
     {
+        garageScreen.Q<Button>("recruitDriverButton").SetEnabled(!HasDriver(career));
         string driver = career.Driver?.FullName ?? "No driver";
         garageScreen.Q<Label>("homeDriverLabel").text = $"{career.cars[0].DisplayName}  /  {driver}";
     }
@@ -1113,14 +1155,14 @@ public sealed class StartupMenu : MonoBehaviour
 
         string previous = activeCareer.currentDate;
         activeCareer.SetDate(date.AddDays(1));
-        var undoRepairs = CompleteDueRepairs();
+        var undoRepairs = UpdateCareerRepairs();
         try
         {
             careerSetup.SaveProgress(activeCareer);
         }
         catch (System.Exception ex) when (ex is IOException || ex is System.UnauthorizedAccessException)
         {
-            undoRepairs();
+            undoRepairs?.Invoke();
             activeCareer.currentDate = previous;
             Debug.LogWarning("Could not save the next day. " + ex.Message);
         }
@@ -1221,7 +1263,20 @@ public sealed class StartupMenu : MonoBehaviour
                 tab.Add(image);
             }
             tab.Add(new Label($"Chassis # {car.chassisNumber ?? "Unassigned"}") { pickingMode = PickingMode.Ignore });
-            rows.Add(tab);
+            var panel = new VisualElement();
+            panel.AddToClassList("car-panel");
+            panel.Add(tab);
+
+            var actions = new VisualElement();
+            actions.AddToClassList("car-panel-actions");
+            var repair = new Button(() => OpenCarMaintenance(car)) { text = "Repair/Upgrade" };
+            var paint = new Button(() => ShowCarPaint(car)) { text = "Paint" };
+            repair.AddToClassList("nav-button");
+            paint.AddToClassList("nav-button");
+            actions.Add(repair);
+            actions.Add(paint);
+            panel.Add(actions);
+            rows.Add(panel);
         }
         rows.schedule.Execute(() => rows.scrollOffset = scroll);
         DisplayCarRatings(selectedTeamCar);
@@ -1234,18 +1289,17 @@ public sealed class StartupMenu : MonoBehaviour
         var ratings = garageScreen.Q("teamCarRatings");
         ratings.Clear();
         AddDetail("Chassis number", car.chassisNumber ?? "Unassigned");
-        AddDetail("Component", "Rating", "Wear", "Level").AddToClassList("schedule-heading");
+        AddDetail("Component", "Level", "Wear").AddToClassList("schedule-heading");
         foreach (var component in TeamCar.Components)
         {
             var condition = car.GetComponent(component);
-            AddDetail(component.ToString(), condition.Rating.ToString("F2"), condition.Wear.ToString("P0"),
-                condition.Level.ToString());
+            AddDetail(component.ToString(), condition.Level.ToString(), condition.Wear.ToString("P0"));
             var repair = car.repairs?.Find(item => item.component == component);
             if (repair != null && Career.TryReadDate(activeCareer.currentDate, out var date))
                 AddDetail($"{component} repair", $"{ComponentRepair.FormatDuration(repair.RemainingHours(date))} remaining");
         }
 
-        VisualElement AddDetail(string name, string value, string wear = null, string level = null)
+        VisualElement AddDetail(string name, string value, string wear = null)
         {
             var row = new VisualElement();
             row.AddToClassList("car-rating-row");
@@ -1254,20 +1308,16 @@ public sealed class StartupMenu : MonoBehaviour
             label.AddToClassList("car-rating-name");
             row.Add(label);
 
-            var rating = new Label(value);
-            rating.AddToClassList("garage-detail");
-            row.Add(rating);
+            var valueLabel = new Label(value);
+            valueLabel.AddToClassList("garage-detail");
+            row.Add(valueLabel);
             if (wear != null)
             {
-                rating.AddToClassList("car-rating-value");
+                valueLabel.AddToClassList("car-rating-value");
                 var wearLabel = new Label(wear);
                 wearLabel.AddToClassList("garage-detail");
                 wearLabel.AddToClassList("car-rating-value");
                 row.Add(wearLabel);
-                var levelLabel = new Label(level);
-                levelLabel.AddToClassList("garage-detail");
-                levelLabel.AddToClassList("car-rating-value");
-                row.Add(levelLabel);
             }
 
             ratings.Add(row);
@@ -1316,12 +1366,9 @@ public sealed class StartupMenu : MonoBehaviour
         settings?.RestorePalette();
     }
 
-    private void ShowCarPaint()
+    private void ShowCarPaint(TeamCar car)
     {
-        var car = selectedTeamCar;
-        if (car == null)
-            return;
-
+        selectedTeamCar = car;
         var rows = OpenCarOptions($"Paint Colors • Chassis # {car.chassisNumber}");
         var paint = car.Paint;
         AddColor("Primary • Hood and trunk", paint.HoodAndTrunk, true);
@@ -1351,7 +1398,7 @@ public sealed class StartupMenu : MonoBehaviour
                 }
 
                 RefreshTeamCars();
-                ShowCarPaint();
+                ShowCarPaint(car);
 
                 void SetPaint(string value)
                 {
@@ -1378,16 +1425,15 @@ public sealed class StartupMenu : MonoBehaviour
         return button;
     }
 
-    private void OpenCarMaintenance()
+    private void OpenCarMaintenance(TeamCar car)
     {
-        if (selectedTeamCar == null)
-            return;
+        selectedTeamCar = car;
 
         garageScreen.Q("garageBody").style.display = DisplayStyle.None;
         garageScreen.Q("carMaintenancePage").style.display = DisplayStyle.Flex;
         garageScreen.Q("garageFooter").SetEnabled(false);
         garageScreen.Q<ScrollView>("carMaintenanceComponents").scrollOffset = Vector2.zero;
-        DisplayCarMaintenance(selectedTeamCar);
+        DisplayCarMaintenance(car);
         garageScreen.Q<Button>("carMaintenanceBackButton").Focus();
     }
 
@@ -1410,7 +1456,7 @@ public sealed class StartupMenu : MonoBehaviour
             var row = new VisualElement();
             row.AddToClassList("garage-entry");
             var description = new Label($"{component}  •  Level {condition.Level}/{TeamCar.MaximumComponentLevel}  •  " +
-                $"Rating {condition.Rating:F2}  •  Wear {condition.Wear:P0}  •  Effective value {condition.EffectiveValue:F2}");
+                $"Wear {condition.Wear:P0}  •  Effective value {condition.EffectiveValue:F2}");
             description.AddToClassList("garage-detail");
             row.Add(description);
 
@@ -1501,7 +1547,8 @@ public sealed class StartupMenu : MonoBehaviour
     }
 
     private bool CanAssignRepair(Employee employee) =>
-        employee.role != EmployeeRole.Driver &&
+        (employee.role == EmployeeRole.GeneralMechanic ||
+            employee.RoleName.Contains("Specialist", System.StringComparison.Ordinal)) &&
         !activeCareer.cars.Any(car => car.repairs?.Any(repair =>
             string.IsNullOrEmpty(repair.employeeId) ? repair.employeeName == employee.FullName
                 : repair.employeeId == employee.repairAssigneeId) == true);
@@ -1583,56 +1630,177 @@ public sealed class StartupMenu : MonoBehaviour
         DisplayCarMaintenance(car, message);
     }
 
-    private System.Action CompleteDueRepairs()
+    private System.Action UpdateCareerRepairs()
     {
-        var completed = new List<(TeamCar Car, ComponentRepair Repair, float Wear)>();
-        if (Career.TryReadDate(activeCareer.currentDate, out var date))
+        if (!Career.TryReadDate(activeCareer.currentDate, out var date))
+            return null;
+
+        var undoCompleted = CompleteDueRepairs(activeCareer.cars.Concat(activeCareer.rivalCars), date);
+        var undoScheduled = ScheduleRivalRepairs(date);
+        return () =>
         {
-            foreach (var car in activeCareer.cars)
+            undoScheduled();
+            undoCompleted?.Invoke();
+        };
+    }
+
+    private static System.Action CompleteDueRepairs(IEnumerable<TeamCar> cars, System.DateTime date)
+    {
+        var completed = new List<(TeamCar Car, ComponentRepair Repair, float Wear, int Index)>();
+        foreach (var car in cars)
+        {
+            if (car.repairs == null)
+                continue;
+            for (int index = car.repairs.Count - 1; index >= 0; index--)
             {
-                if (car.repairs == null)
+                var repair = car.repairs[index];
+                if (!Career.TryReadDate(repair.completionDate, out var due) || due > date)
                     continue;
-                for (int index = car.repairs.Count - 1; index >= 0; index--)
+                completed.Add((car, repair, car.ComponentWear(repair.component), index));
+                car.ComponentWear(repair.component) = 0;
+                car.repairs.RemoveAt(index);
+            }
+        }
+
+        if (completed.Count == 0)
+            return null;
+
+        return () =>
+        {
+            for (int i = completed.Count - 1; i >= 0; i--)
+            {
+                var (car, repair, wear, index) = completed[i];
+                car.ComponentWear(repair.component) = wear;
+                car.repairs.Insert(index, repair);
+            }
+        };
+    }
+
+    private System.Action ScheduleRivalRepairs(System.DateTime date)
+    {
+        var added = new List<(TeamCar Car, ComponentRepair Repair, Employee Employee, string PreviousId)>();
+        var entries = TrackPreview.CreateTimingEntries(activeCareer.cars[0], activeCareer);
+        foreach (var team in entries.Skip(1).Where(entry => entry.car != null).GroupBy(entry => entry.teamName))
+        {
+            var staff = activeCareer.rivalEmployees.Find(roster => roster.teamName == team.Key)?.employees;
+            if (staff == null)
+                continue;
+
+            var cars = team.Select(entry => entry.car).ToArray();
+            var currentRepairs = cars.Where(car => car.repairs != null).SelectMany(car => car.repairs).ToArray();
+            var available = staff.Where(employee => !currentRepairs.Any(repair =>
+                string.IsNullOrEmpty(repair.employeeId) ? repair.employeeName == employee.FullName :
+                    repair.employeeId == employee.repairAssigneeId)).ToList();
+            var jobs = cars.SelectMany(car => TeamCar.Components.Select(component =>
+                    (Car: car, Component: component, Wear: (float)car.ComponentWear(component))))
+                .Where(job => job.Wear > 0 && job.Car.repairs?.Any(repair => repair.component == job.Component) != true)
+                .OrderByDescending(job => job.Wear);
+
+            foreach (var (car, component, wear) in jobs)
+            {
+                var specialist = component switch
                 {
-                    var repair = car.repairs[index];
-                    if (!Career.TryReadDate(repair.completionDate, out var due) || due > date)
-                        continue;
-                    completed.Add((car, repair, car.ComponentWear(repair.component)));
-                    car.ComponentWear(repair.component) = 0;
-                    car.repairs.RemoveAt(index);
-                }
+                    CarComponent.Engine => EmployeeRole.EngineSpecialist,
+                    CarComponent.Transmission => EmployeeRole.TransmissionSpecialist,
+                    CarComponent.Brakes => EmployeeRole.BrakeSpecialist,
+                    CarComponent.Suspension => EmployeeRole.SuspensionSpecialist,
+                    _ => EmployeeRole.BodySpecialist
+                };
+                var employee = available.Where(person => person.role == specialist || person.role == EmployeeRole.GeneralMechanic)
+                    .OrderByDescending(person => person.role == specialist)
+                    .ThenByDescending(person => person.RepairSkill(component))
+                    .FirstOrDefault();
+                if (employee == null)
+                    continue;
+
+                int hours = ComponentRepair.EstimateHours(wear, employee.RepairSkill(component));
+                int days = (hours + 23) / 24;
+                if (date > System.DateTime.MaxValue.Date.AddDays(-days))
+                    continue;
+
+                string previousId = employee.repairAssigneeId;
+                if (string.IsNullOrEmpty(previousId))
+                    employee.repairAssigneeId = System.Guid.NewGuid().ToString("N");
+
+                var repair = new ComponentRepair
+                {
+                    component = component,
+                    employeeName = employee.FullName,
+                    employeeId = employee.repairAssigneeId,
+                    durationHours = hours,
+                    completionDate = date.AddDays(days).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+                };
+                car.repairs ??= new List<ComponentRepair>();
+                car.repairs.Add(repair);
+                added.Add((car, repair, employee, previousId));
+                available.Remove(employee);
             }
         }
 
         return () =>
         {
-            foreach (var (car, repair, wear) in completed)
+            foreach (var (car, repair, employee, previousId) in added)
             {
-                car.ComponentWear(repair.component) = wear;
-                car.repairs.Add(repair);
+                car.repairs.Remove(repair);
+                employee.repairAssigneeId = previousId;
             }
         };
+    }
+
+    private bool PrepareRivalCarsForEvent(ScheduledRace race, out string error)
+    {
+        error = null;
+        if (!Career.TryReadDate(race.date, out var date))
+            return true;
+
+        var undo = CompleteDueRepairs(activeCareer.rivalCars, date);
+        if (undo == null)
+            return true;
+
+        try
+        {
+            careerSetup.SaveProgress(activeCareer);
+            return true;
+        }
+        catch (System.Exception ex) when (ex is IOException || ex is System.UnauthorizedAccessException)
+        {
+            undo();
+            error = "Could not save rival repairs. " + ex.Message;
+            return false;
+        }
     }
 
     private void OpenCarMarket()
     {
         var career = activeCareer;
-        career.usedCars ??= new List<UsedCarListing>();
-        const int listingCount = 5;
-        int previousCount = career.usedCars.Count;
+        const int listingCount = 10;
+        const int refreshDays = 7;
+        var previousListings = career.usedCars ?? new List<UsedCarListing>();
+        string previousDate = career.usedCarInventoryDate;
+        bool dateKnown = Career.TryReadDate(career.currentDate, out var date);
+        bool refresh = dateKnown &&
+            (!Career.TryReadDate(previousDate, out var inventoryDate) || (date - inventoryDate).Days >= refreshDays);
+
         string message = null;
-        if (previousCount < listingCount)
+        career.usedCars = previousListings;
+        if (refresh || previousListings.Count < listingCount)
         {
+            var listings = refresh ? new List<UsedCarListing>() : new List<UsedCarListing>(previousListings);
             var random = new System.Random();
-            for (int i = previousCount; i < listingCount; i++)
-                career.usedCars.Add(UsedCarListing.Create(career.cars[0].number, random));
+            while (listings.Count < listingCount)
+                listings.Add(UsedCarListing.Create(career.cars[0].number, random));
+
+            career.usedCars = listings;
+            if (refresh)
+                career.usedCarInventoryDate = career.currentDate;
             try
             {
                 careerSetup.SaveProgress(career);
             }
             catch (System.Exception ex) when (ex is IOException || ex is System.UnauthorizedAccessException)
             {
-                career.usedCars.RemoveRange(previousCount, career.usedCars.Count - previousCount);
+                career.usedCars = previousListings;
+                career.usedCarInventoryDate = previousDate;
                 message = "Could not save used car listings. " + ex.Message;
             }
         }
@@ -1668,12 +1836,11 @@ public sealed class StartupMenu : MonoBehaviour
         }
         else
         {
-            AddListingRow(new[] { "Chassis number", "Engine", "Transmission", "Brakes", "Suspension", "Aerodynamics", "Price" });
+            AddListingRow(new[] { "Manufacturer", "Chassis Type", "Price" });
             foreach (var listing in career.usedCars)
             {
                 var car = listing.car;
-                AddListingRow(new[] { car.chassisNumber, car.engine.ToString("F2"), car.transmission.ToString("F2"),
-                    car.brakes.ToString("F2"), car.suspension.ToString("F2"), car.aerodynamics.ToString("F2"),
+                AddListingRow(new[] { car.manufacturer.ToString(), car.ChassisTypeName,
                     RaceFinances.Dollars(listing.price) }, listing);
             }
         }
@@ -1717,7 +1884,6 @@ public sealed class StartupMenu : MonoBehaviour
         var car = new TeamCar
         {
             number = activeCareer.cars[0].number,
-            performanceInitialized = true,
             componentWearInitialized = true
         };
         car.Initialize(new System.Random());
@@ -2158,6 +2324,9 @@ public sealed class StartupMenu : MonoBehaviour
             return false;
         }
 
+        if (!PrepareRivalCarsForEvent(race, out error))
+            return false;
+
         var results = new List<(RaceSession Session, List<SessionCarResult> Results)>();
         var qualifyingOrder = QualifyingOrder(race);
         foreach (var session in race.sessions.Where(session => !session.Completed))
@@ -2226,6 +2395,12 @@ public sealed class StartupMenu : MonoBehaviour
         if (car == null)
         {
             raceEventView.ShowSchedule("Choose a car that is available on race day.");
+            return;
+        }
+
+        if (!PrepareRivalCarsForEvent(activeRace, out string error))
+        {
+            raceEventView.ShowSchedule(error);
             return;
         }
 
@@ -2646,7 +2821,7 @@ public sealed class StartupMenu : MonoBehaviour
 
             if (!previouslyCompleted && race.completed)
             {
-                long annualPayroll = activeCareer.employees.Sum(employee => employee.annualSalary);
+                long annualPayroll = activeCareer.AnnualPayroll;
                 int completedRaces = season.races.Count(item => item.completed);
                 long installment = RaceFinances.PayrollInstallment(annualPayroll, season.races.Count, completedRaces);
                 activeCareer.teamBalance -= installment;
@@ -2695,7 +2870,7 @@ public sealed class StartupMenu : MonoBehaviour
 
             if (!previouslyCompleted && race.completed)
             {
-                undoRepairs = CompleteDueRepairs();
+                undoRepairs = UpdateCareerRepairs();
                 var standings = GetStandings(season);
                 int playerIndex = standings.FindIndex(car => car.Key.IsPlayer);
                 int rank = playerIndex >= 0 && standings[playerIndex].Value > 0

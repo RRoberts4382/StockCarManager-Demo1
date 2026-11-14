@@ -47,20 +47,40 @@ internal sealed class Career
     [NonSerialized] public string savePath;
 
     public List<UsedCarListing> usedCars = new List<UsedCarListing>();
+    public string usedCarInventoryDate;
     public List<Employee> employees;
     public List<TeamEmployees> rivalEmployees;
     public List<Employee> recruitCandidates;
-    public Employee Driver => employees?.Find(employee => employee.role == EmployeeRole.Driver);
+    public List<Driver> driverCandidates;
+    public bool playerRosterInitialized;
+    public List<Driver> drivers;
+    public Driver Driver => drivers?.FirstOrDefault();
+    public long AnnualPayroll => employees.Sum(employee => employee.annualSalary) +
+        (drivers?.Sum(driver => driver.annualSalary) ?? 0L);
 
     public bool InitializeEmployees(System.Random random)
     {
         bool changed = false;
-        if (employees == null || employees.Count == 0)
+        if (!playerRosterInitialized && (employees == null || employees.Count == 0))
         {
             employees = Employee.CreateStaff(random);
-            employees.Insert(0, Employee.Create(EmployeeRole.Driver, random, playerName, hometownCity, hometownState));
             changed = true;
         }
+
+        if (!playerRosterInitialized && (drivers == null || drivers.Count == 0))
+        {
+            drivers = MigrateDrivers(employees, random);
+            if (drivers.Count == 0)
+                drivers.Add(Driver.Create(random, playerName, hometownCity, hometownState));
+            changed = true;
+        }
+        employees ??= new List<Employee>();
+        drivers ??= new List<Driver>();
+        changed |= !playerRosterInitialized;
+        playerRosterInitialized = true;
+
+        if (recruitCandidates != null)
+            changed |= recruitCandidates.RemoveAll(candidate => candidate.role == EmployeeRole.Driver) > 0;
 
         if (rivalEmployees == null || rivalEmployees.Count == 0)
         {
@@ -68,14 +88,41 @@ internal sealed class Career
             var rivals = TrackPreview.CreateTimingEntries(cars[0], this).Skip(1).GroupBy(car => car.teamName);
             foreach (var team in rivals)
             {
-                var roster = team.Select(driver => Employee.Create(EmployeeRole.Driver, random, driver.driverName)).ToList();
-                roster.AddRange(Employee.CreateStaff(random));
-                rivalEmployees.Add(new TeamEmployees { teamName = team.Key, employees = roster });
+                rivalEmployees.Add(new TeamEmployees
+                {
+                    teamName = team.Key,
+                    drivers = team.Select(entry => Driver.Create(random, entry.driverName)).ToList(),
+                    employees = Employee.CreateStaff(random)
+                });
             }
             changed = true;
         }
+        foreach (var team in rivalEmployees)
+        {
+            if (team.drivers == null || (team.drivers.Count == 0 &&
+                team.employees?.Any(employee => employee.role == EmployeeRole.Driver) == true))
+            {
+                team.drivers = MigrateDrivers(team.employees, random);
+                changed = true;
+            }
+        }
+
         return changed;
     }
+
+    private static List<Driver> MigrateDrivers(List<Employee> staff, System.Random random)
+    {
+        if (staff == null)
+            return new List<Driver>();
+
+        var roster = staff.Where(employee => employee.role == EmployeeRole.Driver)
+            .Select(employee => Driver.FromEmployee(employee, random)).ToList();
+        staff.RemoveAll(employee => employee.role == EmployeeRole.Driver);
+        return roster;
+    }
+
+    public Driver RivalDriver(string teamName, string driverName) =>
+        rivalEmployees?.Find(team => team.teamName == teamName)?.drivers?.Find(driver => driver.FullName == driverName);
 
     public IEnumerable<TeamCar> AllCars => cars.Concat(rivalCars)
         .Concat(usedCars?.Select(listing => listing.car) ?? Enumerable.Empty<TeamCar>());
@@ -108,18 +155,16 @@ internal enum CarComponent { Engine, Transmission, Brakes, Suspension, Aerodynam
 
 internal readonly struct ComponentCondition
 {
-    public readonly float Rating;
     public readonly float Wear;
     public readonly int Level;
 
-    public ComponentCondition(float rating, float wear, int level)
+    public ComponentCondition(float wear, int level)
     {
-        Rating = rating;
         Wear = wear;
         Level = Mathf.Clamp(level, 1, TeamCar.MaximumComponentLevel);
     }
 
-    public float EffectiveValue => Rating - Wear + Level;
+    public float EffectiveValue => Level - Wear;
 }
 
 [Serializable]
@@ -162,6 +207,10 @@ internal sealed class ComponentRepair
     }
 }
 
+internal enum CarManufacturer { Chevrolet, Ford, Toyota }
+
+internal enum ChassisType { IntermediateTrack, RoadCourse, ShortTrack, SuperSpeedway }
+
 [Serializable]
 internal sealed class TeamCar
 {
@@ -202,6 +251,17 @@ internal sealed class TeamCar
     public List<ComponentRepair> repairs = new List<ComponentRepair>();
     public int number;
     public string chassisNumber;
+    public CarManufacturer manufacturer = CarManufacturer.Chevrolet;
+    public ChassisType chassisType = ChassisType.IntermediateTrack;
+
+    public string ChassisTypeName => chassisType switch
+    {
+        ChassisType.RoadCourse => "Road Course",
+        ChassisType.ShortTrack => "Short Track",
+        ChassisType.SuperSpeedway => "SuperSpeedway",
+        _ => "Intermediate Track"
+    };
+
     public string primaryPaint;
     public string secondaryPaint;
 
@@ -214,12 +274,6 @@ internal sealed class TeamCar
                 ColorUtility.TryParseHtmlString(secondaryPaint, out var secondary) ? (Color32)secondary : defaults.RoofAndSides);
         }
     }
-    public bool performanceInitialized;
-    [Range(0f, 1f)] public float engine;
-    [Range(0f, 1f)] public float transmission;
-    [Range(0f, 1f)] public float brakes;
-    [Range(0f, 1f)] public float suspension;
-    [Range(0f, 1f)] public float aerodynamics;
     public bool componentWearInitialized;
     [Range(0f, 1f)] public float engineWear;
     [Range(0f, 1f)] public float transmissionWear;
@@ -249,17 +303,8 @@ internal sealed class TeamCar
 
     public bool Initialize(System.Random random)
     {
-        bool changed = !performanceInitialized || !componentWearInitialized ||
+        bool changed = !componentWearInitialized ||
             frontLeft == null || frontRight == null || rearLeft == null || rearRight == null;
-        if (!performanceInitialized)
-        {
-            engine = (float)random.NextDouble();
-            transmission = (float)random.NextDouble();
-            brakes = (float)random.NextDouble();
-            suspension = (float)random.NextDouble();
-            aerodynamics = (float)random.NextDouble();
-            performanceInitialized = true;
-        }
         if (!componentWearInitialized)
         {
             engineWear = (float)random.NextDouble();
@@ -283,19 +328,8 @@ internal sealed class TeamCar
         return changed;
     }
 
-    public ComponentCondition GetComponent(CarComponent component)
-    {
-        float rating = component switch
-        {
-            CarComponent.Engine => engine,
-            CarComponent.Transmission => transmission,
-            CarComponent.Brakes => brakes,
-            CarComponent.Suspension => suspension,
-            CarComponent.Aerodynamics => aerodynamics,
-            _ => throw new ArgumentOutOfRangeException(nameof(component))
-        };
-        return new ComponentCondition(rating, ComponentWear(component), ComponentLevel(component));
-    }
+    public ComponentCondition GetComponent(CarComponent component) =>
+        new ComponentCondition(ComponentWear(component), ComponentLevel(component));
 
     public ref int ComponentLevel(CarComponent component)
     {
@@ -343,10 +377,17 @@ internal sealed class UsedCarListing
 
     public static UsedCarListing Create(int carNumber, System.Random random)
     {
-        var car = new TeamCar { number = carNumber };
+        var manufacturers = (CarManufacturer[])Enum.GetValues(typeof(CarManufacturer));
+        var chassisTypes = (ChassisType[])Enum.GetValues(typeof(ChassisType));
+        var car = new TeamCar
+        {
+            number = carNumber,
+            manufacturer = manufacturers[random.Next(manufacturers.Length)],
+            chassisType = chassisTypes[random.Next(chassisTypes.Length)]
+        };
         car.Initialize(random);
-        double average = ((double)car.engine + car.transmission + car.brakes + car.suspension + car.aerodynamics) / 5d;
-        long price = (long)Math.Round(average * NewChassisPrice, MidpointRounding.AwayFromZero) + random.Next(5000, 15001);
+        double averageCondition = TeamCar.Components.Average(component => 1d - car.GetComponent(component).Wear);
+        long price = (long)Math.Round(averageCondition * NewChassisPrice, MidpointRounding.AwayFromZero) + random.Next(5000, 15001);
         return new UsedCarListing { car = car, price = price };
     }
 }
@@ -354,7 +395,7 @@ internal sealed class UsedCarListing
 internal enum EmployeeRole
 {
     Driver, CrewChief, CarChief, RaceEngineer, BodySpecialist, EngineSpecialist, BrakeSpecialist,
-    TransmissionSpecialist, ShockSpecialist, Fabricator, GeneralMechanic
+    TransmissionSpecialist, SuspensionSpecialist, Fabricator, GeneralMechanic
 }
 
 [Serializable]
@@ -362,6 +403,7 @@ internal sealed class TeamEmployees
 {
     public string teamName;
     public List<Employee> employees;
+    public List<Driver> drivers;
 }
 
 [Serializable]
@@ -371,7 +413,7 @@ internal sealed class Employee
     {
         ("Driver", 100_000), ("Crew Chief", 250_000), ("Car Chief", 175_000), ("Race Engineer", 165_000),
         ("Body Specialist", 150_000), ("Engine Specialist", 150_000), ("Brake Specialist", 125_000),
-        ("Transmission Specialist", 125_000), ("Shock Specialist", 125_000),
+        ("Transmission Specialist", 125_000), ("Suspension Specialist", 125_000),
         ("Fabricator", 100_000), ("General Mechanic", 100_000)
     };
     private static readonly string[] FirstNames =
@@ -416,12 +458,6 @@ internal sealed class Employee
     };
 
     public static string NameOf(EmployeeRole role) => Roles[(int)role].Name;
-
-    public long SalaryForRole(EmployeeRole newRole)
-    {
-        decimal multiplier = Math.Max(0.85m, Math.Min(1.15m, (decimal)annualSalary / Roles[(int)role].Salary));
-        return (long)Math.Round(Roles[(int)newRole].Salary * multiplier, MidpointRounding.AwayFromZero);
-    }
 
     public static List<Employee> CreateStaff(System.Random random) => Enum.GetValues(typeof(EmployeeRole))
         .Cast<EmployeeRole>().Where(role => role != EmployeeRole.Driver).Select(role => Create(role, random)).ToList();

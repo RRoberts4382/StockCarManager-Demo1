@@ -515,9 +515,20 @@
 .car-tabs .unity-scroll-view__content-container {
     flex-direction: row;
 }
-.game-neutral .car-tab {
+.car-panel {
     flex-shrink: 0;
     margin: 4px 8px 4px 0;
+    background-color: var(--game-surface);
+}
+.car-panel-actions {
+    flex-direction: row;
+    justify-content: flex-end;
+    padding: 0 4px 4px;
+}
+
+.game-neutral .car-tab {
+    flex-shrink: 0;
+    margin: 0;
     padding: 6px 12px;
 }
 .cars-performance {
@@ -590,9 +601,18 @@
     padding: 8px;
     background-color: var(--game-surface);
 }
-.game-neutral .employee-card.nav-button-selected {
-    border-left-width: 3px;
-    border-left-color: #009bdd;
+.staff-card-actions {
+    margin-top: auto;
+    padding-top: 6px;
+    align-items: flex-end;
+}
+.game-neutral .staff-card-fire-button {
+    min-height: 22px;
+    padding: 2px 8px;
+    font-size: 12px;
+}
+.staff-card-fire-button:disabled {
+    opacity: 0.5;
 }
 .employee-role-actions {
     flex-direction: row;
@@ -771,9 +791,6 @@
     font-size: 25px;
 }
 
-.car-paint-button {
-    align-self: flex-start;
-}
 
 .car-options-dialog {
     width: 520px;

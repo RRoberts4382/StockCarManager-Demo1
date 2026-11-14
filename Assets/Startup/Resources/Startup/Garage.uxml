@@ -28,13 +28,11 @@
             </ui:VisualElement>
             <ui:VisualElement name="carsPage" class="garage-page">
                 <ui:VisualElement class="cars-roster">
-                    <ui:Button name="carPaintButton" text="Paint Colors" class="nav-button car-paint-button" />
                     <ui:ScrollView name="teamCarRows" mode="Horizontal" horizontal-scroller-visibility="Auto" vertical-scroller-visibility="Hidden" class="car-tabs" />
                     <ui:VisualElement class="cars-performance">
                         <ui:Label text="Performance ratings" class="garage-detail schedule-heading" />
                         <ui:VisualElement name="teamCarRatings" />
                     </ui:VisualElement>
-                    <ui:Button name="repairUpgradeButton" text="Repair/Upgrade" class="nav-button garage-track-button" />
                     <ui:Button name="addTeamCarButton" text="Add Car" class="nav-button garage-track-button" />
                 </ui:VisualElement>
             </ui:VisualElement>
@@ -67,8 +65,8 @@
         </ui:ScrollView>
         <ui:VisualElement name="employeesPage" class="garage-page employees-page">
             <ui:VisualElement class="employee-role-actions">
-                <ui:Button name="recruitEmployeeButton" text="Recruit Employee" class="nav-button" />
-                <ui:Button name="fireEmployeeButton" text="Fire Employee" class="nav-button" />
+                <ui:Button name="recruitEmployeeButton" text="Hire Employee" class="nav-button" />
+                <ui:Button name="recruitDriverButton" text="Hire Driver" class="nav-button" />
             </ui:VisualElement>
             <ui:VisualElement name="fireEmployeePrompt" class="employee-dismissal-prompt">
                 <ui:Label name="fireEmployeeQuestion" class="garage-detail schedule-status" />
@@ -78,10 +76,6 @@
                 </ui:VisualElement>
             </ui:VisualElement>
             <ui:Label name="employeeStatus" class="garage-detail schedule-status" />
-            <ui:VisualElement class="employee-role-actions">
-                <ui:DropdownField name="employeeRolePicker" label="Position" class="team-results-event-picker" />
-                <ui:Button name="assignEmployeeRoleButton" text="Assign Position" class="nav-button" />
-            </ui:VisualElement>
             <ui:ScrollView name="employeeRoster" mode="Horizontal" horizontal-scroller-visibility="Auto" vertical-scroller-visibility="Hidden" class="employee-roster" />
         </ui:VisualElement>
         <ui:VisualElement name="schedulePage" class="garage-page schedule-page">
