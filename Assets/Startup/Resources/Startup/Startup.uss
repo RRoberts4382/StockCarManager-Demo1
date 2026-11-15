@@ -245,6 +245,357 @@
     flex-grow: 1;
     min-height: 0;
 }
+.mail-page, .mail-email-layout {
+    flex-direction: row;
+    flex-grow: 1;
+    min-height: 0;
+}
+.mail-email, .mail-social, .mail-inbox, .mail-reader {
+    flex-basis: 0;
+    min-width: 0;
+    min-height: 0;
+}
+.mail-email, .mail-reader {
+    flex-grow: 2;
+}
+.mail-social, .mail-inbox {
+    flex-grow: 1;
+}
+.mail-social {
+    margin-left: 18px;
+    padding-left: 14px;
+    border-left-width: 1px;
+    border-left-color: var(--game-divider);
+}
+.mail-inbox {
+    margin-right: 10px;
+}
+.mail-reader {
+    padding: 14px;
+    background-color: var(--game-surface);
+    border-top-width: 2px;
+    border-top-color: #4597b4;
+}
+.mail-scroll {
+    flex-grow: 1;
+    min-height: 0;
+}
+.mail-title {
+    font-size: 24px;
+    -unity-font-style: bold;
+    margin-bottom: 12px;
+}
+.mail-subheading, .mail-subject {
+    -unity-font-style: bold;
+    white-space: normal;
+}
+.mail-inbox > .mail-subheading {
+    margin-bottom: 6px;
+}
+.mail-page .mail-message-row {
+    height: auto;
+    min-height: 54px;
+    margin: 0 0 5px;
+    padding: 6px 8px;
+    align-items: stretch;
+    -unity-text-align: middle-left;
+}
+.mail-sender, .mail-meta {
+    font-size: 12px;
+    opacity: 0.78;
+    white-space: normal;
+}
+.mail-message-title {
+    font-size: 20px;
+    -unity-font-style: bold;
+    white-space: normal;
+}
+.mail-broadcast-logo {
+    width: 104px;
+    height: 104px;
+    flex-shrink: 0;
+    margin-bottom: 10px;
+    border-radius: 6px;
+    overflow: hidden;
+}
+.mail-copy {
+    white-space: normal;
+    margin-top: 8px;
+}
+.mail-post {
+    padding: 8px 10px;
+    margin-bottom: 8px;
+    background-color: var(--game-surface);
+    border-left-width: 3px;
+    border-left-color: #758b9b;
+}
+.mail-post-header {
+    flex-direction: row;
+    align-items: flex-start;
+}
+.mail-post-header > .mail-title {
+    flex-grow: 1;
+}
+.mail-post-author {
+    flex-grow: 1;
+    min-width: 0;
+}
+.mail-post-avatar {
+    width: 36px;
+    height: 36px;
+    flex-shrink: 0;
+    margin-right: 8px;
+    border-radius: 18px;
+    background-size: cover;
+    overflow: hidden;
+    align-items: center;
+    justify-content: center;
+}
+.mail-avatar-initials {
+    color: #ffffff;
+    font-size: 13px;
+    -unity-font-style: bold;
+}
+.mail-page .mail-post-delete {
+    width: 24px;
+    height: 24px;
+    min-width: 24px;
+    min-height: 24px;
+    flex-shrink: 0;
+    margin: 0 0 0 6px;
+    padding: 0;
+    align-items: center;
+    justify-content: center;
+}
+.mail-trash-icon {
+    width: 16px;
+    height: 16px;
+}
+.victory-results-background {
+    background-size: cover;
+    background-position-x: center;
+    background-position-y: center;
+    background-repeat: no-repeat;
+}
+.victory-results-background .garage-page {
+    background-color: rgba(16, 21, 30, 0.63);
+}
+.victory-results-background .garage-page-title,
+.victory-results-background .unity-base-field__label,
+.garage-screen .victory-results-background .results-grid-cell {
+    color: #ffffff;
+}
+.garage-shop-background, .garage-schedule-background, .garage-home-background, .garage-finances-background, .garage-cars-background {
+    background-size: cover;
+    background-position-x: center;
+    background-position-y: center;
+    background-repeat: no-repeat;
+}
+.garage-shop-background {
+    background-image: url("RaceTeamShop.png");
+}
+.shop-car-picker {
+    position: absolute;
+    top: 22px;
+    left: 12px;
+    width: 350px;
+    max-width: 100%;
+}
+.game-neutral .shop-car-toggle, .game-neutral .shop-car-choice {
+    flex-direction: row;
+    align-items: center;
+    margin: 0;
+    padding: 3px 6px;
+    min-height: 0;
+}
+.shop-car-choices {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: 2px;
+    max-height: 420px;
+    background-color: var(--game-surface);
+}
+.shop-car-row {
+    flex-direction: row;
+    align-items: center;
+    flex-grow: 1;
+    min-width: 0;
+}
+.shop-car-thumbnail {
+    width: 90px;
+    height: 50px;
+    flex-shrink: 0;
+}
+.shop-car-chassis {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-width: 0;
+    -unity-text-align: middle-center;
+}
+.shop-car-specs {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-width: 0;
+}
+.shop-car-spec {
+    font-size: 12px;
+    white-space: normal;
+    -unity-text-align: middle-left;
+}
+.shop-car-caret {
+    flex-shrink: 0;
+    padding-left: 6px;
+}
+.shop-car-components {
+    margin-top: 70px;
+    padding: 3px 12px;
+    background-color: rgba(15, 22, 31, 0.86);
+    color: #eef5f8;
+}
+.shop-component-row {
+    flex-direction: row;
+    align-items: center;
+    min-height: 72px;
+    padding: 3px 2px;
+    border-bottom-width: 1px;
+    border-bottom-color: rgba(190, 222, 239, 0.22);
+}
+.shop-component-icon {
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    margin-right: 16px;
+}
+.shop-component-metric, .shop-component-service {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-width: 0;
+    padding-right: 14px;
+}
+.shop-component-service {
+    flex-grow: 1.2;
+    flex-direction: row;
+    align-items: center;
+}
+.shop-component-repair-details {
+    flex-grow: 1;
+    min-width: 0;
+}
+.employee-portrait.shop-repair-portrait {
+    width: 46px;
+    height: 46px;
+    flex-shrink: 0;
+    margin: 0 8px 0 0;
+    border-radius: 23px;
+}
+.shop-car-choice .shop-car-row {
+    border-width: 2px;
+    border-color: rgba(0, 0, 0, 0);
+}
+.shop-car-choice .shop-car-row.shop-wear-blocked, .shop-component-row.shop-wear-blocked {
+    border-width: 2px;
+    border-color: #ef5b57;
+}
+.shop-component-caption, .shop-component-mechanic {
+    white-space: normal;
+    font-size: 13px;
+    margin-bottom: 4px;
+}
+.shop-component-mechanic {
+    -unity-font-style: bold;
+}
+.shop-component-actions {
+    width: 108px;
+    flex-shrink: 0;
+    justify-content: center;
+}
+.shop-component-action-line {
+    flex-direction: row;
+    align-items: center;
+    margin: 1px 0;
+    min-height: 28px;
+}
+.game-neutral .shop-component-action-button {
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    min-height: 28px;
+    flex-shrink: 0;
+    margin: 0;
+    padding: 0;
+    align-items: center;
+    justify-content: center;
+}
+.shop-component-action-icon {
+    width: 16px;
+    height: 16px;
+}
+.shop-component-action-cost {
+    margin-left: 7px;
+    font-size: 13px;
+}
+.shop-component-level, .shop-component-meter {
+    height: 9px;
+}
+.shop-component-level {
+    flex-direction: row;
+}
+.shop-component-segment, .shop-component-meter {
+    background-color: #394754;
+    border-radius: 2px;
+}
+.shop-component-segment {
+    flex-grow: 1;
+    flex-basis: 0;
+    margin-right: 3px;
+}
+.shop-component-segment-filled {
+    background-color: #69b8e4;
+}
+.shop-component-wear, .shop-component-progress {
+    height: 100%;
+    border-radius: 2px;
+}
+.shop-component-wear {
+    background-color: #edac59;
+}
+.shop-component-progress {
+    background-color: #67c8a0;
+}
+.shop-component-meter.shop-component-repair-late {
+    background-color: #784522;
+}
+.shop-component-repair-late .shop-component-progress {
+    background-color: #ff9a41;
+}
+.garage-shop-background .team-header-row,
+.garage-shop-background .garage-footer,
+.garage-schedule-background .team-header-row,
+.garage-schedule-background .garage-footer,
+.garage-home-background .team-header-row,
+.garage-home-background .garage-footer,
+.garage-finances-background .team-header-row,
+.garage-finances-background .garage-footer,
+.garage-cars-background .team-header-row,
+.garage-cars-background .garage-footer {
+    background-color: rgba(16, 21, 30, 0.88);
+}
+.garage-schedule-background .schedule-page {
+    background-color: rgba(16, 21, 30, 0.57);
+}
+.garage-screen.garage-schedule-background .schedule-page .garage-detail {
+    color: #ffffff;
+}
+.garage-screen.garage-home-background #homePage .garage-entry {
+    align-self: flex-start;
+    max-width: 100%;
+    background-color: rgba(16, 21, 30, 0.82);
+}
+.garage-screen.garage-home-background #homePage .garage-detail {
+    color: #ffffff;
+}
 .garage-page {
     padding: 22px 12px;
 }
@@ -515,40 +866,70 @@
 .car-tabs .unity-scroll-view__content-container {
     flex-direction: row;
 }
-.car-panel {
+.game-neutral .car-panel {
+    width: 310px;
     flex-shrink: 0;
-    margin: 4px 8px 4px 0;
+    padding: 10px;
+    margin: 4px 10px 4px 0;
     background-color: var(--game-surface);
 }
 .car-panel-actions {
     flex-direction: row;
     justify-content: flex-end;
-    padding: 0 4px 4px;
+    margin-top: auto;
+    padding-top: 8px;
 }
-
-.game-neutral .car-tab {
-    flex-shrink: 0;
-    margin: 0;
-    padding: 6px 12px;
+.car-card-image {
+    width: 100%;
+    height: 145px;
 }
-.cars-performance {
-    width: 33.333%;
-    min-width: 220px;
-    max-width: 100%;
-    margin-top: 12px;
+.car-card-title, .car-card-specs {
+    -unity-text-align: middle-center;
 }
-.car-rating-row {
+.car-card-title {
+    -unity-font-style: bold;
+}
+.car-card-specs {
+    margin-bottom: 8px;
+}
+.car-card-rating-row {
     flex-direction: row;
-    justify-content: space-between;
+    align-items: center;
+    min-height: 24px;
+    font-size: 12px;
 }
-.car-rating-name {
+.car-card-component {
+    width: 87px;
+    flex-shrink: 0;
+}
+.car-card-rating-heading, .car-card-metric {
     flex-grow: 1;
+    flex-basis: 0;
     min-width: 0;
+    margin-left: 6px;
 }
-.car-rating-value {
-    width: 60px;
+.car-card-rating-heading {
+    -unity-font-style: bold;
+}
+.car-card-metric {
+    flex-direction: row;
+    align-items: center;
+}
+.car-card-value {
+    width: 34px;
     flex-shrink: 0;
     -unity-text-align: middle-right;
+}
+.game-neutral .car-card-action {
+    width: 34px;
+    min-width: 34px;
+    padding: 0;
+    align-items: center;
+    justify-content: center;
+}
+.car-card-action-icon {
+    width: 18px;
+    height: 18px;
 }
 
 .car-market-page {
@@ -558,8 +939,13 @@
 }
 .car-market-new {
     flex-direction: row;
+    flex-wrap: wrap;
     align-items: center;
     margin: 8px 0 16px;
+}
+.car-market-new-option {
+    width: 240px;
+    margin-left: 12px;
 }
 .car-market-new .nav-button {
     margin-left: 12px;
@@ -591,6 +977,67 @@
     flex-grow: 1;
     min-height: 0;
 }
+.employee-work-list {
+    flex-grow: 1;
+    min-height: 0;
+}
+.employee-work-row {
+    flex-direction: row;
+    align-items: center;
+    min-height: 67px;
+    padding: 5px 10px;
+    margin-bottom: 5px;
+    background-color: #17232e;
+    color: #eef5f8;
+    border-left-width: 3px;
+    border-left-color: #67c8a0;
+}
+.employee-work-row.employee-work-late {
+    background-color: #3e271b;
+    border-left-color: #ff9a41;
+}
+.employee-work-progress {
+    flex-grow: 1;
+    min-width: 0;
+}
+.game-neutral .employee-work-open-shop {
+    width: 32px;
+    min-width: 32px;
+    flex-shrink: 0;
+    margin: 0 0 0 12px;
+    padding: 0;
+    font-size: 18px;
+    -unity-text-align: middle-center;
+}
+.employee-work-chassis {
+    width: 118px;
+    -unity-text-align: middle-center;
+}
+.employee-work-car {
+    width: 112px;
+    height: 59px;
+}
+.employee-work-mechanic {
+    width: 210px;
+    flex-direction: row;
+    align-items: center;
+    padding-right: 12px;
+}
+.employee-work-mechanic .shop-repair-portrait {
+    margin: 0 8px 0 0;
+}
+.employee-work-details {
+    flex-grow: 1;
+    min-width: 0;
+}
+.employee-work-name, .employee-work-role {
+    white-space: normal;
+    -unity-text-align: middle-left;
+}
+.employee-work-role {
+    font-size: 12px;
+    opacity: 0.8;
+}
 .employee-roster .unity-scroll-view__content-container {
     flex-direction: row;
 }
@@ -600,6 +1047,40 @@
     margin: 8px 8px 8px 0;
     padding: 8px;
     background-color: var(--game-surface);
+}
+.employee-card-identity {
+    white-space: normal;
+    -unity-text-align: middle-center;
+}
+.employee-card-skills {
+    margin: 8px 0;
+}
+.employee-skill-row {
+    flex-direction: row;
+    align-items: center;
+    min-height: 21px;
+    font-size: 12px;
+}
+.employee-skill-name {
+    width: 86px;
+    flex-shrink: 0;
+}
+.employee-skill-track {
+    flex-grow: 1;
+    min-width: 0;
+    height: 8px;
+    border-radius: 2px;
+    background-color: #394754;
+    overflow: hidden;
+}
+.employee-skill-fill {
+    height: 100%;
+    border-radius: 2px;
+}
+.employee-skill-value {
+    width: 34px;
+    flex-shrink: 0;
+    -unity-text-align: middle-right;
 }
 .staff-card-actions {
     margin-top: auto;
@@ -624,6 +1105,24 @@
     margin-right: 8px;
 }
 
+#financesPage {
+    padding-top: 10px;
+    padding-bottom: 8px;
+}
+#financeBreakdown {
+    margin-top: 4px;
+}
+.garage-finances-background #financeBreakdown {
+    background-color: rgba(16, 21, 30, 0.76);
+    color: #ffffff;
+}
+.garage-screen.garage-finances-background #financeBreakdown > .garage-detail {
+    color: #ffffff;
+}
+#financeBreakdown .results-grid-cell {
+    padding-top: 2px;
+    padding-bottom: 2px;
+}
 .finance-summary {
     flex-direction: row;
 }
@@ -631,15 +1130,36 @@
     flex-grow: 1;
     flex-basis: 0;
     margin-right: 6px;
-    padding: 12px;
-    align-items: center;
+    margin-bottom: 6px;
+    padding: 4px 9px;
+    min-width: 0;
+    align-items: stretch;
+}
+.finance-card > Label {
+    margin: 0;
+    -unity-text-align: middle-left;
+}
+.finance-card > .garage-detail {
+    font-size: 13px;
 }
 .finance-total {
-    font-size: 28px;
+    font-size: 19px;
     -unity-font-style: bold;
 }
 .finance-description {
     flex-grow: 2;
+    -unity-text-align: middle-left;
+}
+#financeBreakdown .finance-group-toggle {
+    flex-direction: row;
+    justify-content: flex-start;
+    align-items: center;
+    margin: 0;
+    padding: 0;
+    height: auto;
+    min-height: 23px;
+    border-left-width: 0;
+    border-right-width: 0;
 }
 .finance-number {
     -unity-text-align: middle-right;
@@ -762,6 +1282,10 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+#teamNextRace {
+    white-space: normal;
+    text-overflow: clip;
+}
 
 .car-tab-image {
     width: 160px;
@@ -795,6 +1319,25 @@
 .car-options-dialog {
     width: 520px;
     max-height: 85%;
+}
+.car-paint-preview {
+    width: 100%;
+    height: 195px;
+    flex-shrink: 0;
+    margin-bottom: 8px;
+}
+.game-neutral .car-paint-color {
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+}
+.car-paint-swatch {
+    width: 34px;
+    height: 18px;
+    flex-shrink: 0;
+    margin-right: 10px;
+    border-width: 1px;
+    border-color: var(--game-divider);
 }
 
 .car-option-row {

@@ -35,6 +35,14 @@ internal sealed class SponsorContract
     }
 }
 
+[Serializable]
+internal sealed class SponsorRacePayment
+{
+    public int slot;
+    public int companyId;
+    public long amount;
+}
+
 internal static class Sponsorships
 {
     public const int Slots = 3;
@@ -59,14 +67,17 @@ internal static class Sponsorships
 
     // Replace contracts so callers can restore the previous state if writing the save fails.
     public static List<SponsorContract> Settle(IEnumerable<SponsorContract> contracts,
-        int finishPosition, out long income)
+        int finishPosition, out long income, out List<SponsorRacePayment> payments)
     {
         var remaining = new List<SponsorContract>();
         income = 0;
+        payments = new List<SponsorRacePayment>();
         foreach (var contract in contracts)
         {
             long payout = contract.Payout(finishPosition);
             income += payout;
+            if (payout != 0)
+                payments.Add(new SponsorRacePayment { slot = contract.slot, companyId = contract.offer.companyId, amount = payout });
             if (contract.racesRemaining > 1)
                 remaining.Add(new SponsorContract
                 {

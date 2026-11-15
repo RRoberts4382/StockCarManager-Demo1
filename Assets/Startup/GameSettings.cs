@@ -37,6 +37,12 @@ internal sealed class GameSettings
     private readonly VisualElement[] swatches = new VisualElement[Defaults.Length];
     private readonly Label status = new Label();
     private readonly Action applyDisplay;
+    private readonly Func<string, string, string> saveTeamColors;
+    private readonly VisualElement teamColors = new VisualElement();
+    private readonly TextField primaryTeamColor = new TextField("Primary") { style = { flexGrow = 1 } };
+    private readonly TextField secondaryTeamColor = new TextField("Secondary") { style = { flexGrow = 1 } };
+    private Button primaryTeamSwatch;
+    private Button secondaryTeamSwatch;
     private string[] savedColors;
     private int savedMode;
     private int savedSize;
@@ -54,10 +60,11 @@ internal sealed class GameSettings
 
     public VisualElement ScreenView { get; } = new VisualElement();
 
-    public GameSettings(VisualElement root, Action applyDisplay, Action close)
+    public GameSettings(VisualElement root, Action applyDisplay, Action close, Func<string, string, string> saveTeamColors)
     {
         this.root = root;
         this.applyDisplay = applyDisplay;
+        this.saveTeamColors = saveTeamColors;
         savedMode = Mathf.Clamp(PlayerPrefs.GetInt(Key + "Mode"), 0, 1);
         savedSize = Mathf.Clamp(PlayerPrefs.GetInt(Key + "Size"), 0, Sizes.Length - 1);
         savedSimulationModel = CarSimulationModels.IndexForId(PlayerPrefs.GetString(Key + "SimulationModel"));
@@ -88,6 +95,10 @@ internal sealed class GameSettings
         form.Add(vehicleSpeedModel);
         form.Add(vehicleBehaviorModel);
         form.Add(paceVehicle);
+        teamColors.Add(new Label("Team colors") { style = { marginTop = 14, marginBottom = 6 } });
+        primaryTeamSwatch = AddTeamColorField(primaryTeamColor);
+        secondaryTeamSwatch = AddTeamColorField(secondaryTeamColor);
+        form.Add(teamColors);
         form.Add(new Label("Color scheme") { style = { marginTop = 14, marginBottom = 6 } });
         for (int i = 0; i < colorFields.Length; i++)
         {
@@ -119,7 +130,26 @@ internal sealed class GameSettings
         ScreenView.Add(MakeButton("Save Settings", Save));
     }
 
-    public void Open()
+    private Button AddTeamColorField(TextField field)
+    {
+        var row = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center } };
+        var swatch = new Button(() => PickColor(field, Color.white))
+        {
+            tooltip = $"Choose {field.label.ToLowerInvariant()} team color",
+            style = { width = 32, height = 24, marginLeft = 8 }
+        };
+        field.RegisterValueChangedCallback(evt =>
+        {
+            if (TryColor(evt.newValue, out var color))
+                swatch.style.backgroundColor = color;
+        });
+        row.Add(field);
+        row.Add(swatch);
+        teamColors.Add(row);
+        return swatch;
+    }
+
+    public void Open(Career career)
     {
         mode.SetValueWithoutNotify(mode.choices[savedMode]);
         size.SetValueWithoutNotify(size.choices[savedSize]);
@@ -128,6 +158,15 @@ internal sealed class GameSettings
         vehicleBehaviorModel.SetValueWithoutNotify(vehicleBehaviorModel.choices[savedBehaviorModel]);
         paceVehicle.SetValueWithoutNotify(paceVehicle.choices[savedPaceVehicle]);
         SetColorFields(savedColors);
+        teamColors.style.display = career == null ? DisplayStyle.None : DisplayStyle.Flex;
+        if (career != null)
+        {
+            var colors = career.TeamColors;
+            primaryTeamColor.SetValueWithoutNotify("#" + ColorUtility.ToHtmlStringRGB(colors.Primary));
+            secondaryTeamColor.SetValueWithoutNotify("#" + ColorUtility.ToHtmlStringRGB(colors.Secondary));
+            primaryTeamSwatch.style.backgroundColor = (Color)colors.Primary;
+            secondaryTeamSwatch.style.backgroundColor = (Color)colors.Secondary;
+        }
         status.text = "Enter colors as #RRGGBB.";
     }
 
@@ -143,12 +182,18 @@ internal sealed class GameSettings
 
     private void PickColor(int index)
     {
-        if (!TryColor(colorFields[index].value, out var initial))
-            TryColor(savedColors[index], out initial);
+        TryColor(savedColors[index], out var fallback);
+        PickColor(colorFields[index], fallback);
+    }
+
+    private void PickColor(TextField field, Color fallback)
+    {
+        if (!TryColor(field.value, out var initial))
+            initial = fallback;
         try
         {
             if (WindowsColorPicker.TryPick(initial, out var selected))
-                colorFields[index].value = "#" + ColorUtility.ToHtmlStringRGB(selected);
+                field.value = "#" + ColorUtility.ToHtmlStringRGB(selected);
         }
         catch (InvalidOperationException ex)
         {
@@ -174,6 +219,21 @@ internal sealed class GameSettings
         {
             status.text = "Use a six-digit hex color for each field, such as #009BDD.";
             return;
+        }
+
+        if (teamColors.style.display == DisplayStyle.Flex)
+        {
+            if (!TryColor(primaryTeamColor.value, out var primary) || !TryColor(secondaryTeamColor.value, out var secondary))
+            {
+                status.text = "Use a six-digit hex color for each team color.";
+                return;
+            }
+            string error = saveTeamColors("#" + ColorUtility.ToHtmlStringRGB(primary), "#" + ColorUtility.ToHtmlStringRGB(secondary));
+            if (error != null)
+            {
+                status.text = error;
+                return;
+            }
         }
 
         bool displayChanged = savedMode != mode.index || savedSize != size.index;
@@ -237,8 +297,10 @@ internal sealed class GameSettings
     private static void ApplyButtonColors(Button button, Color[] colors)
     {
         bool selected = button.ClassListContains("nav-button-selected");
-        button.style.color = colors[3];
-        button.style.backgroundColor = selected ? Color.Lerp(colors[2], colors[3], 0.15f) : colors[2];
+        bool thumbnailBackground = button.ClassListContains("shop-car-toggle") || button.ClassListContains("shop-car-choice");
+        button.style.color = thumbnailBackground ? (Color)new Color32(238, 245, 248, 255) : colors[3];
+        button.style.backgroundColor = thumbnailBackground ? (Color)CarThumbnails.BackgroundColor
+            : selected ? Color.Lerp(colors[2], colors[3], 0.15f) : colors[2];
         button.style.borderBottomColor = selected ? colors[4] : new StyleColor(StyleKeyword.Null);
     }
 

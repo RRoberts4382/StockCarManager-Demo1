@@ -7,6 +7,11 @@ using UnityEngine.UIElements;
 
 public sealed class StartupMenu : MonoBehaviour
 {
+    private static readonly CarManufacturer[] NewChassisManufacturers =
+        (CarManufacturer[])System.Enum.GetValues(typeof(CarManufacturer));
+    private static readonly ChassisType[] NewChassisTypes =
+        (ChassisType[])System.Enum.GetValues(typeof(ChassisType));
+    private const string NewChassisPaint = "#727A7F";
     private PanelSettings panel;
     private GameSettings settings;
     private Coroutine displayChange;
@@ -16,9 +21,9 @@ public sealed class StartupMenu : MonoBehaviour
     private Button newCareerButton;
     private CareerSetup careerSetup;
     private Career activeCareer;
+    private readonly TeamMailView teamMail = new TeamMailView();
     private ScheduledRace activeRace;
     private RaceSession activeSession;
-    private static readonly bool StartInDevelopmentPractice = true;
     private bool developmentPractice;
     private VisualElement developmentTrackPicker;
     private const string DevelopmentTrackPreference = "SCM.DevelopmentPractice.TrackId";
@@ -26,8 +31,18 @@ public sealed class StartupMenu : MonoBehaviour
     private RaceEventView raceEventView;
     private ScheduledRace selectedEvent;
     private Button addTeamCarButton;
-    private TeamCar selectedTeamCar;
+    private CarComponent? maintenanceComponent;
+    private bool showingWorkInProgress;
     private readonly CarThumbnails carThumbnails = new CarThumbnails();
+    private readonly CarThumbnails paintPreviewThumbnails = new CarThumbnails(640);
+    private readonly ShopCarPicker shopCarPicker = new ShopCarPicker();
+    private readonly TeamShopPreview teamShopPreview = new TeamShopPreview();
+    private readonly ScheduleHaulerBackground scheduleHauler = new ScheduleHaulerBackground();
+    private readonly TeamShopExteriorBackground teamShopExterior = new TeamShopExteriorBackground();
+    private const int GaragePhotoBlurPixels = 12;
+    private RenderTexture financesBackground;
+    private RenderTexture carsBackground;
+    private const int ShopBackgroundBlurPixels = 8;
     private System.Action pendingDismissal;
     private readonly EmployeePortraits employeePortraits = new EmployeePortraits();
     private static readonly EmployeeRole[] EmployeeRoles =
@@ -142,6 +157,14 @@ public sealed class StartupMenu : MonoBehaviour
         titleScreen = root.Q("titleScreen");
         developmentTrackPicker = root.Q("developmentTrackPicker");
         developmentTrackPicker.style.display = DisplayStyle.None;
+        var testPracticeButton = titleScreen.Q<Button>("testPracticeButton");
+        testPracticeButton.clicked += () => ShowDevelopmentTrackPicker();
+        developmentTrackPicker.Q<Button>("backFromDevelopmentPractice").clicked += () =>
+        {
+            developmentTrackPicker.style.display = DisplayStyle.None;
+            titleScreen.style.display = DisplayStyle.Flex;
+            testPracticeButton.Focus();
+        };
         developmentTrackPicker.Q<Button>("exitDevelopmentPractice").clicked += Quit;
         var practiceTrack = developmentTrackPicker.Q<DropdownField>("developmentTracks");
         var startPractice = developmentTrackPicker.Q<Button>("startDevelopmentPractice");
@@ -221,6 +244,12 @@ public sealed class StartupMenu : MonoBehaviour
         addTeamCarButton.clicked += OpenCarMarket;
         garageScreen.Q<Button>("recruitEmployeeButton").clicked += OpenRecruitment;
         garageScreen.Q<Button>("recruitDriverButton").clicked += OpenDriverRecruitment;
+        garageScreen.Q<Button>("workInProgressToggle").clicked += () =>
+        {
+            showingWorkInProgress = !showingWorkInProgress;
+            CancelFireEmployee();
+            DisplayEmployeeWorkInProgress();
+        };
         garageScreen.Q<Button>("recruitmentBackButton").clicked += CloseRecruitment;
         var recruitmentFilter = garageScreen.Q<DropdownField>("recruitmentPositionFilter");
         recruitmentFilter.choices = new[] { "All positions" }.Concat(EmployeeRoles.Select(Employee.NameOf)).ToList();
@@ -229,7 +258,13 @@ public sealed class StartupMenu : MonoBehaviour
         garageScreen.Q<Button>("cancelFireEmployeeButton").clicked += CancelFireEmployee;
         garageScreen.Q<Button>("confirmFireEmployeeButton").clicked += () => pendingDismissal?.Invoke();
         garageScreen.Q<Button>("carMarketBackButton").clicked += CloseCarMarket;
-        garageScreen.Q<Button>("carMaintenanceBackButton").clicked += CloseCarMarket;
+        garageScreen.Q<Button>("carMaintenanceBackButton").clicked += CloseCarMaintenance;
+        var newManufacturer = garageScreen.Q<DropdownField>("newChassisManufacturer");
+        newManufacturer.choices = NewChassisManufacturers.Select(value => value.ToString()).ToList();
+        newManufacturer.index = System.Array.IndexOf(NewChassisManufacturers, CarManufacturer.Chevrolet);
+        var newType = garageScreen.Q<DropdownField>("newChassisType");
+        newType.choices = NewChassisTypes.Select(TeamCar.DisplayChassisType).ToList();
+        newType.index = System.Array.IndexOf(NewChassisTypes, ChassisType.IntermediateTrack);
         garageScreen.Q<Button>("buyNewChassisButton").clicked += BuyNewChassis;
         raceViewport.RegisterCallback<WheelEvent>(ZoomTrack);
         raceViewport.RegisterCallback<PointerDownEvent>(BeginTrackPointer);
@@ -265,6 +300,12 @@ public sealed class StartupMenu : MonoBehaviour
         string[] garagePageNames = { "home", "mail", "cars", "shop", "employees", "schedule", "results", "finances", "sponsors" };
         garageTabs = garagePageNames.Select(name => garageScreen.Q<Button>(name + "Tab")).ToArray();
         garagePages = garagePageNames.Select(name => garageScreen.Q(name + "Page")).ToArray();
+        var shopComponents = garageScreen.Q("shopCarComponents");
+        garageScreen.Q("shopCarPicker").RegisterCallback<GeometryChangedEvent>(evt =>
+        {
+            if (evt.newRect.height > 0f)
+                shopComponents.style.marginTop = evt.newRect.height + 12f;
+        });
         garageTabActions = new System.Action[garageTabs.Length];
         for (int i = 0; i < garageTabs.Length; i++)
         {
@@ -280,11 +321,12 @@ public sealed class StartupMenu : MonoBehaviour
         garageScreen.Q<Button>("cancelSkipRaceButton").clicked += CloseSkipRacePrompt;
         garageScreen.Q<Button>("confirmSkipRaceButton").clicked += ConfirmSkipRace;
 
-        settings = new GameSettings(root, ApplyDisplaySettings, CloseSettings);
+        settings = new GameSettings(root, ApplyDisplaySettings, CloseSettings, SaveTeamColors);
         settings.ScreenView.styleSheets.Add(Resources.Load<StyleSheet>("Startup/Startup"));
         settings.ScreenView.style.display = DisplayStyle.None;
         root.Add(settings.ScreenView);
-        raceEventView = new RaceEventView(() => StartNextSession(false), () => StartNextSession(true), LeaveRaceEvent, settings.RestorePalette);
+        raceEventView = new RaceEventView(() => StartNextSession(false), () => StartNextSession(true), LeaveRaceEvent,
+            settings.RestorePalette, () => activeCareer?.TeamColors ?? (default, default));
         raceEventView.Screen.styleSheets.Add(Resources.Load<StyleSheet>("Startup/Startup"));
         raceEventView.Screen.style.display = DisplayStyle.None;
         root.Add(raceEventView.Screen);
@@ -296,20 +338,13 @@ public sealed class StartupMenu : MonoBehaviour
         ApplyDisplaySettings();
     }
 
-    private void Start()
-    {
-        if (!StartInDevelopmentPractice)
-            return;
-
-        ShowDevelopmentTrackPicker();
-    }
-
     private void ShowDevelopmentTrackPicker(string message = null)
     {
         catalog.Refresh();
         var dropdown = developmentTrackPicker.Q<DropdownField>("developmentTracks");
         var start = developmentTrackPicker.Q<Button>("startDevelopmentPractice");
-        developmentTracks = catalog.Entries.Where(entry => entry.Definition.id >= TrackPreview.BristolTrackId &&
+        developmentTracks = catalog.Entries.Where(entry =>
+            (entry.Definition.id >= TrackPreview.BristolTrackId || entry.Definition.id == TrackPreview.CotaTrackId) &&
             entry.Definition.pitRoad is { enabled: true, entrance: { Length: >= 2 }, exit: { Length: >= 2 } }).ToList();
         int savedId = PlayerPrefs.GetInt(DevelopmentTrackPreference, -1);
         int selected = developmentTracks.FindIndex(entry => entry.Definition.id == savedId);
@@ -332,7 +367,7 @@ public sealed class StartupMenu : MonoBehaviour
         titleScreen.style.display = DisplayStyle.None;
         developmentTrackPicker.style.display = DisplayStyle.Flex;
         settings.RestorePalette();
-        (available ? start : developmentTrackPicker.Q<Button>("exitDevelopmentPractice")).Focus();
+        (available ? start : developmentTrackPicker.Q<Button>("backFromDevelopmentPractice")).Focus();
     }
 
     private void StartDevelopmentPractice(TrackCatalog.Entry track)
@@ -380,7 +415,37 @@ public sealed class StartupMenu : MonoBehaviour
         settingsReturnButton = source;
         screen.style.display = DisplayStyle.None;
         settings.ScreenView.style.display = DisplayStyle.Flex;
-        settings.Open();
+        settings.Open(screen == garageScreen ? activeCareer : null);
+    }
+
+    private string SaveTeamColors(string primary, string secondary)
+    {
+        var career = activeCareer;
+        var current = career.TeamColors;
+        if (primary == "#" + ColorUtility.ToHtmlStringRGB(current.Primary) &&
+            secondary == "#" + ColorUtility.ToHtmlStringRGB(current.Secondary))
+            return null;
+
+        string previousPrimary = career.primaryTeamColor;
+        string previousSecondary = career.secondaryTeamColor;
+        career.primaryTeamColor = primary;
+        career.secondaryTeamColor = secondary;
+        try
+        {
+            careerSetup.SaveProgress(career);
+        }
+        catch (System.Exception ex) when (ex is IOException || ex is System.UnauthorizedAccessException)
+        {
+            career.primaryTeamColor = previousPrimary;
+            career.secondaryTeamColor = previousSecondary;
+            return "Could not save team colors. " + ex.Message;
+        }
+
+        var page = garagePages.FirstOrDefault(view => view.style.display == DisplayStyle.Flex);
+        if (page != null)
+            UpdateGarageBackground(page.name);
+        DisplayEmployees(career);
+        return null;
     }
 
     private void CloseSettings()
@@ -393,8 +458,23 @@ public sealed class StartupMenu : MonoBehaviour
 
     private void OnDestroy()
     {
+        raceEventView?.Dispose();
         employeePortraits.Dispose();
         carThumbnails.Dispose();
+        paintPreviewThumbnails.Dispose();
+        teamShopPreview.Dispose();
+        scheduleHauler.Dispose();
+        teamShopExterior.Dispose();
+        if (financesBackground != null)
+        {
+            financesBackground.Release();
+            Destroy(financesBackground);
+        }
+        if (carsBackground != null)
+        {
+            carsBackground.Release();
+            Destroy(carsBackground);
+        }
         trackUtility?.CloseReferenceImage();
         sessionSpeedSelector?.UnregisterValueChangedCallback(ChangeSessionSpeed);
         if (startRaceButton != null)
@@ -488,17 +568,23 @@ public sealed class StartupMenu : MonoBehaviour
         garageScreen.Q("garageFooter").SetEnabled(true);
         var body = garageScreen.Q<ScrollView>("garageBody");
         string pageName = garagePages[selected].name;
+        UpdateGarageBackground(pageName);
+        if (pageName == "shopPage" && activeCareer != null)
+            RefreshShopCarPicker();
+        if (pageName == "employeesPage" && activeCareer != null)
+            DisplayEmployeeWorkInProgress();
         if (activeCareer != null)
             garageScreen.Q<Label>("teamHeader").text = $"{activeCareer.teamName} - {garageTabs[selected].text}";
         if (pageName != "employeesPage")
             CancelFireEmployee();
-        body.style.display = pageName == "schedulePage" || pageName == "employeesPage"
+        body.style.display = pageName == "schedulePage" || pageName == "employeesPage" || pageName == "mailPage"
             ? DisplayStyle.None : DisplayStyle.Flex;
+        if (pageName == "mailPage" && activeCareer != null)
+            teamMail.Show(garagePages[selected], activeCareer, settings.RestorePalette, DeleteSocialPosts, SocialDriverPortrait);
         if (pageName == "schedulePage")
             RefreshSchedule(selectNext: true);
 
-        bool showingResults = pageName == "resultsPage";
-        if (showingResults)
+        if (pageName == "resultsPage")
             BuildTeamResults(resultsEvent);
         if (pageName == "financesPage")
             DisplayFinances();
@@ -508,6 +594,194 @@ public sealed class StartupMenu : MonoBehaviour
             DisplaySponsors();
         body.scrollOffset = Vector2.zero;
         settings?.RestorePalette();
+    }
+
+    private void RefreshShopCarPicker()
+    {
+        var panel = garageScreen.Q("shopCarComponents");
+        var status = garageScreen.Q<Label>("shopMaintenanceStatus");
+        status.style.display = DisplayStyle.None;
+        bool hasDate = Career.TryReadDate(activeCareer.currentDate, out var date);
+        var nextRaceDate = NextScheduledRaceDate();
+        shopCarPicker.Show(garageScreen.Q("shopCarPicker"), activeCareer.cars, carThumbnails, ActiveSponsorNames(),
+            settings.RestorePalette, car => ShopComponentPanel.Show(panel, car, hasDate ? date : (System.DateTime?)null,
+                nextRaceDate,
+                repair => ShopRepairPortrait(activeCareer.employees?.Find(repair.IsAssignedTo), car.number),
+                component => hasDate && CanUpgradeComponent(car, component, date),
+                activeCareer.teamBalance,
+                component => ConfirmComponentUpgrade(car, component),
+                component => OpenCarMaintenance(car, component),
+                repair => CancelComponentRepair(car, repair)));
+    }
+
+    private System.DateTime? NextScheduledRaceDate()
+    {
+        var nextRace = activeCareer.schedule?.races?.Find(race => !race.completed);
+        return Career.TryReadDate(nextRace?.date, out var raceDate) ? raceDate : null;
+    }
+
+    private void DisplayEmployeeWorkInProgress()
+    {
+        var roster = garageScreen.Q<ScrollView>("employeeRoster");
+        var work = garageScreen.Q<ScrollView>("employeeWorkInProgress");
+        var toggle = garageScreen.Q<Button>("workInProgressToggle");
+        roster.style.display = showingWorkInProgress ? DisplayStyle.None : DisplayStyle.Flex;
+        work.style.display = showingWorkInProgress ? DisplayStyle.Flex : DisplayStyle.None;
+        toggle.text = showingWorkInProgress ? "Show Employees" : "Work In Progress";
+        toggle.EnableInClassList("nav-button-selected", showingWorkInProgress);
+        if (!showingWorkInProgress)
+        {
+            settings.RestorePalette();
+            return;
+        }
+
+        work.Clear();
+        System.DateTime? date = Career.TryReadDate(activeCareer.currentDate, out var currentDate) ? currentDate : null;
+        var raceDate = NextScheduledRaceDate();
+        var sponsors = ActiveSponsorNames();
+        foreach (var car in activeCareer.cars)
+        {
+            if (car.repairs == null)
+                continue;
+            foreach (var repair in car.repairs)
+            {
+                var row = new VisualElement();
+                row.AddToClassList("employee-work-row");
+                var employee = new VisualElement();
+                employee.AddToClassList("employee-work-mechanic");
+                var assignee = activeCareer.employees?.Find(repair.IsAssignedTo);
+                var portrait = ShopRepairPortrait(assignee, car.number);
+                if (portrait != null)
+                    employee.Add(portrait);
+                var name = new Label(string.IsNullOrWhiteSpace(repair.employeeName) ? "Assigned mechanic" : repair.employeeName);
+                name.AddToClassList("employee-work-name");
+                var employeeDetails = new VisualElement();
+                employeeDetails.AddToClassList("employee-work-details");
+                employeeDetails.Add(name);
+                if (assignee != null)
+                {
+                    var role = new Label(assignee.RoleName);
+                    role.AddToClassList("employee-work-role");
+                    employeeDetails.Add(role);
+                }
+                employee.Add(employeeDetails);
+                row.Add(employee);
+
+                var thumbnail = new Image { image = carThumbnails.Get(car, sponsors), scaleMode = ScaleMode.ScaleToFit };
+                thumbnail.AddToClassList("employee-work-car");
+                row.Add(thumbnail);
+                var chassis = new Label(car.chassisNumber ?? "—");
+                chassis.AddToClassList("employee-work-chassis");
+                row.Add(chassis);
+
+                row.Add(ShopComponentPanel.ComponentIcon(repair.component));
+                var progress = new VisualElement();
+                progress.AddToClassList("employee-work-progress");
+                bool late = ShopComponentPanel.AddRepairProgress(progress, repair, date, raceDate);
+                row.Add(progress);
+                row.EnableInClassList("employee-work-late", late);
+                var openShop = new Button(() =>
+                {
+                    shopCarPicker.SelectCar(car);
+                    DisplayGaragePage(System.Array.FindIndex(garagePages, page => page.name == "shopPage"));
+                    garageScreen.Q("shopCarPicker").Q<Button>()?.Focus();
+                }) { text = "→", tooltip = $"Open chassis {car.chassisNumber} in Shop" };
+                openShop.AddToClassList("nav-button");
+                openShop.AddToClassList("employee-work-open-shop");
+                row.Add(openShop);
+                work.Add(row);
+            }
+        }
+        if (work.childCount == 0)
+            work.Add(new Label("No vehicle repairs in progress."));
+        settings.RestorePalette();
+    }
+
+    private Image ShopRepairPortrait(Employee employee, int liveryNumber)
+    {
+        var portrait = employee == null ? null : CreateEmployeePortrait(employee, liveryNumber, "employee-portrait");
+        portrait?.AddToClassList("shop-repair-portrait");
+        return portrait;
+    }
+
+    private string DeleteSocialPosts(IEnumerable<string> postIds)
+    {
+        var previous = activeCareer.deletedSocialPostIds;
+        activeCareer.deletedSocialPostIds = TeamCommunications.DeletePosts(activeCareer, postIds);
+        try
+        {
+            careerSetup.SaveProgress(activeCareer);
+            return null;
+        }
+        catch (System.Exception ex) when (ex is IOException || ex is System.UnauthorizedAccessException)
+        {
+            activeCareer.deletedSocialPostIds = previous;
+            return "Could not save changes to the social feed. " + ex.Message;
+        }
+    }
+
+    private void UpdateGarageBackground(string pageName)
+    {
+        bool showingShop = pageName == "shopPage";
+        bool showingSchedule = pageName == "schedulePage";
+        bool showingHome = pageName == "homePage";
+        bool showingFinances = pageName == "financesPage";
+        bool showingCars = pageName == "carsPage";
+        garageScreen.EnableInClassList("garage-shop-background", showingShop);
+        garageScreen.EnableInClassList("garage-schedule-background", showingSchedule);
+        garageScreen.EnableInClassList("garage-home-background", showingHome);
+        garageScreen.EnableInClassList("garage-finances-background", showingFinances);
+        garageScreen.EnableInClassList("garage-cars-background", showingCars);
+        garageScreen.EnableInClassList("victory-results-background", false);
+        if (showingShop)
+        {
+            teamShopPreview.Render(activeCareer, ActiveSponsorNames());
+            var image = teamShopPreview.BackgroundAtBlur(ShopBackgroundBlurPixels);
+            garageScreen.style.backgroundImage = image != null
+                ? new StyleBackground(Background.FromRenderTexture(image))
+                : new StyleBackground(StyleKeyword.Null);
+        }
+        else
+        {
+            teamShopPreview.Dispose();
+            RenderTexture image = null;
+            if (showingSchedule)
+                image = scheduleHauler.Render(activeCareer, ActiveSponsorNames()[0]);
+            else if (showingHome)
+                image = teamShopExterior.Render(activeCareer);
+            else if (showingFinances)
+                image = GetGaragePhotoBackground("FinancesBackground", ref financesBackground);
+            else if (showingCars)
+                image = GetGaragePhotoBackground("CarsBackground", ref carsBackground);
+            garageScreen.style.backgroundImage = image != null
+                ? new StyleBackground(Background.FromRenderTexture(image))
+                : new StyleBackground(StyleKeyword.Null);
+        }
+        if (pageName == "resultsPage" && activeCareer != null)
+            raceEventView.SetVictoryBackground(garageScreen, activeCareer.TeamColors);
+    }
+
+    private RenderTexture GetGaragePhotoBackground(string resourceName, ref RenderTexture cached)
+    {
+        if (cached != null)
+            return cached;
+
+        var source = Resources.Load<Texture2D>($"Startup/{resourceName}");
+        var shader = Resources.Load<Shader>("Startup/ShopBackgroundBlur");
+        if (source == null || shader == null || !shader.isSupported)
+            return null;
+
+        cached = new RenderTexture(source.width, source.height, 0) { name = $"Blurred {resourceName}" };
+        var material = new Material(shader) { hideFlags = HideFlags.HideAndDontSave };
+        try
+        {
+            TeamShopPreview.ApplyBackgroundBlur(source, cached, material, GaragePhotoBlurPixels);
+            return cached;
+        }
+        finally
+        {
+            Destroy(material);
+        }
     }
 
     private void DisplaySponsors(string message = null)
@@ -625,7 +899,8 @@ public sealed class StartupMenu : MonoBehaviour
         long expenseTotal = chargedExpenses.Sum(expenses => (long)expenses.Total);
         ShowAmount(garageScreen.Q<Label>("financeCostPerRace"), -payroll -
             (hasUpcomingRace ? RaceExpenses.BaseTotal : 0));
-        long netIncome = winnings + season.sponsorIncome - season.payrollPaid - season.carPurchases - season.componentUpgrades - expenseTotal;
+        long netIncome = winnings + season.sponsorIncome + season.carSales - season.payrollPaid - season.carPurchases -
+            season.componentUpgrades - season.componentRepairs - expenseTotal;
         var averageProfit = garageScreen.Q<Label>("financeAverageProfitPerRace");
         if (finished == 0)
         {
@@ -636,59 +911,7 @@ public sealed class StartupMenu : MonoBehaviour
             ShowAmount(averageProfit, (long)System.Math.Round((decimal)netIncome / finished,
                 System.MidpointRounding.AwayFromZero));
 
-        var grid = garageScreen.Q("financeBreakdown");
-        grid.Clear();
-        var heading = new VisualElement();
-        heading.AddToClassList("results-grid-row");
-        heading.AddToClassList("results-grid-header");
-        AddCell(heading, $"{season.season} Season Breakdown", "finance-description");
-        AddCell(heading, "Per Race (Base)", "finance-number");
-        AddCell(heading, "Year to Date", "finance-number");
-        grid.Add(heading);
-
-        AddRow("Employee salaries", -payroll, -season.payrollPaid);
-        AddExpenseRow("Wear and materials", RaceExpenses.WearAndMaterialsBase, expenses => expenses.wearAndMaterials);
-        AddExpenseRow("Engine lease", RaceExpenses.EngineLeaseBase, expenses => expenses.engineLease);
-        AddExpenseRow("Travel and logistics", RaceExpenses.TravelAndLogisticsBase, expenses => expenses.travelAndLogistics);
-        AddExpenseRow("Tires", RaceExpenses.TiresBase, expenses => expenses.tires);
-        AddRow("Car purchases", null, -season.carPurchases);
-        AddRow("Component upgrades", null, -season.componentUpgrades);
-        AddRow("Prize money", null, winnings);
-        AddRow("Sponsorship income", null, season.sponsorIncome);
-        AddRow("Net income", null, netIncome, true);
-        foreach (var contract in (activeCareer.sponsors ?? Enumerable.Empty<SponsorContract>()).OrderBy(item => item.slot))
-        {
-            var label = new Label($"{Sponsorships.SlotName(contract.slot)} — " +
-                $"{Sponsorships.CompanyName(contract.offer.companyId)}  •  " +
-                $"{RaceFinances.Dollars(contract.paid)} paid under contract  •  {contract.racesRemaining} races remaining");
-            label.AddToClassList("garage-detail");
-            grid.Add(label);
-        }
-
-        void AddExpenseRow(string name, long baseCost, System.Func<RaceExpenses, long> amount) =>
-            AddRow(name, hasUpcomingRace ? -baseCost : (long?)null, -chargedExpenses.Sum(amount));
-
-        void AddRow(string name, long? perRace, long yearToDate, bool total = false)
-        {
-            var row = new VisualElement();
-            row.AddToClassList("results-grid-row");
-            row.EnableInClassList("results-grid-header", total);
-            AddCell(row, name, "finance-description");
-            var perRaceLabel = AddCell(row, "—", "finance-number");
-            if (perRace.HasValue)
-                ShowAmount(perRaceLabel, perRace.Value);
-            ShowAmount(AddCell(row, string.Empty, "finance-number"), yearToDate);
-            grid.Add(row);
-        }
-
-        Label AddCell(VisualElement row, string text, string column)
-        {
-            var label = new Label(text);
-            label.AddToClassList("results-grid-cell");
-            label.AddToClassList(column);
-            row.Add(label);
-            return label;
-        }
+        FinanceReport.Render(garageScreen.Q("financeBreakdown"), activeCareer, races, chargedExpenses, payroll, winnings);
 
         void ShowAmount(Label label, long amount)
         {
@@ -790,10 +1013,9 @@ public sealed class StartupMenu : MonoBehaviour
         CancelFireEmployee();
         SetEmployeeStatus(null);
         RefreshDriverLabel(career);
+        activeCareer = career;
         DisplayEmployees(career);
         catalog.Refresh();
-        activeCareer = career;
-        selectedTeamCar = null;
         selectedEvent = null;
         careerChanged |= InitializeFinances(career);
         if (career.schedule == null || career.schedule.season <= 0 ||
@@ -825,6 +1047,13 @@ public sealed class StartupMenu : MonoBehaviour
             careerChanged = true;
         }
 
+        if (string.IsNullOrEmpty(career.socialStartDate))
+        {
+            career.socialStartDate = career.currentDate;
+            careerChanged = true;
+        }
+        careerChanged |= TeamCommunications.AddDriverWelcome(career);
+        careerChanged |= CrewChiefMail.SendPreview(career, catalog, RaceCarBlockReason);
         if (careerChanged)
         {
             try
@@ -849,7 +1078,7 @@ public sealed class StartupMenu : MonoBehaviour
     private void DisplayEmployees(Career career)
     {
         var roster = garageScreen.Q<ScrollView>("employeeRoster");
-        int liveryNumber = career.cars[0].number;
+        int liveryNumber = career.cars?.FirstOrDefault()?.number ?? 27;
         Vector2 scroll = roster.scrollOffset;
         roster.Clear();
         foreach (var driver in career.drivers)
@@ -857,13 +1086,14 @@ public sealed class StartupMenu : MonoBehaviour
             var card = new VisualElement();
             card.AddToClassList("employee-card");
             var portrait = CreateStaffPortrait(driver.FullName, driver.age, driver.gender,
-                driver.hometownCity, driver.hometownState, liveryNumber, "employee-portrait");
+                driver.hometownCity, driver.hometownState, liveryNumber, "employee-portrait", driver.ethnicity);
             if (portrait != null)
                 card.Add(portrait);
-            card.Add(new Label($"{driver.FullName} · Driver"));
-            card.Add(new Label($"{driver.age}, {driver.gender} · {driver.hometownCity}, {driver.hometownState}"));
-            card.Add(new Label($"{RaceFinances.Dollars(driver.annualSalary)} per year"));
-            card.Add(new Label($"Aggression {driver.personalityTraits.aggression:P0}"));
+            AddStaffIdentity(card, driver.FullName, "Driver");
+            var traits = AddStaffRatings(card);
+            float aggression = driver.personalityTraits?.aggression ?? 0.5f;
+            AddStaffRating(traits, "Aggression", aggression, $"{aggression:P0}", new Color32(255, 193, 99, 255));
+            AddStaffDetails(card, driver.annualSalary, driver.age, driver.yearsExperience);
             AddFireButton(card, "Fire Driver", driver.FullName, career.drivers, driver);
             roster.Add(card);
         }
@@ -903,24 +1133,75 @@ public sealed class StartupMenu : MonoBehaviour
         if (portrait != null)
             card.Add(portrait);
 
-        AddLine(employee.FullName, true);
-        AddLine(employee.RoleName);
-        string salary = $"{RaceFinances.Dollars(employee.annualSalary)} per year";
-        AddLine(salary);
-        AddLine($"{employee.age}  /  {employee.gender}  /  {employee.hometownCity}, {employee.hometownState}");
-        AddLine($"Engines {employee.engines:F2}  /  Brakes {employee.brakes:F2}");
-        AddLine($"Suspensions {employee.suspensions:F2}");
-        AddLine($"Transmissions {employee.transmissions:F2}");
-        AddLine($"Bodywork {employee.bodywork:F2}");
+        AddStaffIdentity(card, employee.FullName, employee.RoleName);
+        var skills = AddStaffRatings(card);
+        AddSkill(CarComponent.Brakes, "Brakes");
+        AddSkill(CarComponent.Engine, "Engine");
+        AddSkill(CarComponent.Suspension, "Suspension");
+        AddSkill(CarComponent.Transmission, "Transmission");
+        AddSkill(CarComponent.Aerodynamics, "Aero");
+        AddStaffDetails(card, employee.annualSalary, employee.age, employee.yearsExperience);
 
-        void AddLine(string text, bool heading = false)
+        void AddSkill(CarComponent component, string title)
         {
-            var label = new Label(text) { pickingMode = PickingMode.Ignore };
-            label.AddToClassList("garage-detail");
-            label.AddToClassList("schedule-status");
-            label.EnableInClassList("schedule-heading", heading);
-            card.Add(label);
+            float value = employee.RepairSkill(component);
+            AddStaffRating(skills, title, value, value.ToString("F2"), ShopComponentPanel.ComponentColor(component));
         }
+    }
+
+    private static void AddStaffIdentity(VisualElement card, string name, string role)
+    {
+        var nameLabel = AddStaffLine(card, name);
+        nameLabel.AddToClassList("schedule-heading");
+        nameLabel.AddToClassList("employee-card-identity");
+        AddStaffLine(card, role).AddToClassList("employee-card-identity");
+    }
+
+    private static void AddStaffDetails(VisualElement card, long salary, int age, int yearsExperience)
+    {
+        AddStaffLine(card, $"{RaceFinances.Dollars(salary)} per year");
+        AddStaffLine(card, $"Age {age}");
+        AddStaffLine(card, $"Years Experience {yearsExperience}");
+    }
+
+    private static Label AddStaffLine(VisualElement card, string text)
+    {
+        var label = new Label(text) { pickingMode = PickingMode.Ignore };
+        label.AddToClassList("garage-detail");
+        label.AddToClassList("schedule-status");
+        card.Add(label);
+        return label;
+    }
+
+    private static VisualElement AddStaffRatings(VisualElement card)
+    {
+        var ratings = new VisualElement();
+        ratings.AddToClassList("employee-card-skills");
+        card.Add(ratings);
+        return ratings;
+    }
+
+    private static void AddStaffRating(VisualElement ratings, string title, float value, string formattedValue, Color color)
+    {
+        var row = new VisualElement();
+        row.AddToClassList("employee-skill-row");
+        var name = new Label(title);
+        name.AddToClassList("employee-skill-name");
+        row.Add(name);
+
+        var track = new VisualElement { tooltip = $"{title} {formattedValue}" };
+        track.AddToClassList("employee-skill-track");
+        var fill = new VisualElement { pickingMode = PickingMode.Ignore };
+        fill.AddToClassList("employee-skill-fill");
+        fill.style.width = Length.Percent(Mathf.Clamp01(value) * 100f);
+        fill.style.backgroundColor = color;
+        track.Add(fill);
+        row.Add(track);
+
+        var amount = new Label(formattedValue);
+        amount.AddToClassList("employee-skill-value");
+        row.Add(amount);
+        ratings.Add(row);
     }
 
     private Image CreateEmployeePortrait(Employee employee, int liveryNumber, string styleClass) =>
@@ -928,16 +1209,44 @@ public sealed class StartupMenu : MonoBehaviour
             employee.hometownState, liveryNumber, styleClass);
 
     private Image CreateStaffPortrait(string fullName, int age, string gender, string city, string state,
-        int liveryNumber, string styleClass)
+        int liveryNumber, string styleClass, DriverEthnicity ethnicity = DriverEthnicity.Unspecified)
     {
         var livery = TrackPreview.TeamLivery(liveryNumber);
-        var texture = employeePortraits.Get(fullName, age, gender, city, state, livery.RoofAndSides, livery.HoodAndTrunk);
+        var colors = styleClass == "employee-portrait" && activeCareer != null
+            ? activeCareer.TeamColors : (Primary: livery.HoodAndTrunk, Secondary: livery.RoofAndSides);
+        var texture = employeePortraits.Get(fullName, age, gender, city, state, colors.Secondary, colors.Primary, ethnicity);
         if (texture == null)
             return null;
 
         var portrait = new Image { image = texture, scaleMode = ScaleMode.ScaleToFit, pickingMode = PickingMode.Ignore };
         portrait.AddToClassList(styleClass);
         return portrait;
+    }
+
+    private Texture2D SocialDriverPortrait(DriverContact contact)
+    {
+        if (contact == null)
+            return null;
+
+        int age = contact.driverAge;
+        string gender = contact.driverGender;
+        var ethnicity = contact.driverEthnicity;
+        if (age <= 0 || string.IsNullOrEmpty(gender) || ethnicity == DriverEthnicity.Unspecified)
+        {
+            var driver = activeCareer.RivalDriver(contact.teamName, contact.driverName);
+            if (driver == null && string.IsNullOrEmpty(contact.teamName))
+                driver = activeCareer.rivalEmployees?.SelectMany(team => team.drivers ?? Enumerable.Empty<Driver>())
+                    .FirstOrDefault(candidate => candidate.FullName == contact.driverName);
+            if (driver == null)
+                return null;
+            age = driver.age;
+            gender = driver.gender;
+            ethnicity = driver.ethnicity;
+        }
+
+        var paint = TrackPreview.TeamLivery(contact.carNumber);
+        return employeePortraits.Get(contact.driverName, age, gender, null, null,
+            paint.RoofAndSides, paint.HoodAndTrunk, ethnicity);
     }
 
     private static Employee CreateRecruit(EmployeeRole role, System.Random random)
@@ -1063,7 +1372,7 @@ public sealed class StartupMenu : MonoBehaviour
         foreach (var driver in drivers)
         {
             var portrait = CreateStaffPortrait(driver.FullName, driver.age, driver.gender, driver.hometownCity,
-                driver.hometownState, activeCareer.cars[0].number, "recruitment-portrait");
+                driver.hometownState, activeCareer.cars[0].number, "recruitment-portrait", driver.ethnicity);
             AddCandidate(portrait, driver.FullName, driver.age, driver.gender, driver.hometownCity, driver.hometownState,
                 null, $"Aggression {driver.personalityTraits.aggression:P0}", driver.annualSalary, () => HireDriver(driver));
         }
@@ -1134,6 +1443,7 @@ public sealed class StartupMenu : MonoBehaviour
 
         career.driverCandidates[index] = Driver.Create(new System.Random(), null);
         career.drivers.Add(candidate);
+        bool welcomeAdded = TeamCommunications.AddDriverWelcome(career);
         try
         {
             careerSetup.SaveProgress(career);
@@ -1141,6 +1451,8 @@ public sealed class StartupMenu : MonoBehaviour
         catch (System.Exception ex) when (ex is IOException || ex is System.UnauthorizedAccessException)
         {
             career.drivers.Remove(candidate);
+            if (welcomeAdded)
+                career.inbox.RemoveAt(career.inbox.Count - 1);
             career.driverCandidates[index] = candidate;
             DisplayRecruitment("Could not save the hire. " + ex.Message);
             return;
@@ -1254,21 +1566,34 @@ public sealed class StartupMenu : MonoBehaviour
         }
 
         string previous = activeCareer.currentDate;
+        int inboxCount = activeCareer.inbox?.Count ?? 0;
         activeCareer.SetDate(date.AddDays(1));
         var undoRepairs = UpdateCareerRepairs();
         try
         {
+            CrewChiefMail.SendPreview(activeCareer, catalog, RaceCarBlockReason);
             careerSetup.SaveProgress(activeCareer);
         }
         catch (System.Exception ex) when (ex is IOException || ex is System.UnauthorizedAccessException)
         {
             undoRepairs?.Invoke();
             activeCareer.currentDate = previous;
+            CrewChiefMail.UndoNewMessages(activeCareer, inboxCount);
             Debug.LogWarning("Could not save the next day. " + ex.Message);
         }
         RefreshCareerDate();
+        if (garageScreen.Q("shopPage").style.display == DisplayStyle.Flex)
+            RefreshShopCarPicker();
+        if (showingWorkInProgress && garageScreen.Q("employeesPage").style.display == DisplayStyle.Flex)
+            DisplayEmployeeWorkInProgress();
         if (garageScreen.Q("carsPage").style.display == DisplayStyle.Flex)
             RefreshTeamCars();
+        var mailPage = garageScreen.Q("mailPage");
+        if (mailPage.style.display == DisplayStyle.Flex)
+        {
+            teamMail.Show(mailPage, activeCareer, settings.RestorePalette, DeleteSocialPosts, SocialDriverPortrait);
+            settings.RestorePalette();
+        }
     }
 
     private ScheduledRace DueRace(System.DateTime date)
@@ -1338,95 +1663,88 @@ public sealed class StartupMenu : MonoBehaviour
     private void RefreshTeamCars()
     {
         var rows = garageScreen.Q<ScrollView>("teamCarRows");
+        var status = garageScreen.Q<Label>("carsStatus");
+        status.style.display = DisplayStyle.None;
         Vector2 scroll = rows.scrollOffset;
         rows.Clear();
-        if (!activeCareer.cars.Contains(selectedTeamCar))
-            selectedTeamCar = activeCareer.cars[0];
-
+        var sponsors = ActiveSponsorNames();
         foreach (var car in activeCareer.cars)
-        {
-            var tab = ScheduleButton(string.Empty, car == selectedTeamCar, () =>
-            {
-                selectedTeamCar = car;
-                rows.Query<Button>(className: "car-tab").ForEach(button =>
-                    button.EnableInClassList("nav-button-selected", button.userData == selectedTeamCar));
-                DisplayCarRatings(car);
-                settings?.RestorePalette();
-            });
-            tab.userData = car;
-            tab.AddToClassList("car-tab");
-            var thumbnail = carThumbnails.Get(car, ActiveSponsorNames());
-            if (thumbnail != null)
-            {
-                var image = new Image { image = thumbnail, scaleMode = ScaleMode.ScaleToFit, pickingMode = PickingMode.Ignore };
-                image.AddToClassList("car-tab-image");
-                tab.Add(image);
-            }
-            tab.Add(new Label($"Chassis # {car.chassisNumber ?? "Unassigned"}") { pickingMode = PickingMode.Ignore });
-            var panel = new VisualElement();
-            panel.AddToClassList("car-panel");
-            panel.Add(tab);
-
-            var actions = new VisualElement();
-            actions.AddToClassList("car-panel-actions");
-            var repair = new Button(() => OpenCarMaintenance(car)) { text = "Repair/Upgrade" };
-            var paint = new Button(() => ShowCarPaint(car)) { text = "Paint" };
-            repair.AddToClassList("nav-button");
-            paint.AddToClassList("nav-button");
-            actions.Add(repair);
-            actions.Add(paint);
-            panel.Add(actions);
-            rows.Add(panel);
-        }
+            rows.Add(TeamCarCard.Create(car, carThumbnails.Get(car, sponsors), activeCareer.cars.Count > 1,
+                () => ShowCarPaint(car), () => ConfirmCarSale(car)));
         rows.schedule.Execute(() => rows.scrollOffset = scroll);
-        DisplayCarRatings(selectedTeamCar);
-        addTeamCarButton.SetEnabled(activeCareer.cars.Count < TeamCar.MaximumOwned);
+        addTeamCarButton.style.display = activeCareer.cars.Count < TeamCar.MaximumOwned
+            ? DisplayStyle.Flex : DisplayStyle.None;
         settings?.RestorePalette();
     }
 
-    private void DisplayCarRatings(TeamCar car)
+    private void ConfirmCarSale(TeamCar car)
     {
-        var ratings = garageScreen.Q("teamCarRatings");
-        ratings.Clear();
-        AddDetail("Chassis number", car.chassisNumber ?? "Unassigned");
-        AddDetail("Component", "Level", "Wear").AddToClassList("schedule-heading");
-        foreach (var component in TeamCar.Components)
-        {
-            var condition = car.GetComponent(component);
-            AddDetail(component.ToString(), condition.Level.ToString(), condition.Wear.ToString("P0"));
-            var repair = car.repairs?.Find(item => item.component == component);
-            if (repair != null && Career.TryReadDate(activeCareer.currentDate, out var date))
-                AddDetail($"{component} repair", $"{ComponentRepair.FormatDuration(repair.RemainingHours(date))} remaining");
-        }
+        if (activeCareer.cars.Count <= 1 || !activeCareer.cars.Contains(car))
+            return;
 
-        VisualElement AddDetail(string name, string value, string wear = null)
-        {
-            var row = new VisualElement();
-            row.AddToClassList("car-rating-row");
-            var label = new Label(name);
-            label.AddToClassList("garage-detail");
-            label.AddToClassList("car-rating-name");
-            row.Add(label);
-
-            var valueLabel = new Label(value);
-            valueLabel.AddToClassList("garage-detail");
-            row.Add(valueLabel);
-            if (wear != null)
-            {
-                valueLabel.AddToClassList("car-rating-value");
-                var wearLabel = new Label(wear);
-                wearLabel.AddToClassList("garage-detail");
-                wearLabel.AddToClassList("car-rating-value");
-                row.Add(wearLabel);
-            }
-
-            ratings.Add(row);
-            return row;
-        }
+        long price = UsedCarListing.TradeInPrice(car);
+        string amount = RaceFinances.Dollars(price);
+        var options = OpenCarOptions("Sell Car");
+        string repairs = car.repairs?.Count > 0 ? " The sale ends any repairs on this chassis." : string.Empty;
+        var question = new Label($"Sell chassis {car.chassisNumber} for {amount}?{repairs}");
+        question.AddToClassList("garage-detail");
+        options.Add(question);
+        var sell = new Button(() => SellCar(car, price)) { text = $"Sell for {amount}" };
+        sell.AddToClassList("nav-button");
+        options.Add(sell);
+        settings.RestorePalette();
     }
+
+    private void SellCar(TeamCar car, long price)
+    {
+        var career = activeCareer;
+        int index = career.cars.IndexOf(car);
+        if (index < 0 || career.cars.Count <= 1)
+            return;
+
+        var assignedRaces = career.schedule.races
+            .Where(race => !race.completed && !string.IsNullOrEmpty(race.carChassisNumber) &&
+                race.carChassisNumber == car.chassisNumber)
+            .Select(race => (Race: race, Number: race.carNumber)).ToArray();
+        career.cars.RemoveAt(index);
+        career.teamBalance += price;
+        career.schedule.carSales += price;
+        foreach (var assignment in assignedRaces)
+        {
+            assignment.Race.carChassisNumber = string.Empty;
+            assignment.Race.carNumber = 0;
+        }
+        try
+        {
+            careerSetup.SaveProgress(career);
+        }
+        catch (System.Exception ex) when (ex is IOException || ex is System.UnauthorizedAccessException)
+        {
+            career.cars.Insert(index, car);
+            career.teamBalance -= price;
+            career.schedule.carSales -= price;
+            foreach (var assignment in assignedRaces)
+            {
+                assignment.Race.carChassisNumber = car.chassisNumber;
+                assignment.Race.carNumber = assignment.Number;
+            }
+            garageScreen.Q<Label>("carOptionsStatus").text = "Could not save the sale. " + ex.Message;
+            return;
+        }
+
+        CloseCarOptions();
+        RefreshTeamCars();
+        RefreshTeamBalance();
+        RefreshSchedule();
+        var status = garageScreen.Q<Label>("carsStatus");
+        status.text = $"Sold chassis {car.chassisNumber} for {RaceFinances.Dollars(price)}.";
+        status.style.display = DisplayStyle.Flex;
+    }
+
 
     private ScrollView OpenCarOptions(string title)
     {
+        paintPreviewThumbnails.Dispose();
         garageScreen.Q<Label>("carOptionsTitle").text = title;
         garageScreen.Q<Label>("carOptionsStatus").text = "";
         var rows = garageScreen.Q<ScrollView>("carOptionsRows");
@@ -1437,8 +1755,11 @@ public sealed class StartupMenu : MonoBehaviour
         return rows;
     }
 
-    private void CloseCarOptions() =>
+    private void CloseCarOptions()
+    {
         garageScreen.Q("carOptionsOverlay").style.display = DisplayStyle.None;
+        paintPreviewThumbnails.Dispose();
+    }
 
     private void ShowRaceCarPicker()
     {
@@ -1468,46 +1789,99 @@ public sealed class StartupMenu : MonoBehaviour
 
     private void ShowCarPaint(TeamCar car)
     {
-        selectedTeamCar = car;
-        var rows = OpenCarOptions($"Paint Colors • Chassis # {car.chassisNumber}");
-        var paint = car.Paint;
-        AddColor("Primary • Hood and trunk", paint.HoodAndTrunk, true);
-        AddColor("Secondary • Roof and sides", paint.RoofAndSides, false);
+        var rows = OpenCarOptions($"Paint Scheme · Chassis # {car.chassisNumber}");
+        var original = car.PaintStyle;
+        var schemes = (CarPaintScheme[])System.Enum.GetValues(typeof(CarPaintScheme));
+        var colors = new[] { original.Primary, original.Secondary, original.Trim };
+        bool hasTrim = original.HasTrim;
+        var sponsors = ActiveSponsorNames();
+        var preview = new Image { scaleMode = ScaleMode.ScaleToFit, tooltip = "Right-drag to rotate the car" };
+        preview.AddToClassList("car-paint-preview");
+        preview.RegisterCallback<PointerDownEvent>(evt =>
+        {
+            if (evt.button != 1)
+                return;
+            preview.CapturePointer(evt.pointerId);
+            evt.StopPropagation();
+        });
+        preview.RegisterCallback<PointerMoveEvent>(evt =>
+        {
+            if (!preview.HasPointerCapture(evt.pointerId) || (evt.pressedButtons & 2) == 0)
+                return;
+            paintPreviewThumbnails.RotatePreview(evt.deltaPosition);
+            preview.MarkDirtyRepaint();
+            evt.StopPropagation();
+        });
+        preview.RegisterCallback<PointerUpEvent>(evt =>
+        {
+            if (evt.button != 1 || !preview.HasPointerCapture(evt.pointerId))
+                return;
+            preview.ReleasePointer(evt.pointerId);
+            evt.StopPropagation();
+        });
+        rows.Add(preview);
+        var scheme = new DropdownField("Paint scheme", schemes.Select(CarPaintStyle.SchemeName).ToList(),
+            System.Array.IndexOf(schemes, original.Scheme));
+        rows.Add(scheme);
+        scheme.RegisterValueChangedCallback(_ => UpdatePreview());
+        AddColor("Primary color", 0);
+        AddColor("Secondary color", 1);
+        AddColor("Trim color", 2);
+        var save = new Button(Save) { text = "Save Paint Scheme" };
+        save.AddToClassList("nav-button");
+        rows.Add(save);
+        UpdatePreview();
         settings?.RestorePalette();
 
-        void AddColor(string label, Color color, bool primary)
+        CarPaintStyle Draft() => new CarPaintStyle(schemes[scheme.index], colors[0], colors[1], colors[2], hasTrim);
+
+        void UpdatePreview()
+        {
+            preview.image = paintPreviewThumbnails.Get(car, sponsors, Draft());
+            garageScreen.Q<Label>("carOptionsStatus").text = "";
+        }
+
+        void AddColor(string label, int index)
         {
             var swatch = new VisualElement { pickingMode = PickingMode.Ignore };
-            swatch.style.backgroundColor = color;
-            AddCarOption(rows, label, swatch, () =>
+            swatch.AddToClassList("car-paint-swatch");
+            swatch.style.backgroundColor = (Color)colors[index];
+            var button = new Button(() =>
             {
-                if (!WindowsColorPicker.TryPick(color, out var chosen))
+                if (!WindowsColorPicker.TryPick(colors[index], out var chosen))
                     return;
-
-                string previous = primary ? car.primaryPaint : car.secondaryPaint;
-                SetPaint("#" + ColorUtility.ToHtmlStringRGB(chosen));
-                try
-                {
-                    careerSetup.SaveProgress(activeCareer);
-                }
-                catch (System.Exception ex) when (ex is IOException || ex is System.UnauthorizedAccessException)
-                {
-                    SetPaint(previous);
-                    garageScreen.Q<Label>("carOptionsStatus").text = "Could not save paint colors. " + ex.Message;
-                    return;
-                }
-
-                RefreshTeamCars();
-                ShowCarPaint(car);
-
-                void SetPaint(string value)
-                {
-                    if (primary)
-                        car.primaryPaint = value;
-                    else
-                        car.secondaryPaint = value;
-                }
+                colors[index] = chosen;
+                hasTrim |= index == 2;
+                swatch.style.backgroundColor = (Color)chosen;
+                UpdatePreview();
             });
+            button.AddToClassList("nav-button");
+            button.AddToClassList("car-paint-color");
+            button.Add(swatch);
+            button.Add(new Label(label) { pickingMode = PickingMode.Ignore });
+            rows.Add(button);
+        }
+
+        void Save()
+        {
+            var previous = (car.primaryPaint, car.secondaryPaint, car.trimPaint, car.paintScheme);
+            car.primaryPaint = "#" + ColorUtility.ToHtmlStringRGB(colors[0]);
+            car.secondaryPaint = "#" + ColorUtility.ToHtmlStringRGB(colors[1]);
+            car.trimPaint = hasTrim ? "#" + ColorUtility.ToHtmlStringRGB(colors[2]) : null;
+            car.paintScheme = Draft().Scheme;
+            try
+            {
+                careerSetup.SaveProgress(activeCareer);
+            }
+            catch (System.Exception ex) when (ex is IOException || ex is System.UnauthorizedAccessException)
+            {
+                (car.primaryPaint, car.secondaryPaint, car.trimPaint, car.paintScheme) = previous;
+                garageScreen.Q<Label>("carOptionsStatus").text = "Could not save paint scheme. " + ex.Message;
+                return;
+            }
+
+            CloseCarOptions();
+            RefreshTeamCars();
         }
     }
 
@@ -1525,9 +1899,9 @@ public sealed class StartupMenu : MonoBehaviour
         return button;
     }
 
-    private void OpenCarMaintenance(TeamCar car)
+    private void OpenCarMaintenance(TeamCar car, CarComponent? component = null)
     {
-        selectedTeamCar = car;
+        maintenanceComponent = component;
 
         garageScreen.Q("garageBody").style.display = DisplayStyle.None;
         garageScreen.Q("carMaintenancePage").style.display = DisplayStyle.Flex;
@@ -1535,6 +1909,18 @@ public sealed class StartupMenu : MonoBehaviour
         garageScreen.Q<ScrollView>("carMaintenanceComponents").scrollOffset = Vector2.zero;
         DisplayCarMaintenance(car);
         garageScreen.Q<Button>("carMaintenanceBackButton").Focus();
+    }
+
+    private void CloseCarMaintenance()
+    {
+        if (!maintenanceComponent.HasValue)
+        {
+            CloseCarMarket();
+            return;
+        }
+        maintenanceComponent = null;
+        DisplayGaragePage(System.Array.FindIndex(garagePages, page => page.name == "shopPage"));
+        garageScreen.Q("shopCarPicker").Q<Button>()?.Focus();
     }
 
     private void DisplayCarMaintenance(TeamCar car, string message = "")
@@ -1551,6 +1937,8 @@ public sealed class StartupMenu : MonoBehaviour
 
         foreach (var component in TeamCar.Components)
         {
+            if (maintenanceComponent.HasValue && maintenanceComponent.Value != component)
+                continue;
             var condition = car.GetComponent(component);
             var repair = car.repairs?.Find(item => item.component == component);
             var row = new VisualElement();
@@ -1563,25 +1951,27 @@ public sealed class StartupMenu : MonoBehaviour
             var actions = new VisualElement();
             actions.AddToClassList("employee-role-actions");
             row.Add(actions);
-            var upgrade = new Button(() => UpgradeComponent(car, component))
-                { text = $"Upgrade ({RaceFinances.Dollars(TeamCar.ComponentUpgradeCost)})" };
-            upgrade.AddToClassList("nav-button");
-            bool coolingDown = car.TryGetNextUpgradeDate(component, out var nextUpgrade) && date < nextUpgrade;
-            upgrade.SetEnabled(validDate && !coolingDown && condition.Level < TeamCar.MaximumComponentLevel &&
-                activeCareer.teamBalance >= TeamCar.ComponentUpgradeCost);
-            actions.Add(upgrade);
-            if (coolingDown && condition.Level < TeamCar.MaximumComponentLevel)
+            if (!maintenanceComponent.HasValue && repair == null && condition.Level < TeamCar.MaximumComponentLevel)
             {
-                var availability = new Label($"Next upgrade {nextUpgrade:d}");
-                availability.AddToClassList("garage-detail");
-                row.Add(availability);
+                var upgrade = new Button(() => ConfirmComponentUpgrade(car, component))
+                    { text = $"Upgrade ({RaceFinances.Dollars(TeamCar.ComponentUpgradeCost)})" };
+                upgrade.AddToClassList("nav-button");
+                upgrade.SetEnabled(validDate && CanUpgradeComponent(car, component, date));
+                actions.Add(upgrade);
+                if (car.TryGetNextUpgradeDate(component, out var nextUpgrade) && date < nextUpgrade)
+                {
+                    var availability = new Label($"Next upgrade {nextUpgrade:d}");
+                    availability.AddToClassList("garage-detail");
+                    row.Add(availability);
+                }
             }
 
             if (repair != null)
             {
                 string remaining = validDate
                     ? $" • {ComponentRepair.FormatDuration(repair.RemainingHours(date))} remaining" : "";
-                var status = new Label($"Assigned to {repair.employeeName} • Due {repair.completionDate}{remaining}");
+                string paid = repair.cost > 0 ? $" • Paid {RaceFinances.Dollars(repair.cost)}" : "";
+                var status = new Label($"Assigned to {repair.employeeName} • Due {repair.completionDate}{remaining}{paid}");
                 status.AddToClassList("garage-detail");
                 actions.Add(status);
                 var cancel = new Button(() => CancelComponentRepair(car, repair)) { text = "Cancel Repair" };
@@ -1592,6 +1982,8 @@ public sealed class StartupMenu : MonoBehaviour
             else if (condition.Wear > 0)
             {
                 int hours = ComponentRepair.HoursForWear(condition.Wear);
+                int cost = ComponentRepair.CostForWear(condition.Wear);
+                string price = RaceFinances.Dollars(cost);
                 var choices = new List<string> { employees.Count > 0 ? "Select an employee" : "No available employees" };
                 for (int index = 0; index < employees.Count; index++)
                 {
@@ -1605,7 +1997,7 @@ public sealed class StartupMenu : MonoBehaviour
                 {
                     if (picker.index > 0)
                         StartComponentRepair(car, component, employees[picker.index - 1], date);
-                }) { text = $"Repair ({ComponentRepair.FormatDuration(hours)})" };
+                }) { text = $"Repair ({price} • {ComponentRepair.FormatDuration(hours)})" };
                 button.AddToClassList("nav-button");
                 button.SetEnabled(false);
                 picker.RegisterValueChangedCallback(_ =>
@@ -1614,8 +2006,9 @@ public sealed class StartupMenu : MonoBehaviour
                     int estimate = assigned
                         ? ComponentRepair.EstimateHours(condition.Wear, employees[picker.index - 1].RepairSkill(component))
                         : hours;
-                    button.text = $"Repair ({ComponentRepair.FormatDuration(estimate)})";
-                    button.SetEnabled(assigned && validDate && date <= System.DateTime.MaxValue.Date.AddHours(-estimate));
+                    button.text = $"Repair ({price} • {ComponentRepair.FormatDuration(estimate)})";
+                    button.SetEnabled(assigned && validDate && activeCareer.teamBalance >= cost &&
+                        date <= System.DateTime.MaxValue.Date.AddHours(-estimate));
                 });
                 actions.Add(button);
             }
@@ -1635,8 +2028,7 @@ public sealed class StartupMenu : MonoBehaviour
             return;
 
         float previousWear = car.ComponentWear(repair.component);
-        int duration = repair.durationHours > 0 ? repair.durationHours : 72; // Original jobs took three days.
-        float remaining = Mathf.Clamp01(repair.RemainingHours(date) / (float)duration);
+        float remaining = repair.RemainingFraction(date);
         car.ComponentWear(repair.component) = previousWear * remaining;
         car.repairs.RemoveAt(index);
         SaveMaintenance(car, () =>
@@ -1649,18 +2041,18 @@ public sealed class StartupMenu : MonoBehaviour
     private bool CanAssignRepair(Employee employee) =>
         (employee.role == EmployeeRole.GeneralMechanic ||
             employee.RoleName.Contains("Specialist", System.StringComparison.Ordinal)) &&
-        !activeCareer.cars.Any(car => car.repairs?.Any(repair =>
-            string.IsNullOrEmpty(repair.employeeId) ? repair.employeeName == employee.FullName
-                : repair.employeeId == employee.repairAssigneeId) == true);
+        !activeCareer.cars.Any(car => car.repairs?.Any(repair => repair.IsAssignedTo(employee)) == true);
 
     private void StartComponentRepair(TeamCar car, CarComponent component, Employee employee, System.DateTime date)
     {
         car.repairs ??= new List<ComponentRepair>();
-        if (car.ComponentWear(component) <= 0 || car.repairs.Any(item => item.component == component) ||
+        float wear = car.ComponentWear(component);
+        int cost = ComponentRepair.CostForWear(wear);
+        if (cost == 0 || activeCareer.teamBalance < cost || car.repairs.Any(item => item.component == component) ||
             !activeCareer.employees.Contains(employee) || !CanAssignRepair(employee))
             return;
 
-        int hours = ComponentRepair.EstimateHours(car.ComponentWear(component), employee.RepairSkill(component));
+        int hours = ComponentRepair.EstimateHours(wear, employee.RepairSkill(component));
         if (date > System.DateTime.MaxValue.Date.AddHours(-hours))
             return;
         var completion = date.AddHours(hours);
@@ -1676,32 +2068,60 @@ public sealed class StartupMenu : MonoBehaviour
             employeeName = employee.FullName,
             employeeId = employee.repairAssigneeId,
             durationHours = hours,
+            cost = cost,
             completionDate = completionDay.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
         };
         car.repairs.Add(repair);
+        activeCareer.teamBalance -= cost;
+        activeCareer.schedule.componentRepairs += cost;
         SaveMaintenance(car, () =>
         {
             car.repairs.Remove(repair);
             employee.repairAssigneeId = previousAssigneeId;
+            activeCareer.teamBalance += cost;
+            activeCareer.schedule.componentRepairs -= cost;
         },
-            $"{component} repair assigned to {employee.FullName}. You can assign available employees to other worn components.");
+            $"{component} repair assigned to {employee.FullName} for {RaceFinances.Dollars(cost)}.");
+    }
+
+    private bool CanUpgradeComponent(TeamCar car, CarComponent component, System.DateTime date) =>
+        car.ComponentLevel(component) < TeamCar.MaximumComponentLevel &&
+        activeCareer.teamBalance >= TeamCar.ComponentUpgradeCost &&
+        car.repairs?.Any(item => item.component == component) != true &&
+        (!car.TryGetNextUpgradeDate(component, out var nextUpgrade) || date >= nextUpgrade);
+
+    private void ConfirmComponentUpgrade(TeamCar car, CarComponent component)
+    {
+        if (!Career.TryReadDate(activeCareer.currentDate, out var date) || !CanUpgradeComponent(car, component, date))
+            return;
+
+        int level = car.ComponentLevel(component);
+        string cost = RaceFinances.Dollars(TeamCar.ComponentUpgradeCost);
+        var options = OpenCarOptions("Confirm Upgrade");
+        var text = new Label($"Upgrade {component} on chassis {car.chassisNumber} to level {level + 1} for {cost}?");
+        text.AddToClassList("garage-detail");
+        options.Add(text);
+        var confirm = new Button(() =>
+        {
+            CloseCarOptions();
+            UpgradeComponent(car, component);
+        }) { text = $"Upgrade for {cost}" };
+        confirm.AddToClassList("nav-button");
+        options.Add(confirm);
+        settings.RestorePalette();
     }
 
     private void UpgradeComponent(TeamCar car, CarComponent component)
     {
         ref int level = ref car.ComponentLevel(component);
-        if (level >= TeamCar.MaximumComponentLevel || activeCareer.teamBalance < TeamCar.ComponentUpgradeCost ||
-            !Career.TryReadDate(activeCareer.currentDate, out var date) ||
-            (car.TryGetNextUpgradeDate(component, out var nextUpgrade) && date < nextUpgrade))
+        if (!Career.TryReadDate(activeCareer.currentDate, out var date) || !CanUpgradeComponent(car, component, date))
             return;
 
         var previousUpgradeDays = (int[])car.componentUpgradeDays?.Clone();
         car.RecordComponentUpgrade(component, date);
         float previousWear = car.ComponentWear(component);
-        var previousRepairs = car.repairs;
         level++;
         car.ComponentWear(component) = 0;
-        car.repairs = previousRepairs?.Where(item => item.component != component).ToList();
         activeCareer.teamBalance -= TeamCar.ComponentUpgradeCost;
         activeCareer.schedule.componentUpgrades += TeamCar.ComponentUpgradeCost;
         SaveMaintenance(car, () =>
@@ -1709,7 +2129,6 @@ public sealed class StartupMenu : MonoBehaviour
             car.ComponentLevel(component)--;
             car.componentUpgradeDays = previousUpgradeDays;
             car.ComponentWear(component) = previousWear;
-            car.repairs = previousRepairs;
             activeCareer.teamBalance += TeamCar.ComponentUpgradeCost;
             activeCareer.schedule.componentUpgrades -= TeamCar.ComponentUpgradeCost;
         }, $"{component} upgraded to level {level}.");
@@ -1727,7 +2146,16 @@ public sealed class StartupMenu : MonoBehaviour
             message = "Could not save component maintenance. " + ex.Message;
         }
         RefreshTeamBalance();
-        DisplayCarMaintenance(car, message);
+        if (garageScreen.Q("carMaintenancePage").style.display == DisplayStyle.Flex)
+            DisplayCarMaintenance(car, message);
+        else
+        {
+            RefreshShopCarPicker();
+            var status = garageScreen.Q<Label>("shopMaintenanceStatus");
+            status.text = message;
+            status.style.display = DisplayStyle.Flex;
+            settings.RestorePalette();
+        }
     }
 
     private System.Action UpdateCareerRepairs()
@@ -1788,9 +2216,7 @@ public sealed class StartupMenu : MonoBehaviour
 
             var cars = team.Select(entry => entry.car).ToArray();
             var currentRepairs = cars.Where(car => car.repairs != null).SelectMany(car => car.repairs).ToArray();
-            var available = staff.Where(employee => !currentRepairs.Any(repair =>
-                string.IsNullOrEmpty(repair.employeeId) ? repair.employeeName == employee.FullName :
-                    repair.employeeId == employee.repairAssigneeId)).ToList();
+            var available = staff.Where(employee => !currentRepairs.Any(repair => repair.IsAssignedTo(employee))).ToList();
             var jobs = cars.SelectMany(car => TeamCar.Components.Select(component =>
                     (Car: car, Component: component, Wear: (float)car.ComponentWear(component))))
                 .Where(job => job.Wear > 0 && job.Car.repairs?.Any(repair => repair.component == job.Component) != true)
@@ -1981,9 +2407,18 @@ public sealed class StartupMenu : MonoBehaviour
         if (!CanBuyCar(UsedCarListing.NewChassisPrice))
             return;
 
+        int manufacturer = garageScreen.Q<DropdownField>("newChassisManufacturer").index;
+        int type = garageScreen.Q<DropdownField>("newChassisType").index;
+        if (manufacturer < 0 || manufacturer >= NewChassisManufacturers.Length || type < 0 || type >= NewChassisTypes.Length)
+            return;
+
         var car = new TeamCar
         {
             number = activeCareer.cars[0].number,
+            manufacturer = NewChassisManufacturers[manufacturer],
+            chassisType = NewChassisTypes[type],
+            primaryPaint = NewChassisPaint,
+            secondaryPaint = NewChassisPaint,
             componentWearInitialized = true
         };
         car.Initialize(new System.Random());
@@ -2020,7 +2455,6 @@ public sealed class StartupMenu : MonoBehaviour
             return;
         }
 
-        selectedTeamCar = car;
         RefreshTeamBalance();
         RefreshTeamCars();
         RefreshSchedule();
@@ -2032,11 +2466,21 @@ public sealed class StartupMenu : MonoBehaviour
         var schedule = activeCareer.schedule;
         var races = schedule.races;
         var next = races?.FirstOrDefault(race => !race.completed);
+        var headerRace = garageScreen.Q<Label>("teamNextRace");
+        var nextTrack = next == null ? null : catalog.Entries.Find(entry => entry.Definition.id == next.trackId)?.Definition;
+        string trackType = nextTrack switch
+        {
+            null => string.Empty,
+            { majorStyle: "Road" } => " (Road Course)",
+            { restrictorPlate: true } => " (Restrictor Plate)",
+            { lengthMiles: < 1f } => " (Short Track)",
+            _ => " (Intermediate)"
+        };
+        string trackWithType = next == null ? string.Empty : next.trackName + trackType;
         garageScreen.Q<Label>("nextRaceLabel").text = next == null
             ? "No upcoming races scheduled."
-            : $"Next race  /  {next.EffectiveRaceLaps} laps at {next.trackName}";
-        var headerRace = garageScreen.Q<Label>("teamNextRace");
-        headerRace.text = next == null ? "No upcoming race" : $"Next race  /  {next.trackName}  /  {RaceDate(next)}";
+            : $"Next race  /  {next.EffectiveRaceLaps} laps at {trackWithType}";
+        headerRace.text = next == null ? "No upcoming race" : $"Next race  /  {trackWithType}  /  {RaceDate(next)}";
         headerRace.tooltip = headerRace.text;
         if (selectNext || selectedEvent == null || races == null || !races.Contains(selectedEvent))
             selectedEvent = next ?? races?.LastOrDefault();
@@ -2287,7 +2731,7 @@ public sealed class StartupMenu : MonoBehaviour
 
     private static string RaceCarBlockReason(TeamCar car, ScheduledRace race)
     {
-        if (TeamCar.Components.Any(component => car.ComponentWear(component) >= 0.95f))
+        if (car.HasRaceBlockingWear)
             return "Component wear at 95% or higher";
 
         bool repairing = car.repairs?.Any(repair =>
@@ -2473,7 +2917,7 @@ public sealed class StartupMenu : MonoBehaviour
             entries = entries.Skip(1).ToArray();
 
         var simulation = new CarSimulationContext(track.Definition, race, session, entries, isInstant: true);
-        return RaceSessionRun.Simulate(simulation, settings.SpeedModel, random, qualifyingOrder);
+        return RaceSessionRun.Simulate(simulation, settings.SpeedModel, random, qualifyingOrder, includesPlayer: !rivalsOnly);
     }
 
     private static int[] QualifyingOrder(ScheduledRace race) =>
@@ -2871,7 +3315,9 @@ public sealed class StartupMenu : MonoBehaviour
     {
         var season = activeCareer.schedule;
         var previousSessions = results.Select(item => (item.Session, item.Session.results,
-            item.Session.temporaryResults, item.Session.completed, item.Session.practiceWear, item.Session.qualifyingOrder)).ToArray();
+            item.Session.temporaryResults, item.Session.completed, item.Session.practiceWear, item.Session.qualifyingOrder,
+            item.Session.playerContacts, item.Session.playerReport)).ToArray();
+        int inboxCount = activeCareer.inbox?.Count ?? 0;
         var wearBefore = new Dictionary<(TeamCar Car, CarComponent Component), float>();
         var track = catalog.Entries.Find(entry => entry.Definition.id == race.trackId)?.Definition;
         var wearRandom = new System.Random();
@@ -2879,6 +3325,7 @@ public sealed class StartupMenu : MonoBehaviour
         long previousPayroll = season.payrollPaid;
         long previousSponsorIncome = season.sponsorIncome;
         long previousRaceSponsorIncome = race.sponsorIncome;
+        var previousSponsorPayments = race.sponsorPayments;
         var previousRaceExpenses = race.expenses;
         var previousContracts = activeCareer.sponsors;
         var previousOffers = activeCareer.sponsorOffers;
@@ -2892,6 +3339,8 @@ public sealed class StartupMenu : MonoBehaviour
             foreach (var item in results)
             {
                 var session = item.Session;
+                var player = race.playerSkipped ? null : item.Results.Find(result => result.carNumber == race.carNumber && result.car != null);
+                var playerWear = player == null ? null : TeamCar.Components.Select(component => (float)player.car.ComponentWear(component)).ToArray();
                 if (!session.Completed && track != null && session.kind != RaceSessionKind.Qualifying)
                 {
                     if (session.kind == RaceSessionKind.Practice)
@@ -2926,6 +3375,9 @@ public sealed class StartupMenu : MonoBehaviour
                     }
                 }
                 session.completed = true;
+                if (player != null)
+                    session.playerReport = new PlayerSessionReport(player, item.Results.Count, playerWear);
+                session.playerContacts = item.Results.FirstOrDefault(result => result.contacts?.Count > 0)?.contacts;
                 if (session.kind != RaceSessionKind.Race)
                 {
                     session.temporaryResults = item.Results;
@@ -2946,6 +3398,8 @@ public sealed class StartupMenu : MonoBehaviour
 
             if (!previouslyCompleted && race.completed)
             {
+                CrewChiefMail.SendRecap(activeCareer, race);
+                BroadcastCoverage.SendRecaps(activeCareer, race);
                 long annualPayroll = activeCareer.AnnualPayroll;
                 int completedRaces = season.races.Count(item => item.completed);
                 long installment = RaceFinances.PayrollInstallment(annualPayroll, season.races.Count, completedRaces);
@@ -2959,7 +3413,8 @@ public sealed class StartupMenu : MonoBehaviour
                 int finish = race.playerSkipped ? 0 : race.sessions.Find(session => session.kind == RaceSessionKind.Race)
                     .results.Find(result => result.carNumber == race.carNumber)?.position ?? 0;
                 activeCareer.sponsors = Sponsorships.Settle(previousContracts ?? Enumerable.Empty<SponsorContract>(),
-                    finish, out long income);
+                    finish, out long income, out var payments);
+                race.sponsorPayments = payments;
                 race.sponsorIncome = income;
                 season.sponsorIncome += income;
                 activeCareer.teamBalance += income;
@@ -3006,6 +3461,7 @@ public sealed class StartupMenu : MonoBehaviour
                     upcomingRaces.Count(item => !item.completed), upcomingRaces.Count, new System.Random());
             }
 
+            CrewChiefMail.SendPreview(activeCareer, catalog, RaceCarBlockReason);
             careerSetup.SaveProgress(activeCareer);
         }
         catch
@@ -3017,11 +3473,14 @@ public sealed class StartupMenu : MonoBehaviour
                 previous.Session.completed = previous.completed;
                 previous.Session.practiceWear = previous.practiceWear;
                 previous.Session.qualifyingOrder = previous.qualifyingOrder;
+                previous.Session.playerContacts = previous.playerContacts;
+                previous.Session.playerReport = previous.playerReport;
             }
             activeCareer.teamBalance = previousBalance;
             season.payrollPaid = previousPayroll;
             season.sponsorIncome = previousSponsorIncome;
             race.sponsorIncome = previousRaceSponsorIncome;
+            race.sponsorPayments = previousSponsorPayments;
             race.expenses = previousRaceExpenses;
             activeCareer.sponsors = previousContracts;
             activeCareer.sponsorOffers = previousOffers;
@@ -3029,6 +3488,7 @@ public sealed class StartupMenu : MonoBehaviour
             foreach (var entry in wearBefore)
                 entry.Key.Car.ComponentWear(entry.Key.Component) = entry.Value;
             activeCareer.currentDate = previousDate;
+            CrewChiefMail.UndoNewMessages(activeCareer, inboxCount);
             race.completed = previouslyCompleted;
             activeCareer.schedule = season;
             if (archivedSeason)

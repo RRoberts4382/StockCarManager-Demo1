@@ -3,6 +3,7 @@ using UnityEngine;
 internal sealed class TrackPitTraffic
 {
     private const float MphToMetersPerSecond = 0.44704f;
+    private const float StallLaneClearance = 2.2f;
     private readonly float lapLength;
     private readonly float entryDistance;
     private readonly float bypassDistance;
@@ -10,7 +11,8 @@ internal sealed class TrackPitTraffic
     private readonly float[] boundaries;
     private readonly float laneOffset;
     private readonly bool singleThroughLane;
-    private float outsideLane;
+    private float throughLane;
+    private bool hasPassingLane;
     private Car[] field;
     private float[] stalls;
     private float[] stallLanes;
@@ -166,12 +168,24 @@ internal sealed class TrackPitTraffic
         field = cars;
         this.stalls = stalls;
         this.stallLanes = stallLanes;
-        outsideLane = -inside * laneOffset;
+        float outsideLane = -inside * laneOffset;
+        float outsideClearance = MinimumStallClearance(outsideLane);
+        float insideClearance = MinimumStallClearance(-outsideLane);
+        throughLane = outsideClearance >= insideClearance ? outsideLane : -outsideLane;
+        hasPassingLane = !singleThroughLane && Mathf.Min(outsideClearance, insideClearance) >= StallLaneClearance;
         for (int i = 0; i < cars.Length; i++)
         {
             cars[i].FieldIndex = i;
             if (cars[i].InPit && cars[i].PitDistance == stalls[i])
                 cars[i].PitLane = stallLanes[i];
+        }
+
+        float MinimumStallClearance(float lane)
+        {
+            float clearance = float.PositiveInfinity;
+            foreach (float stallLane in stallLanes)
+                clearance = Mathf.Min(clearance, Mathf.Abs(stallLane - lane));
+            return clearance;
         }
     }
 
@@ -183,30 +197,33 @@ internal sealed class TrackPitTraffic
 
         const float clearance = 3.4f;
         bool departing = car.PitDistance == stalls[index] && stopAt != stalls[index];
-        // Use the side opposite the stall row as the through lane.
-        float throughLane = Mathf.Abs(stallLanes[index]) > 0.1f
-            ? -Mathf.Sign(stallLanes[index]) * laneOffset : outsideLane;
         float target = throughLane;
         float lookAhead = Mathf.Max(clearance + 3f, speed * 1.5f);
         bool approachingStall = stopAt <= RoadEnd && stopAt - car.PitDistance < 12f;
         if (approachingStall)
             target = stallLanes[index];
-        else if (!singleThroughLane && !LaneAvailable(target, lookAhead))
+        else if (hasPassingLane && !LaneAvailable(target, lookAhead))
         {
             float alternate = -target;
             if (LaneAvailable(alternate, lookAhead))
                 target = alternate;
-            else if (departing && !singleThroughLane)
+            else if (departing)
                 return 0f;
             else
                 target = car.PitLane;
         }
 
-        float blend = Mathf.Clamp01(Mathf.Min(car.PitDistance, RouteLength - car.PitDistance) / 8f);
+        // Center the car at the track handoff and keep the full lateral
+        // clearance once it reaches the stall section.
+        float blend = 1f;
+        if (car.PitDistance < RoadStart)
+            blend = Mathf.Clamp01(car.PitDistance / Mathf.Min(8f, RoadStart));
+        else if (car.PitDistance > RoadEnd)
+            blend = Mathf.Clamp01((RouteLength - car.PitDistance) / Mathf.Min(8f, RouteLength - RoadEnd));
         float nextLane = Mathf.MoveTowards(car.PitLane, target * blend, 3f * seconds);
         if (LaneAvailable(nextLane, clearance, merging: true))
             car.PitLane = nextLane;
-        else if (departing && !singleThroughLane)
+        else if (departing && hasPassingLane)
             return 0f;
 
 
@@ -219,7 +236,7 @@ internal sealed class TrackPitTraffic
                 speed = Mathf.Min(speed, Mathf.Max(0f, gap - clearance) / seconds);
         }
 
-        return singleThroughLane && departing ? Mathf.Min(speed, 4f) : speed;
+        return !hasPassingLane && departing ? Mathf.Min(speed, 4f) : speed;
 
         bool LaneAvailable(float lane, float ahead, bool merging = false)
         {

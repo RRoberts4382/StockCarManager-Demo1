@@ -79,6 +79,14 @@ public sealed class TrackLayout
 
     public float ControlFraction(int index) => distances[index * SamplesPerSegment] / distances[points.Length];
 
+    public float BankingSpread(float distance)
+    {
+        int index = Segment(distance, out float t);
+        int control = index / SamplesPerSegment;
+        float blend = (index % SamplesPerSegment + t) / SamplesPerSegment;
+        return Mathf.Lerp(controls[control].bankingSpread, controls[(control + 1) % controls.Length].bankingSpread, blend);
+    }
+
     public Vector2 Widths(float distance)
     {
         int index = Segment(distance, out float t);

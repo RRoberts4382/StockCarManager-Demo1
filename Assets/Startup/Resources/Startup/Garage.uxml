@@ -23,21 +23,17 @@
                     <ui:Label name="nextRaceLabel" text="Next race" class="garage-detail" />
                 </ui:VisualElement>
             </ui:VisualElement>
-            <ui:VisualElement name="mailPage" class="garage-page">
-                <ui:Label text="No messages." class="garage-detail" />
-            </ui:VisualElement>
             <ui:VisualElement name="carsPage" class="garage-page">
                 <ui:VisualElement class="cars-roster">
                     <ui:ScrollView name="teamCarRows" mode="Horizontal" horizontal-scroller-visibility="Auto" vertical-scroller-visibility="Hidden" class="car-tabs" />
-                    <ui:VisualElement class="cars-performance">
-                        <ui:Label text="Performance ratings" class="garage-detail schedule-heading" />
-                        <ui:VisualElement name="teamCarRatings" />
-                    </ui:VisualElement>
-                    <ui:Button name="addTeamCarButton" text="Add Car" class="nav-button garage-track-button" />
+                    <ui:Label name="carsStatus" class="garage-detail" style="display: none;" />
+                    <ui:Button name="addTeamCarButton" text="Purchase Chassis" class="nav-button garage-track-button" />
                 </ui:VisualElement>
             </ui:VisualElement>
             <ui:VisualElement name="shopPage" class="garage-page">
-                <ui:Label text="No items available." class="garage-detail" />
+                <ui:VisualElement name="shopCarComponents" class="shop-car-components" />
+                <ui:Label name="shopMaintenanceStatus" class="garage-detail" style="display: none;" />
+                <ui:VisualElement name="shopCarPicker" class="shop-car-picker" />
             </ui:VisualElement>
             <ui:VisualElement name="resultsPage" class="garage-page">
                 <ui:VisualElement name="teamResults" />
@@ -45,7 +41,7 @@
             <ui:VisualElement name="financesPage" class="garage-page">
                 <ui:VisualElement class="finance-summary">
                     <ui:VisualElement class="finance-card garage-entry">
-                        <ui:Label text="Available Budget" class="garage-detail" />
+                        <ui:Label text="Current Balance" class="garage-detail" />
                         <ui:Label name="financeBalance" class="finance-total" />
                     </ui:VisualElement>
                     <ui:VisualElement class="finance-card garage-entry">
@@ -63,10 +59,12 @@
                 <ui:Label text="No active sponsors." class="garage-detail" />
             </ui:VisualElement>
         </ui:ScrollView>
+        <ui:VisualElement name="mailPage" class="garage-page mail-page" />
         <ui:VisualElement name="employeesPage" class="garage-page employees-page">
             <ui:VisualElement class="employee-role-actions">
                 <ui:Button name="recruitEmployeeButton" text="Hire Employee" class="nav-button" />
                 <ui:Button name="recruitDriverButton" text="Hire Driver" class="nav-button" />
+                <ui:Button name="workInProgressToggle" text="Work In Progress" class="nav-button" />
             </ui:VisualElement>
             <ui:VisualElement name="fireEmployeePrompt" class="employee-dismissal-prompt">
                 <ui:Label name="fireEmployeeQuestion" class="garage-detail schedule-status" />
@@ -77,6 +75,7 @@
             </ui:VisualElement>
             <ui:Label name="employeeStatus" class="garage-detail schedule-status" />
             <ui:ScrollView name="employeeRoster" mode="Horizontal" horizontal-scroller-visibility="Auto" vertical-scroller-visibility="Hidden" class="employee-roster" />
+            <ui:ScrollView name="employeeWorkInProgress" class="employee-work-list" style="display: none;" />
         </ui:VisualElement>
         <ui:VisualElement name="schedulePage" class="garage-page schedule-page">
             <ui:VisualElement class="schedule-layout">
@@ -112,6 +111,8 @@
             <ui:Label name="carMarketBalance" class="garage-detail" />
             <ui:VisualElement class="car-market-new">
                 <ui:Label text="New Bare Chassis" class="garage-detail schedule-heading" />
+                <ui:DropdownField name="newChassisManufacturer" label="Manufacturer" class="car-market-new-option" />
+                <ui:DropdownField name="newChassisType" label="Chassis type" class="car-market-new-option" />
                 <ui:Button name="buyNewChassisButton" text="Buy for $100,000" class="nav-button" />
             </ui:VisualElement>
             <ui:Label text="Used cars" class="garage-detail schedule-heading" />

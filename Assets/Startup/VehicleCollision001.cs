@@ -53,6 +53,7 @@ internal sealed class VehicleCollision001
                 {
                     float relativeSpeed = Mathf.Sqrt(longitudinal * longitudinal + lateral * lateral) / seconds;
                     float damage = Mathf.Clamp(relativeSpeed * 1.2f, 0.5f, 100f);
+                    run.RecordContact(first, second, damage);
                     // Hard contact breaks traction. Opposite impulses send the cars apart.
                     if (relativeSpeed >= 8f)
                     {
@@ -72,8 +73,8 @@ internal sealed class VehicleCollision001
 
         for (int i = 0; i < impactDamage.Length; i++)
         {
-            if (impactDamage[i] > 0f && run.Vehicle(i) is TeamCar car)
-                car.Damage += impactDamage[i];
+            if (impactDamage[i] > 0f)
+                run.ApplyDamage(i, impactDamage[i]);
         }
     }
 

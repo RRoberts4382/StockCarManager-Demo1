@@ -20,6 +20,11 @@ internal sealed class Career
     public string hometownCity;
     public string hometownState;
     public string teamName;
+    public List<TeamMailMessage> inbox = new List<TeamMailMessage>();
+    public List<string> deletedSocialPostIds = new List<string>();
+    public string socialStartDate;
+    public string primaryTeamColor;
+    public string secondaryTeamColor;
     public string seriesId;
     public string seriesName;
     public SeasonSchedule schedule;
@@ -44,6 +49,15 @@ internal sealed class Career
     public List<SeasonSchedule> completedSeasons = new List<SeasonSchedule>();
     public List<TeamCar> cars = new List<TeamCar> { new TeamCar { number = 27 } };
     public List<TeamCar> rivalCars = new List<TeamCar>();
+    public (Color32 Primary, Color32 Secondary) TeamColors
+    {
+        get
+        {
+            var fallback = cars?.FirstOrDefault()?.Paint ?? TrackPreview.TeamLivery(27);
+            return (ColorUtility.TryParseHtmlString(primaryTeamColor, out var primary) ? (Color32)primary : fallback.HoodAndTrunk,
+                ColorUtility.TryParseHtmlString(secondaryTeamColor, out var secondary) ? (Color32)secondary : fallback.RoofAndSides);
+        }
+    }
     [NonSerialized] public string savePath;
 
     public List<UsedCarListing> usedCars = new List<UsedCarListing>();
@@ -107,6 +121,16 @@ internal sealed class Career
             }
         }
 
+        foreach (var driver in drivers.Concat(driverCandidates ?? Enumerable.Empty<Driver>())
+            .Concat(rivalEmployees.SelectMany(team => team.drivers ?? Enumerable.Empty<Driver>())))
+        {
+            changed |= driver.EnsureEthnicity();
+            changed |= Employee.InitializeYearsExperience(driver.age, random, ref driver.yearsExperience, ref driver.experienceInitialized);
+        }
+        foreach (var employee in employees.Concat(recruitCandidates ?? Enumerable.Empty<Employee>())
+            .Concat(rivalEmployees.SelectMany(team => team.employees ?? Enumerable.Empty<Employee>())))
+            changed |= Employee.InitializeYearsExperience(employee.age, random, ref employee.yearsExperience, ref employee.experienceInitialized);
+
         return changed;
     }
 
@@ -155,6 +179,7 @@ internal enum CarComponent { Engine, Transmission, Brakes, Suspension, Aerodynam
 
 internal readonly struct ComponentCondition
 {
+    public const float RaceBlockingWear = 0.95f;
     public readonly float Wear;
     public readonly int Level;
 
@@ -165,16 +190,26 @@ internal readonly struct ComponentCondition
     }
 
     public float EffectiveValue => Level - Wear;
+    public bool BlocksRaceEntry => Wear >= RaceBlockingWear;
 }
 
 [Serializable]
 internal sealed class ComponentRepair
 {
+    public const int MaximumCost = 20_000;
     public CarComponent component;
     public string employeeName;
     public string employeeId;
     public string completionDate;
     public int durationHours;
+    public int cost;
+
+    public static int CostForWear(float wear) => wear > 0f
+        ? Mathf.Max(1, Mathf.RoundToInt(Mathf.Clamp01(wear) * MaximumCost))
+        : 0;
+
+    public bool IsAssignedTo(Employee employee) => string.IsNullOrEmpty(employeeId)
+        ? employeeName == employee.FullName : employeeId == employee.repairAssigneeId;
 
     public static int HoursForWear(float wear)
     {
@@ -204,6 +239,12 @@ internal sealed class ComponentRepair
         int days = hours / 24;
         int remainder = hours % 24;
         return $"{days} {(days == 1 ? "day" : "days")}, {remainder} {(remainder == 1 ? "hour" : "hours")}";
+    }
+
+    public float RemainingFraction(DateTime date)
+    {
+        int duration = durationHours > 0 ? durationHours : 72; // Original jobs took three days.
+        return Mathf.Clamp01(RemainingHours(date) / (float)duration);
     }
 }
 
@@ -254,16 +295,32 @@ internal sealed class TeamCar
     public CarManufacturer manufacturer = CarManufacturer.Chevrolet;
     public ChassisType chassisType = ChassisType.IntermediateTrack;
 
-    public string ChassisTypeName => chassisType switch
+    public string ChassisTypeName => DisplayChassisType(chassisType);
+
+    public static string DisplayChassisType(ChassisType type) => type switch
     {
         ChassisType.RoadCourse => "Road Course",
         ChassisType.ShortTrack => "Short Track",
         ChassisType.SuperSpeedway => "SuperSpeedway",
-        _ => "Intermediate Track"
+        _ => "Intermediate"
     };
 
     public string primaryPaint;
     public string secondaryPaint;
+    public string trimPaint;
+    public CarPaintScheme paintScheme;
+
+    public CarPaintStyle PaintStyle
+    {
+        get
+        {
+            var colors = Paint;
+            bool hasTrim = ColorUtility.TryParseHtmlString(trimPaint, out var trim);
+            var scheme = Enum.IsDefined(typeof(CarPaintScheme), paintScheme) ? paintScheme : CarPaintScheme.Classic;
+            return new CarPaintStyle(scheme, colors.HoodAndTrunk, colors.RoofAndSides,
+                hasTrim ? (Color32)trim : new Color32(240, 240, 240, 255), hasTrim);
+        }
+    }
 
     public (Color32 HoodAndTrunk, Color32 RoofAndSides) Paint
     {
@@ -301,6 +358,15 @@ internal sealed class TeamCar
     public CarTire rearLeft;
     public CarTire rearRight;
 
+    internal void ResetTrackCondition()
+    {
+        Damage = 0f;
+        frontLeft = new CarTire();
+        frontRight = new CarTire();
+        rearLeft = new CarTire();
+        rearRight = new CarTire();
+    }
+
     public bool Initialize(System.Random random)
     {
         bool changed = !componentWearInitialized ||
@@ -330,6 +396,8 @@ internal sealed class TeamCar
 
     public ComponentCondition GetComponent(CarComponent component) =>
         new ComponentCondition(ComponentWear(component), ComponentLevel(component));
+
+    public bool HasRaceBlockingWear => Components.Any(component => GetComponent(component).BlocksRaceEntry);
 
     public ref int ComponentLevel(CarComponent component)
     {
@@ -372,6 +440,11 @@ internal sealed class CarTire
 internal sealed class UsedCarListing
 {
     public const long NewChassisPrice = 100_000;
+    public static long TradeInPrice(TeamCar car)
+    {
+        double condition = TeamCar.Components.Average(component => 1d - Mathf.Clamp01(car.ComponentWear(component)));
+        return (long)Math.Round(NewChassisPrice * 0.8d * condition, MidpointRounding.AwayFromZero);
+    }
     public TeamCar car;
     public long price;
 
@@ -433,6 +506,8 @@ internal sealed class Employee
     public string firstName;
     public string lastName;
     public int age;
+    public int yearsExperience;
+    public bool experienceInitialized;
     public string gender;
     public string hometownCity;
     public string hometownState;
@@ -446,6 +521,18 @@ internal sealed class Employee
 
     public string FullName => (firstName + " " + lastName).Trim();
     public string RoleName => NameOf(role);
+
+    public static bool InitializeYearsExperience(int age, System.Random random, ref int years, ref bool initialized)
+    {
+        if (initialized)
+            return false;
+        years = GenerateYearsExperience(age, random);
+        initialized = true;
+        return true;
+    }
+
+    public static int GenerateYearsExperience(int age, System.Random random) =>
+        Math.Max(0, age - 15 - random.Next(6));
 
     public float RepairSkill(CarComponent component) => component switch
     {
@@ -469,7 +556,7 @@ internal sealed class Employee
         var parts = name?.Trim().Split(new[] { ' ' }, 2, StringSplitOptions.RemoveEmptyEntries);
         int baseSalary = Roles[(int)role].Salary;
         int salarySpread = baseSalary * 15 / 100;
-        return new Employee
+        var employee = new Employee
         {
             role = role,
             firstName = parts?.Length > 0 ? parts[0] : FirstNames[random.Next(FirstNames.Length)],
@@ -485,6 +572,8 @@ internal sealed class Employee
             bodywork = (float)random.NextDouble(),
             brakes = (float)random.NextDouble()
         };
+        InitializeYearsExperience(employee.age, random, ref employee.yearsExperience, ref employee.experienceInitialized);
+        return employee;
     }
 }
 

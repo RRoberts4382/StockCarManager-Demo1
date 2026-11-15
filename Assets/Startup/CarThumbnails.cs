@@ -5,18 +5,28 @@ using UnityEngine;
 internal sealed class CarThumbnails : IDisposable
 {
     private const int Layer = 30;
+    internal static readonly Color32 BackgroundColor = new Color32(31, 39, 48, 255);
+    private readonly int width;
     private readonly Dictionary<string, (string Livery, RenderTexture Image)> images = new();
+    private Camera orbitCamera;
+    private Action releaseOrbitScene;
+    private float yaw = 55f;
+    private float pitch = 16f;
 
-    public RenderTexture Get(TeamCar car, string[] sponsorNames)
+    public CarThumbnails(int width = 256) => this.width = width;
+
+    public RenderTexture Get(TeamCar car, string[] sponsorNames, CarPaintStyle? preview = null)
     {
         int number = car.number;
         string key = car.chassisNumber ?? number.ToString();
-        var livery = car.Paint;
-        string liveryKey = $"{number}|{livery.HoodAndTrunk}|{livery.RoofAndSides}|{string.Join("|", sponsorNames)}";
+        var livery = preview ?? car.PaintStyle;
+        string liveryKey = $"{number}|{livery.Scheme}|{livery.Primary}|{livery.Secondary}|{livery.Trim}|{livery.HasTrim}|{string.Join("|", sponsorNames)}";
         if (images.TryGetValue(key, out var cached))
         {
             if (cached.Livery == liveryKey)
                 return cached.Image;
+            if (preview.HasValue)
+                ReleaseOrbitScene();
             cached.Image.Release();
             UnityEngine.Object.Destroy(cached.Image);
             images.Remove(key);
@@ -27,13 +37,15 @@ internal sealed class CarThumbnails : IDisposable
             return null;
 
         var root = new GameObject("Car thumbnail") { hideFlags = HideFlags.HideAndDontSave };
-        root.transform.position = new Vector3(0f, -3000f, 0f);
+        root.transform.position = new Vector3(0f, preview.HasValue ? -4000f : -3000f, 0f);
         var materials = new List<Material>(4);
-        var image = new RenderTexture(256, 144, 16) { name = $"Car {number} thumbnail" };
+        var paintTextures = new List<Texture2D>();
+        var image = new RenderTexture(width, width * 9 / 16, 16) { name = $"Car {number} thumbnail" };
+        bool keepScene = false;
         try
         {
-            TrackPreview.BuildCar(root.transform, number, Paint(livery.HoodAndTrunk), Paint(livery.RoofAndSides),
-                Paint(new Color32(43, 66, 87, 255)), Paint(new Color32(24, 25, 30, 255)), sponsorNames);
+            TrackPreview.BuildCar(root.transform, number, Paint(livery.Primary), Paint(livery.Secondary),
+                Paint(new Color32(43, 66, 87, 255)), Paint(new Color32(24, 25, 30, 255)), sponsorNames, livery, paintTextures.Add);
             foreach (var child in root.GetComponentsInChildren<Transform>())
                 child.gameObject.layer = Layer;
 
@@ -41,12 +53,17 @@ internal sealed class CarThumbnails : IDisposable
             camera.enabled = false;
             camera.cullingMask = 1 << Layer;
             camera.clearFlags = CameraClearFlags.SolidColor;
-            camera.backgroundColor = new Color32(31, 39, 48, 255);
+            camera.backgroundColor = BackgroundColor;
             camera.orthographic = true;
             camera.orthographicSize = 1.24f;
             camera.farClipPlane = 25f;
-            camera.transform.localPosition = new Vector3(4f, 3.5f, 5f);
-            camera.transform.localRotation = Quaternion.LookRotation(new Vector3(0f, 0.5f, 0f) - camera.transform.localPosition);
+            if (preview.HasValue)
+                PositionOrbitCamera(camera);
+            else
+            {
+                camera.transform.localPosition = new Vector3(4f, 3.5f, 5f);
+                camera.transform.localRotation = Quaternion.LookRotation(new Vector3(0f, 0.5f, 0f) - camera.transform.localPosition);
+            }
             var light = Child("Thumbnail light").AddComponent<Light>();
             light.type = LightType.Directional;
             light.cullingMask = 1 << Layer;
@@ -54,8 +71,15 @@ internal sealed class CarThumbnails : IDisposable
             light.transform.localRotation = Quaternion.Euler(48f, -28f, 0f);
             camera.targetTexture = image;
             camera.Render();
-            camera.targetTexture = null;
             images.Add(key, (liveryKey, image));
+            if (preview.HasValue)
+            {
+                keepScene = true;
+                orbitCamera = camera;
+                releaseOrbitScene = DestroyScene;
+            }
+            else
+                camera.targetTexture = null;
             return image;
         }
         catch
@@ -67,9 +91,17 @@ internal sealed class CarThumbnails : IDisposable
         finally
         {
             root.SetActive(false);
+            if (!keepScene)
+                DestroyScene();
+        }
+
+        void DestroyScene()
+        {
             UnityEngine.Object.Destroy(root);
             foreach (var material in materials)
                 UnityEngine.Object.Destroy(material);
+            foreach (var texture in paintTextures)
+                UnityEngine.Object.Destroy(texture);
         }
 
         Material Paint(Color32 color)
@@ -87,8 +119,47 @@ internal sealed class CarThumbnails : IDisposable
         }
     }
 
+    public void RotatePreview(Vector2 drag)
+    {
+        if (orbitCamera == null)
+            return;
+
+        yaw = Mathf.Repeat(yaw + drag.x * 0.6f, 360f);
+        pitch = Mathf.Clamp(pitch - drag.y * 0.45f, 4f, 80f);
+        PositionOrbitCamera(orbitCamera);
+        var scene = orbitCamera.transform.parent.gameObject;
+        scene.SetActive(true);
+        try
+        {
+            orbitCamera.Render();
+        }
+        finally
+        {
+            scene.SetActive(false);
+        }
+    }
+
+    private void PositionOrbitCamera(Camera camera)
+    {
+        var target = new Vector3(0f, 0.5f, 0f);
+        camera.transform.localPosition = target + Quaternion.Euler(-pitch, yaw, 0f) * (Vector3.forward * 6.3f);
+        camera.transform.localRotation = Quaternion.LookRotation(target - camera.transform.localPosition);
+    }
+
+    private void ReleaseOrbitScene()
+    {
+        if (orbitCamera != null)
+            orbitCamera.targetTexture = null;
+        orbitCamera = null;
+        releaseOrbitScene?.Invoke();
+        releaseOrbitScene = null;
+    }
+
     public void Dispose()
     {
+        ReleaseOrbitScene();
+        yaw = 55f;
+        pitch = 16f;
         foreach (var (_, image) in images.Values)
         {
             image.Release();

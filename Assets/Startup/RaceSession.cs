@@ -11,6 +11,18 @@ internal sealed class PracticeWear
     public float amount;
 }
 
+[Serializable]
+internal sealed class DriverContact
+{
+    public int carNumber;
+    public string driverName;
+    public string teamName;
+    public int driverAge;
+    public string driverGender;
+    public DriverEthnicity driverEthnicity;
+    public float damage;
+}
+
 internal static class SessionWear
 {
     public static float RaceAmount(CarComponent component, TrackDefinition track, Random random)
@@ -46,6 +58,8 @@ internal sealed class RaceSession
     public List<SessionCarResult> results = new List<SessionCarResult>();
     public bool completed;
     public List<PracticeWear> practiceWear;
+    public List<DriverContact> playerContacts;
+    public PlayerSessionReport playerReport;
     public int[] qualifyingOrder;
 
     public static int[] GridSlots(IReadOnlyList<SessionCarResult> entries, int[] qualifyingOrder)
@@ -95,6 +109,10 @@ internal sealed class SessionCarResult
     public string teamName;
     public List<float> lapTimes = new List<float>();
     public int position;
+    public bool wrecked;
+    [NonSerialized] public List<DriverContact> contacts;
+    [NonSerialized] public float damageSustained;
+    [NonSerialized] public float damageAtFinish;
     public long winnings = 0;
     public int pointsEarned = 0;
     public int[] stagePoints;
@@ -109,6 +127,7 @@ internal sealed class RaceSessionRun
     private readonly float lapLength;
     private readonly float startLine;
     private readonly CarTiming[] cars;
+    private readonly bool recordContacts;
     private readonly double gallonsPerMeter;
     private readonly double tireWearPerMeter;
     private int scoredStages;
@@ -171,6 +190,7 @@ internal sealed class RaceSessionRun
         public float SpeedFactor;
         public bool Finished;
         public bool Retired;
+        public float SimulatedContactDamage;
         public float Progress;
         public float StepStartProgress;
         public float Speed;
@@ -182,6 +202,7 @@ internal sealed class RaceSessionRun
         float[] initialDistances = null, float gridSpacing = 0f, bool finishOnCheckered = false)
     {
         this.session = session;
+        recordContacts = simulation.Event != null;
         TargetLaps = session.laps;
         this.finishOnCheckered = finishOnCheckered;
         this.lapLength = lapLength;
@@ -218,11 +239,21 @@ internal sealed class RaceSessionRun
         }
     }
 
+    internal static void ResetVehiclesForSession(IReadOnlyList<SessionCarResult> entries)
+    {
+        foreach (var entry in entries)
+        {
+            entry.Fuel = SessionFuel.TankCapacity;
+            entry.car?.ResetTrackCondition();
+        }
+    }
+
     public static List<SessionCarResult> Simulate(CarSimulationContext simulation, IVehicleSpeedModel speedModel,
-        Random random, int[] qualifyingOrder = null)
+        Random random, int[] qualifyingOrder, bool includesPlayer)
     {
         var session = simulation.Session;
         var entries = simulation.Cars;
+        ResetVehiclesForSession(entries);
         float lapLength = simulation.Track.lengthMiles * TrackDefinition.MetersPerMile;
         var distances = new float[entries.Count];
         if (session.kind == RaceSessionKind.Race)
@@ -242,6 +273,8 @@ internal sealed class RaceSessionRun
         while (!run.Complete)
         {
             float seconds = run.StepDuration(profile == null ? 1f : 0.25f);
+            if (includesPlayer && run.IsRace && entries.Count > 1)
+                run.TrySimulateContact(distances, seconds, random);
             for (int i = 0; i < entries.Count; i++)
             {
                 if (run.Finished(i))
@@ -264,6 +297,39 @@ internal sealed class RaceSessionRun
             run.AdvanceClock(seconds);
         }
         return run.Results();
+    }
+
+    private void TrySimulateContact(float[] distances, float seconds, Random random)
+    {
+        const double contactsPerSecond = 0.0012;
+        if (Finished(0) || CurrentSpeed(0) < 10f || random.NextDouble() >= contactsPerSecond * seconds)
+            return;
+
+        int rival = -1;
+        float closestGap = 55f;
+        for (int i = 1; i < cars.Length; i++)
+        {
+            if (Finished(i) || CurrentSpeed(i) < 10f)
+                continue;
+            float gap = UnityEngine.Mathf.Repeat(distances[i] - distances[0] + lapLength * 0.5f, lapLength) - lapLength * 0.5f;
+            if (Math.Abs(gap) >= closestGap)
+                continue;
+            closestGap = Math.Abs(gap);
+            rival = i;
+        }
+        if (rival < 0)
+            return;
+
+        double roll = random.NextDouble();
+        float damage = 0.5f + 44.5f * (float)(roll * roll * roll);
+        RecordContact(0, rival, damage);
+        ApplyDamage(0, damage, simulated: true);
+        ApplyDamage(rival, damage, simulated: true);
+        if (damage >= 20f)
+        {
+            RecordWreck(0);
+            RecordWreck(rival);
+        }
     }
 
     public void SimulateQualifyingRivals(Func<int, float> baseSpeed)
@@ -318,10 +384,51 @@ internal sealed class RaceSessionRun
     public void RecordFlatTireDamage(int index, int mask, double meters)
     {
         if (mask != 0 && meters > 0)
-            Vehicle(index).Damage += (float)(meters / TrackDefinition.MetersPerMile) * TireCount(mask);
+            ApplyDamage(index, (float)(meters / TrackDefinition.MetersPerMile) * TireCount(mask));
+    }
+
+    public void ApplyDamage(int index, float amount, bool simulated = false)
+    {
+        var timing = cars[index];
+        var vehicle = timing.Result.car;
+        float current = (vehicle?.Damage ?? 0f) + timing.SimulatedContactDamage;
+        float applied = Math.Max(0f, Math.Min(amount, 100f - current));
+        if (simulated)
+            timing.SimulatedContactDamage += applied;
+        else if (vehicle != null)
+            vehicle.Damage += applied;
+        else
+            return;
+        timing.Result.damageSustained += applied;
     }
 
     public TeamCar Vehicle(int index) => cars[index].Result.car;
+
+    public void RecordWreck(int index) => cars[index].Result.wrecked = true;
+
+    public void RecordContact(int first, int second, float damage)
+    {
+        if (!recordContacts || first != 0)
+            return;
+
+        var player = cars[0].Result;
+        var rival = cars[second].Result;
+        player.contacts ??= new List<DriverContact>();
+        var contact = player.contacts.Find(item => item.carNumber == rival.carNumber);
+        if (contact == null)
+            player.contacts.Add(new DriverContact
+            {
+                carNumber = rival.carNumber,
+                driverName = rival.driverName,
+                teamName = rival.teamName,
+                driverAge = rival.driver?.age ?? 0,
+                driverGender = rival.driver?.gender,
+                driverEthnicity = rival.driver?.ethnicity ?? DriverEthnicity.Unspecified,
+                damage = damage
+            });
+        else
+            contact.damage = Math.Max(contact.damage, damage);
+    }
 
     public void AddFuel(int index, double gallons)
     {
@@ -338,7 +445,7 @@ internal sealed class RaceSessionRun
     public float ConditionLimitedSpeed(int index, float speed, float seconds, float brakingLimit = 0f)
     {
         var car = cars[index];
-        float damage = car.Result.car?.Damage ?? 0f;
+        float damage = (car.Result.car?.Damage ?? 0f) + car.SimulatedContactDamage;
         if (car.Result.Fuel > 0 && damage < 100f)
         {
             const float metersPerSecondToMph = 3600f / TrackDefinition.MetersPerMile;
@@ -566,6 +673,8 @@ internal sealed class RaceSessionRun
             Enumerable.Range(0, cars.Length).OrderBy(index => frozenOrder[index]).Select(index => cars[index].Result).ToList();
         for (int i = 0; i < results.Count; i++)
             results[i].position = i + 1;
+        foreach (var car in cars)
+            car.Result.damageAtFinish = (car.Result.car?.Damage ?? 0f) + car.SimulatedContactDamage;
         if (IsRace && Complete)
         {
             var fastest = FastestLaps().FirstOrDefault(result => result.FastestLap > 0f &&

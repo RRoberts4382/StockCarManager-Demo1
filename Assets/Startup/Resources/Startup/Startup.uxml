@@ -18,6 +18,7 @@
                 <ui:VisualElement class="actions title-actions">
                     <ui:Button name="tracksButton" text="Tracks" class="action quit-action" />
                     <ui:Button name="trackUtilityButton" text="Track Utility" class="action quit-action" />
+                    <ui:Button name="testPracticeButton" text="Test Practice" class="action quit-action" />
                     <ui:Button name="titleSettingsButton" text="Settings" class="action quit-action" />
                     <ui:Button name="quitButton" text="Quit" class="action quit-action" />
                 </ui:VisualElement>
@@ -37,6 +38,7 @@
                 <ui:Label name="developmentPracticeStatus" class="description" />
                 <ui:VisualElement class="actions title-actions">
                     <ui:Button name="startDevelopmentPractice" text="Start Practice" class="action title-primary" />
+                    <ui:Button name="backFromDevelopmentPractice" text="Back" class="action quit-action" />
                     <ui:Button name="exitDevelopmentPractice" text="Exit" class="action quit-action" />
                 </ui:VisualElement>
             </ui:VisualElement>

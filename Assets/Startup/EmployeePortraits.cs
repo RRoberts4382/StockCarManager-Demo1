@@ -5,39 +5,47 @@ using UnityEngine;
 internal sealed class EmployeePortraits : IDisposable
 {
     private const int Columns = 4;
-    private const int Rows = 3;
     private const int Size = 144;
 
-    private readonly (Color32[] Pixels, int Width, int Height)[] atlases =
-        new (Color32[], int, int)[2];
-    private readonly Dictionary<(int Atlas, int Tile, bool Mirror, Color32 Fabric, Color32 Trim), Texture2D> portraits =
-        new Dictionary<(int, int, bool, Color32, Color32), Texture2D>();
+    private readonly Dictionary<string, (Color32[] Pixels, int Width, int Height)> atlases =
+        new Dictionary<string, (Color32[], int, int)>();
+    private readonly Dictionary<(string Atlas, int Tile, bool Mirror, Color32 Fabric, Color32 Trim), Texture2D> portraits =
+        new Dictionary<(string, int, bool, Color32, Color32), Texture2D>();
 
-    public Texture2D Get(string fullName, int age, string gender, string city, string state, Color32 fabric, Color32 trim)
+    public Texture2D Get(string fullName, int age, string gender, string city, string state, Color32 fabric, Color32 trim,
+        DriverEthnicity ethnicity = DriverEthnicity.Unspecified)
     {
         uint identity = 2166136261;
-        string description = $"{fullName}|{age}|{gender}|{city}|{state}";
+        string description = ethnicity == DriverEthnicity.Unspecified
+            ? $"{fullName}|{age}|{gender}|{city}|{state}" : $"{fullName}|{age}|{gender}|{ethnicity}";
         foreach (char character in description)
             identity = unchecked((identity ^ character) * 16777619);
 
-        int atlasIndex = (int)(identity % (uint)atlases.Length);
         bool mirror = (identity & 2) != 0;
         int row = gender == "Woman" ? 0 : gender == "Man" ? 1 : 2;
         int column = age < 29 ? 0 : age < 40 ? 1 : age < 54 ? 2 : 3;
-        var key = (atlasIndex, row * Columns + column, mirror, fabric, trim);
+        string assetName = $"EmployeePortraitAtlas{identity % 2 + 1}";
+        int rows = 3;
+        if (ethnicity != DriverEthnicity.Unspecified)
+        {
+            int group = (int)ethnicity - 1;
+            assetName = $"DriverPortraitAtlas{group / 2 + 1}";
+            row += group % 2 * 3;
+            rows = 6;
+        }
+        var key = (assetName, row * Columns + column, mirror, fabric, trim);
         if (portraits.TryGetValue(key, out var portrait))
             return portrait;
 
-        var atlas = atlases[atlasIndex];
-        if (atlas.Pixels == null)
+        if (!atlases.TryGetValue(assetName, out var atlas))
         {
-            var asset = Resources.Load<TextAsset>($"Startup/EmployeePortraitAtlas{atlasIndex + 1}");
+            var asset = Resources.Load<TextAsset>($"Startup/{assetName}");
             if (asset == null)
                 return null;
 
             var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false);
             if (texture.LoadImage(asset.bytes))
-                atlases[atlasIndex] = atlas = (texture.GetPixels32(), texture.width, texture.height);
+                atlases[assetName] = atlas = (texture.GetPixels32(), texture.width, texture.height);
             UnityEngine.Object.Destroy(texture);
             if (atlas.Pixels == null)
                 return null;
@@ -45,9 +53,9 @@ internal sealed class EmployeePortraits : IDisposable
 
         var pixels = new Color32[Size * Size];
         int tileWidth = atlas.Width / Columns;
-        int tileHeight = atlas.Height / Rows;
+        int tileHeight = atlas.Height / rows;
         int originX = column * tileWidth;
-        int originY = (Rows - row - 1) * tileHeight;
+        int originY = (rows - row - 1) * tileHeight;
         for (int y = 0; y < Size; y++)
         {
             int sourceY = originY + (2 * y + 1) * tileHeight / (2 * Size);
@@ -94,5 +102,6 @@ internal sealed class EmployeePortraits : IDisposable
         foreach (var portrait in portraits.Values)
             UnityEngine.Object.Destroy(portrait);
         portraits.Clear();
+        atlases.Clear();
     }
 }

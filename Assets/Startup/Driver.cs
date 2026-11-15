@@ -1,6 +1,8 @@
 using System;
 using UnityEngine;
 
+internal enum DriverEthnicity { Unspecified, White, Black, EastAsian, SouthAsian }
+
 [Serializable]
 internal sealed class PersonalityTraits
 {
@@ -13,13 +15,29 @@ internal sealed class Driver
     public string firstName;
     public string lastName;
     public int age;
+    public int yearsExperience;
+    public bool experienceInitialized;
     public string gender;
+    public DriverEthnicity ethnicity;
     public string hometownCity;
     public string hometownState;
     public long annualSalary;
     public PersonalityTraits personalityTraits = new PersonalityTraits();
 
     public string FullName => (firstName + " " + lastName).Trim();
+
+    public bool EnsureEthnicity()
+    {
+        if (ethnicity != DriverEthnicity.Unspecified)
+            return false;
+
+        // Assign a fictional profile consistently for older saves that lack this field.
+        uint identity = 2166136261;
+        foreach (char character in $"{FullName}|{age}|{gender}|{hometownCity}|{hometownState}")
+            identity = unchecked((identity ^ character) * 16777619);
+        ethnicity = (DriverEthnicity)(1 + identity % 4);
+        return true;
+    }
 
     public static Driver Create(System.Random random, string name, string city = null, string state = null) =>
         FromEmployee(Employee.Create(EmployeeRole.Driver, random, name, city, state), random);
@@ -29,7 +47,10 @@ internal sealed class Driver
         firstName = employee.firstName,
         lastName = employee.lastName,
         age = employee.age,
+        yearsExperience = employee.experienceInitialized ? employee.yearsExperience : Employee.GenerateYearsExperience(employee.age, random),
+        experienceInitialized = true,
         gender = employee.gender,
+        ethnicity = (DriverEthnicity)random.Next(1, 5),
         hometownCity = employee.hometownCity,
         hometownState = employee.hometownState,
         annualSalary = employee.annualSalary,

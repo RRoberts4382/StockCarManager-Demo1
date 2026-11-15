@@ -133,6 +133,7 @@ public sealed class TrackLayoutPoint
     public float x;
     public float z;
     public float banking;
+    public float bankingSpread;
     public float elevationMeters = 0f;
     public float widthMeters;
     public float apronWidthMeters;

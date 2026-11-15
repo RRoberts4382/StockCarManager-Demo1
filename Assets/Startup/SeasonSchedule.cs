@@ -14,6 +14,7 @@ internal sealed class ScheduledRace
     public int[] stageLaps;
     public long purse;
     public long sponsorIncome;
+    public List<SponsorRacePayment> sponsorPayments;
     public bool completed = false;
     public bool playerSkipped = false;
     public RaceExpenses expenses;
@@ -64,7 +65,9 @@ internal sealed class SeasonSchedule
     public int season;
     public long payrollPaid = 0;
     public long carPurchases = 0;
+    public long carSales;
     public long componentUpgrades;
+    public long componentRepairs;
     public long sponsorIncome;
     public List<ScheduledRace> races = new List<ScheduledRace>();
 

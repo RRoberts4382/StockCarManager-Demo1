@@ -12,7 +12,9 @@ internal sealed class VehicleSpeed001 : IVehicleSpeedModel
     public float BaseSpeed(CarSimulationContext context, int carIndex, Random random)
     {
         float reference = (context.Track.id == TrackPreview.OrangeCountyTrackId || context.Track.id == TrackPreview.SouthBostonTrackId || context.Track.id == TrackPreview.DaytonaTrackId ||
-            context.Track.id == TrackPreview.TexasTrackId) && context.Track.qualifyingReferenceMph > 0f
+            context.Track.id == TrackPreview.TexasTrackId || context.Track.id == TrackPreview.KansasTrackId ||
+            context.Track.id == TrackPreview.CotaTrackId) &&
+            context.Track.qualifyingReferenceMph > 0f
             ? context.Track.qualifyingReferenceMph * TrackDefinition.MetersPerMile / 3600f : ReferenceSpeed;
         var weights = context.Track.weights;
         var car = carIndex < context.Cars.Count ? context.Cars[carIndex].car : null;

@@ -18,6 +18,8 @@ public sealed class TrackPreview : MonoBehaviour
     internal const int SouthBostonTrackId = 29;
     internal const int DaytonaTrackId = 30;
     internal const int TexasTrackId = 31;
+    internal const int KansasTrackId = 32;
+    internal const int CotaTrackId = 21;
     private const int BristolBaysPerRow = 20;
     private const float BristolBayPitch = 4f;
     private const float BristolBayCenterX = 9f;
@@ -40,6 +42,7 @@ public sealed class TrackPreview : MonoBehaviour
     private float roadHalfWidth;
 
     private readonly List<Material> materials = new List<Material>();
+    private readonly List<Texture2D> carPaintTextures = new List<Texture2D>();
     private readonly List<Mesh> roadMeshes = new List<Mesh>();
     internal const int CarCount = 24;
     private readonly Transform[] cars = new Transform[CarCount];
@@ -90,6 +93,7 @@ public sealed class TrackPreview : MonoBehaviour
     private float[] pitHeights;
     private float pitEntryTrackLane;
     private float pitExitTrackLane;
+    private bool importedTrackGeometry;
     private float[] practiceStallDistances;
     private Vector3[] practiceStallPositions;
     private TrackState001Practice practice;
@@ -249,8 +253,16 @@ public sealed class TrackPreview : MonoBehaviour
         grassGround = Box("Grass", transform, new Vector3(0f, groundHeight - 0.45f, 0f),
             new Vector3(groundSpan, 0.8f, groundSpan), grass).transform;
         ApplyCameraPose();
-        Ring("Outer embankment", roadHalfWidth, roadHalfWidth + 3f, 0f, grass, outerEdgeAtGround: true);
-        Ring("Inner embankment", -roadHalfWidth - 3f, -roadHalfWidth, 0f, grass, innerEdgeAtGround: true);
+        importedTrackGeometry = customLayout != null && (track.id switch
+        {
+            KansasTrackId => AddImportedTrackGeometry("KansasSpeedway"),
+            CotaTrackId => AddImportedTrackGeometry("CircuitOfTheAmericas"),
+            _ => false
+        });
+        if (!importedTrackGeometry || track.id == KansasTrackId)
+            Ring("Outer embankment", roadHalfWidth, roadHalfWidth + 3f, 0f, grass, outerEdgeAtGround: true);
+        if (!importedTrackGeometry)
+            Ring("Inner embankment", -roadHalfWidth - 3f, -roadHalfWidth, 0f, grass, innerEdgeAtGround: true);
         if (track.id == BristolTrackId && customLayout != null)
             AddBristolFloodlights(bristolNight);
 
@@ -263,18 +275,21 @@ public sealed class TrackPreview : MonoBehaviour
             racingSurface.SetFloat("_Smoothness", 0.12f);
             racingSurface.SetTexture("_BaseMap", CreateBristolRacingTexture());
         }
-        Ring("Road surface", -roadHalfWidth, roadHalfWidth, 0f, racingSurface, alongTrackUv: bristolRubber);
-        if ((track.id == DaytonaTrackId || track.id == TexasTrackId) && customLayout != null)
-            AddBankedOutsideWall();
-        Ring("Inner edge", -roadHalfWidth, -roadHalfWidth + 0.24f, 0.03f, curb);
-        Ring("Outer edge", roadHalfWidth - 0.24f, roadHalfWidth, 0.03f, curb);
-        if (customLayout != null && System.Array.Exists(track.layoutPoints, point => point.apronWidthMeters > 0f))
-            Ring("Flat apron", 0f, 0f, 0f, road, apron: true);
         float finishDistance = track.StartFinishFraction * lapLength;
-        Vector3 stripeCenter = TrackPoint(finishDistance, 0f, out var stripeForward, out var stripeUp);
-        var stripe = Box("Start and finish", transform, stripeCenter + stripeUp * 0.025f,
-            new Vector3(RoadWidths(finishDistance).x, 0.03f, 0.45f), curb);
-        stripe.transform.localRotation = Quaternion.LookRotation(stripeForward, stripeUp);
+        if (!importedTrackGeometry)
+        {
+            Ring("Road surface", -roadHalfWidth, roadHalfWidth, 0f, racingSurface, alongTrackUv: bristolRubber);
+            if (UsesBottomLanePitMerge(track.id) && customLayout != null)
+                AddBankedOutsideWall();
+            Ring("Inner edge", -roadHalfWidth, -roadHalfWidth + 0.24f, 0.03f, curb);
+            Ring("Outer edge", roadHalfWidth - 0.24f, roadHalfWidth, 0.03f, curb);
+            if (customLayout != null && System.Array.Exists(track.layoutPoints, point => point.apronWidthMeters > 0f))
+                Ring("Flat apron", 0f, 0f, 0f, road, apron: true);
+            Vector3 stripeCenter = TrackPoint(finishDistance, 0f, out var stripeForward, out var stripeUp);
+            var stripe = Box("Start and finish", transform, stripeCenter + stripeUp * 0.025f,
+                new Vector3(RoadWidths(finishDistance).x, 0.03f, 0.45f), curb);
+            stripe.transform.localRotation = Quaternion.LookRotation(stripeForward, stripeUp);
+        }
         if (track.pitRoad?.enabled == true && customLayout != null)
             DrawPitRoad(track.pitRoad, road, curb);
         AddTrackScenery(track.id);
@@ -300,14 +315,16 @@ public sealed class TrackPreview : MonoBehaviour
             int paintGroup = livery / Liveries.Length;
             var hoodAndTrunkPaint = hoodPaints[paintIndex];
             var bodyPaint = bodyPaints[(paintIndex + paintGroup) % Liveries.Length];
+            CarPaintStyle? playerPaint = null;
             if (i == 0 && playerCar != null)
             {
-                var paint = playerCar.Paint;
-                hoodAndTrunkPaint = MakeMaterial(paint.HoodAndTrunk);
-                bodyPaint = MakeMaterial(paint.RoofAndSides);
+                var paint = playerCar.PaintStyle;
+                playerPaint = paint;
+                hoodAndTrunkPaint = MakeMaterial(paint.Primary);
+                bodyPaint = MakeMaterial(paint.Secondary);
             }
             BuildCar(cars[i], i == 0 ? playerCarNumber : i < playerCarNumber ? i : i + 1,
-                hoodAndTrunkPaint, bodyPaint, glass, rubber, i == 0 ? sponsorNames : null);
+                hoodAndTrunkPaint, bodyPaint, glass, rubber, i == 0 ? sponsorNames : null, playerPaint, carPaintTextures.Add);
         }
 
         if (bristolSun != null)
@@ -444,6 +461,7 @@ public sealed class TrackPreview : MonoBehaviour
         IVehicleBehaviorModel behaviorModel, int[] qualifyingOrder = null, bool usePaceTruck = false, bool fullBristolStands = false)
     {
         this.simulation = simulation;
+        RaceSessionRun.ResetVehiclesForSession(simulation.Cars);
         if (definition.id == BristolTrackId)
             SetBristolAttendance(fullBristolStands ? RaceSessionKind.Race : simulation.Session.kind);
         if (definition.id == BristolTrackId && simulation.Event != null && parkedHaulers == null)
@@ -501,16 +519,7 @@ public sealed class TrackPreview : MonoBehaviour
         {
             practice = trackStateModel.StartPractice(pitTraffic, trafficCars, practiceStallDistances);
             for (int i = 0; i < cars.Length; i++)
-            {
                 sessionDistances[i] = pitTraffic.RaceDistance(trafficCars[i]);
-                if (pitRoadOutside || definition.restrictorPlate)
-                {
-                    var entry = simulation.Cars[i];
-                    entry.Fuel = SessionFuel.TankCapacity;
-                    if (entry.car != null)
-                        entry.car.Damage = 0f;
-                }
-            }
         }
 
         if (model is TrackState001 qualifyingModel && isQualifying && pitTraffic != null)
@@ -1206,6 +1215,7 @@ public sealed class TrackPreview : MonoBehaviour
                 ref var crash = ref crashes[i];
                 if (!crash.Active)
                 {
+                    SessionRun.RecordWreck(i);
                     crash.Active = true;
                     crash.Lane = drivingLanes[i];
                     crash.ForwardSpeed = SessionRun.CurrentSpeed(i) * 0.8f;
@@ -1357,7 +1367,7 @@ public sealed class TrackPreview : MonoBehaviour
     {
         float toMerge = traffic == null ? float.PositiveInfinity
             : Mathf.Min(traffic.NextEntry - distance, distance - traffic.LastExit);
-        bool useBottomLaneMerge = traffic != null && (definition.id == DaytonaTrackId || definition.id == TexasTrackId) && toMerge < 15f;
+        bool useBottomLaneMerge = traffic != null && UsesBottomLanePitMerge(definition.id) && toMerge < 15f;
         float lane = behaviorModel.LaneOffset(i, RoadWidths(distance).x,
             useBottomLaneMerge ? float.PositiveInfinity : toMerge, racingLine(distance));
         if (raceReleased && SessionRun.Elapsed < 3f)
@@ -1489,6 +1499,27 @@ public sealed class TrackPreview : MonoBehaviour
         }
 
         Vector3 outward = Vector3.Cross(Vector3.up, forward).normalized;
+        if (definition.id == KansasTrackId && customLayout != null)
+        {
+            float width = RoadWidths(distance).x;
+            float spread = customLayout.BankingSpread(distance);
+            float insideBank = bank - spread * 0.5f;
+            float fromInside = lane + width * 0.5f;
+            float slope = insideBank + spread * (fromInside / width);
+            up = Vector3.Cross(forward, Quaternion.AngleAxis(slope, forward) * outward);
+            Vector3 axis = forward;
+            Vector3 inner = BankOffset(width * 0.5f);
+            inner.y = 0f;
+            return center - inner + BankOffset(fromInside);
+
+            Vector3 BankOffset(float length)
+            {
+                float angle = spread * (length / width) * 0.5f;
+                float radians = angle * Mathf.Deg2Rad;
+                float chord = length * (Mathf.Abs(radians) < 0.0001f ? 1f : Mathf.Sin(radians) / radians);
+                return Quaternion.AngleAxis(insideBank + angle, axis) * outward * chord;
+            }
+        }
         Vector3 crossSlope = Quaternion.AngleAxis(bank, forward) * outward;
         up = Vector3.Cross(forward, crossSlope);
         return center + crossSlope * lane + Vector3.up * (RoadWidths(distance).x * 0.5f * Mathf.Abs(crossSlope.y));
@@ -1672,7 +1703,38 @@ public sealed class TrackPreview : MonoBehaviour
     }
 
     private static bool UsesDetailedPavement(int trackId) =>
-        trackId == BristolTrackId || trackId == OrangeCountyTrackId || trackId == SouthBostonTrackId || trackId == DaytonaTrackId || trackId == TexasTrackId;
+        trackId == BristolTrackId || trackId == OrangeCountyTrackId || trackId == SouthBostonTrackId ||
+        trackId == DaytonaTrackId || trackId == TexasTrackId || trackId == KansasTrackId || trackId == CotaTrackId;
+
+    private static bool UsesBottomLanePitMerge(int trackId) =>
+        trackId == DaytonaTrackId || trackId == TexasTrackId || trackId == KansasTrackId || trackId == CotaTrackId;
+
+    private bool AddImportedTrackGeometry(string resourceName)
+    {
+        var model = Resources.Load<GameObject>("Startup/" + resourceName);
+        if (model == null)
+        {
+            Debug.LogWarning($"Track geometry is missing: {resourceName}.", this);
+            return false;
+        }
+
+        var venue = Instantiate(model, transform, false);
+        var finish = customLayout.ToSourceSpace(TrackPoint(definition.StartFinishFraction * lapLength, 0f, out _, out _));
+        var stripe = System.Array.Find(venue.GetComponentsInChildren<MeshRenderer>(),
+            renderer => renderer.name.StartsWith("Start finish checker", System.StringComparison.Ordinal));
+        float scale = (customLayout.ToTrackSpace(Vector3.right) - customLayout.ToTrackSpace(Vector3.zero)).x;
+        Vector3 stripeCenter = stripe != null ? transform.InverseTransformPoint(stripe.bounds.center) : finish;
+        // An FBX axis conversion can reverse either horizontal axis. Kansas
+        // has its timing stripe on the X origin, so that axis is ambiguous there.
+        float horizontal = Mathf.Abs(finish.x) > 10f && stripeCenter.x * finish.x < 0f ? -scale : scale;
+        float depth = stripeCenter.z * finish.z < 0f ? -scale : scale;
+        venue.transform.localScale = new Vector3(horizontal, 1f, depth);
+        venue.transform.localPosition = customLayout.ToTrackSpace(Vector3.zero);
+        ApplyMatteTrackScenery(venue);
+        foreach (var child in venue.GetComponentsInChildren<Transform>(true))
+            child.gameObject.layer = PreviewLayer;
+        return true;
+    }
 
     private void AddTrackScenery(int trackId)
     {
@@ -1986,7 +2048,7 @@ public sealed class TrackPreview : MonoBehaviour
             pitRoute = new[] { entrance, spline, exit };
             pitLengths = new[] { entrance.Length * sourceScale, spline.Length * sourceScale, exit.Length * sourceScale };
             pitHeights = new[] { entryHeight, roadStart, roadEnd, exitHeight };
-            if ((definition.id == DaytonaTrackId || definition.id == TexasTrackId))
+            if (UsesBottomLanePitMerge(definition.id))
             {
                 pitEntryTrackLane = PitAttachmentLane(entrance.Sample(0f), entryDistance);
                 pitExitTrackLane = PitAttachmentLane(exit.Sample(1f), exitDistance);
@@ -2035,14 +2097,14 @@ public sealed class TrackPreview : MonoBehaviour
                 position.y = PitHeight(roadStart, roadEnd, fraction);
                 practiceStallPositions[i] = position;
             }
-            Box("Pit stall", transform, position + Vector3.up * 0.055f, new Vector3(0.6f, 0.025f, 0.6f), markings);
+            if (!importedTrackGeometry)
+                Box("Pit stall", transform, position + Vector3.up * 0.055f, new Vector3(0.6f, 0.025f, 0.6f), markings);
         }
 
         pitWallSide = Mathf.Sign(Vector3.Dot(pitCenter - trackCenter,
             Vector3.Cross(Vector3.up, PitTangent(spline, 0.5f, roadStart, roadEnd))));
         if (practiceStallDistances != null)
         {
-            FillPracticeStalls(spline, pit, markedStalls.Length);
             float stallSide = 0f;
             for (int i = 0; i < Mathf.Min(markedStalls.Length, cars.Length); i++)
             {
@@ -2053,9 +2115,10 @@ public sealed class TrackPreview : MonoBehaviour
             }
             if (Mathf.Abs(stallSide) > 0.1f)
                 pitWallSide = Mathf.Sign(stallSide);
+            FillPracticeStalls(spline, pit, markedStalls.Length);
         }
 
-        if (definition.id != BristolTrackId)
+        if (definition.id != BristolTrackId && !importedTrackGeometry)
             DrawPitWall(spline, pit.widthMeters, roadStart, roadEnd);
     }
 
@@ -2209,13 +2272,18 @@ public sealed class TrackPreview : MonoBehaviour
 
     private void ConfigurePitField()
     {
-        stallLanes ??= new float[cars.Length];
-        for (int i = 0; i < cars.Length; i++)
+        var markedStalls = definition.pitRoad.stalls ?? System.Array.Empty<TrackPitPoint>();
+        stallLanes ??= new float[Mathf.Max(cars.Length, markedStalls.Length)];
+        for (int i = 0; i < stallLanes.Length; i++)
         {
-            float fraction = Mathf.Clamp01((practiceStallDistances[i] - pitLengths[0]) / pitLengths[1]);
+            Vector3 source = i < cars.Length ? Vector3.zero : TrackPitSpline.Position(markedStalls[i]);
+            float fraction = i < cars.Length
+                ? Mathf.Clamp01((practiceStallDistances[i] - pitLengths[0]) / pitLengths[1])
+                : pitRoute[1].ClosestFraction(source);
+            Vector3 position = i < cars.Length ? practiceStallPositions[i] : customLayout.ToTrackSpace(source);
             var center = PitPosition(pitRoute[1], fraction, pitHeights[1], pitHeights[2]);
             var across = Vector3.Cross(Vector3.up, PitTangent(pitRoute[1], fraction, pitHeights[1], pitHeights[2])).normalized;
-            stallLanes[i] = Vector3.Dot(practiceStallPositions[i] - center, across);
+            stallLanes[i] = Vector3.Dot(position - center, across);
         }
         pitTraffic.ConfigureField(trafficCars, practiceStallDistances, stallLanes, customLayout.InsideSign);
     }
@@ -2245,7 +2313,7 @@ public sealed class TrackPreview : MonoBehaviour
             var center = PitPosition(spline, bestFraction, roadStart, roadEnd);
             var tangent = PitTangent(spline, bestFraction, roadStart, roadEnd);
             practiceStallDistances[i] = pitLengths[0] + bestFraction * pitLengths[1];
-            practiceStallPositions[i] = center + Vector3.Cross(Vector3.up, tangent) * (pit.widthMeters * 0.35f);
+            practiceStallPositions[i] = center + Vector3.Cross(Vector3.up, tangent) * (pitWallSide * pit.widthMeters * 0.35f);
         }
     }
 
@@ -2301,7 +2369,8 @@ public sealed class TrackPreview : MonoBehaviour
         }
         if (bristolConnector)
             bristolConnectorVertices[spline] = vertices;
-        AddRoadMesh(objectName, material, vertices, triangles.ToArray());
+        if (!importedTrackGeometry)
+            AddRoadMesh(objectName, material, vertices, triangles.ToArray());
 
         void AddPitTriangle(int a, int b, int c)
         {
@@ -2496,7 +2565,8 @@ public sealed class TrackPreview : MonoBehaviour
     }
 
     internal static void BuildCar(Transform car, int number, Material hoodAndTrunkPaint, Material bodyPaint,
-        Material glass, Material rubber, string[] sponsorNames = null)
+        Material glass, Material rubber, string[] sponsorNames = null,
+        CarPaintStyle? paintStyle = null, System.Action<Texture2D> retainPaint = null)
     {
         var model = CreateImpala(car, hoodAndTrunkPaint, bodyPaint, glass, rubber);
         if (model == null)
@@ -2509,6 +2579,8 @@ public sealed class TrackPreview : MonoBehaviour
             Box("Front tires", car, new Vector3(0f, 0.22f, 0.87f), new Vector3(1.8f, 0.41f, 0.5f), rubber);
             Box("Rear tires", car, new Vector3(0f, 0.22f, -0.87f), new Vector3(1.8f, 0.41f, 0.5f), rubber);
         }
+        bool wrapped = paintStyle.HasValue &&
+            CarPaintStyle.Apply(car, hoodAndTrunkPaint, bodyPaint, paintStyle.Value, retainPaint);
         var font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         if (font == null)
             return;
@@ -2555,7 +2627,7 @@ public sealed class TrackPreview : MonoBehaviour
             text.fontStyle = FontStyle.Bold;
             text.fontSize = 48;
             text.characterSize = Mathf.Min(0.035f, (slot == 2 ? 0.11f : 0.15f) / sponsor.Length);
-            Color background = paint.color;
+            Color background = wrapped ? (Color)paintStyle.Value.ColorAt(position, paint == hoodAndTrunkPaint) : paint.color;
             text.color = 0.213f * background.r + 0.715f * background.g + 0.072f * background.b > 0.52f
                 ? Color.black : Color.white;
             decal.GetComponent<MeshRenderer>().sharedMaterial = decalMaterial;
@@ -2573,7 +2645,7 @@ public sealed class TrackPreview : MonoBehaviour
             text.fontStyle = FontStyle.Bold;
             text.fontSize = 64;
             text.characterSize = 0.06f;
-            Color body = bodyPaint.color;
+            Color body = wrapped ? (Color)paintStyle.Value.ColorAt(position, false) : bodyPaint.color;
             text.color = 0.213f * body.r + 0.715f * body.g + 0.072f * body.b > 0.52f ? Color.black : Color.white;
             label.GetComponent<MeshRenderer>().sharedMaterial = decalMaterial;
         }
@@ -2737,5 +2809,7 @@ public sealed class TrackPreview : MonoBehaviour
             Destroy(mesh);
         foreach (var material in materials)
             Destroy(material);
+        foreach (var texture in carPaintTextures)
+            Destroy(texture);
     }
 }

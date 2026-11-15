@@ -6,6 +6,7 @@ using UnityEngine.UIElements;
 
 internal sealed class RaceEventView
 {
+    private const int VictoryBackgroundBlurPixels = 10;
     private readonly ScrollView body = new ScrollView();
     private readonly Label title = new Label();
     private readonly Button exit;
@@ -13,6 +14,10 @@ internal sealed class RaceEventView
     private readonly Action startSession;
     private readonly Action simulateSession;
     private readonly Action repaint;
+    private readonly Func<(Color32 Primary, Color32 Secondary)> teamColors;
+    private Texture2D victoryArtwork;
+    private RenderTexture blurredVictoryArtwork;
+    private (Color32 Primary, Color32 Secondary) victoryPaint;
     private ScheduledRace race;
     private RaceSession shownResult;
     private string carName;
@@ -20,11 +25,13 @@ internal sealed class RaceEventView
 
     public VisualElement Screen { get; } = new VisualElement();
 
-    public RaceEventView(Action startSession, Action simulateSession, Action leave, Action repaint)
+    public RaceEventView(Action startSession, Action simulateSession, Action leave, Action repaint,
+        Func<(Color32 Primary, Color32 Secondary)> teamColors)
     {
         this.startSession = startSession;
         this.simulateSession = simulateSession;
         this.repaint = repaint;
+        this.teamColors = teamColors;
         Screen.AddToClassList("screen");
         Screen.AddToClassList("game-neutral");
         Screen.AddToClassList("garage-screen");
@@ -78,6 +85,8 @@ internal sealed class RaceEventView
     private void Show(int selected)
     {
         page = selected;
+        body.EnableInClassList("victory-results-background", false);
+        body.style.backgroundImage = StyleKeyword.Null;
         body.Clear();
         var content = new VisualElement();
         content.AddToClassList("garage-page");
@@ -102,6 +111,7 @@ internal sealed class RaceEventView
                 BuildSchedule(content);
                 break;
             case 2:
+                SetVictoryBackground(body, teamColors());
                 BuildResults(content);
                 break;
             case 3:
@@ -153,6 +163,88 @@ internal sealed class RaceEventView
         });
         content.Add(picker);
         content.Add(CreateResultsGrid(shownResult));
+    }
+
+    internal void SetVictoryBackground(VisualElement target, (Color32 Primary, Color32 Secondary) paint)
+    {
+        if (victoryArtwork == null ||
+            !victoryPaint.Primary.Equals(paint.Primary) ||
+            !victoryPaint.Secondary.Equals(paint.Secondary))
+        {
+            Dispose();
+            var source = Resources.Load<TextAsset>("Startup/VictoryLane");
+            if (source == null)
+                return;
+
+            victoryArtwork = new Texture2D(2, 2, TextureFormat.RGBA32, true);
+            if (!victoryArtwork.LoadImage(source.bytes))
+            {
+                Dispose();
+                return;
+            }
+
+            var pixels = victoryArtwork.GetPixels32();
+            for (int i = 0; i < pixels.Length; i++)
+                pixels[i] = RecolorArtworkPixel(pixels[i], paint.Primary, paint.Secondary);
+            victoryArtwork.SetPixels32(pixels);
+            victoryArtwork.Apply(true, true);
+            victoryPaint = paint;
+
+            var shader = Resources.Load<Shader>("Startup/ShopBackgroundBlur");
+            if (shader != null && shader.isSupported)
+            {
+                blurredVictoryArtwork = new RenderTexture(victoryArtwork.width, victoryArtwork.height, 0)
+                {
+                    name = "Blurred Victory Lane background"
+                };
+                var material = new Material(shader) { hideFlags = HideFlags.HideAndDontSave };
+                try
+                {
+                    TeamShopPreview.ApplyBackgroundBlur(victoryArtwork, blurredVictoryArtwork, material, VictoryBackgroundBlurPixels);
+                }
+                finally
+                {
+                    UnityEngine.Object.Destroy(material);
+                }
+            }
+        }
+
+        target.EnableInClassList("victory-results-background", true);
+        target.style.backgroundImage = new StyleBackground(blurredVictoryArtwork != null
+            ? Background.FromRenderTexture(blurredVictoryArtwork)
+            : Background.FromTexture2D(victoryArtwork));
+    }
+
+    internal static Color32 RecolorArtworkPixel(Color32 source, Color primary, Color secondary)
+    {
+        // The source uses magenta for primary panels and lime for secondary panels.
+        float magenta = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(8f, 32f, Mathf.Min(source.r - source.g, source.b - source.g)))
+            * Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(-4f, 20f, source.r - source.b));
+        float lime = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(12f, 48f, source.r - source.b))
+            * Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(5f, 26f, source.g - source.r));
+        float mask = Mathf.Max(magenta, lime);
+        if (mask <= 0f)
+            return source;
+
+        Color paint = magenta >= lime ? primary : secondary;
+        float intensity = Mathf.Max(source.r, Mathf.Max(source.g, source.b)) / 255f;
+        float highlight = Mathf.Min(source.r, Mathf.Min(source.g, source.b)) / 255f;
+        Color shaded = Color.Lerp(paint * Mathf.Min(1f, intensity * 1.12f), Color.white, highlight * highlight);
+        shaded.a = 1f;
+        return Color.Lerp((Color)source, shaded, mask);
+    }
+
+    public void Dispose()
+    {
+        if (blurredVictoryArtwork != null)
+        {
+            blurredVictoryArtwork.Release();
+            UnityEngine.Object.Destroy(blurredVictoryArtwork);
+            blurredVictoryArtwork = null;
+        }
+        if (victoryArtwork != null)
+            UnityEngine.Object.Destroy(victoryArtwork);
+        victoryArtwork = null;
     }
 
     internal static VisualElement CreateResultsGrid(RaceSession session)
