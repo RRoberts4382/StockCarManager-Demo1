@@ -93,6 +93,7 @@ public sealed class TracksEditor
         Bind(form, new FloatField("Surface roughness (0–1)"), t => t.weights.surfaceRoughness, (t, v) => t.weights.surfaceRoughness = v);
         Bind(form, new FloatField("Aero (0–1)") { isReadOnly = true }, t => t.weights.aerodynamics, (t, v) => t.weights.aerodynamics = v);
         Bind(form, new FloatField("Horsepower (0–1)"), t => t.weights.horsepower, (t, v) => t.weights.horsepower = v);
+        Bind(form, new FloatField("Transmission (0–1)") { isReadOnly = true }, TrackRatings.TransmissionWeight, (t, v) => { });
         Bind(form, new FloatField("Brakes (0–1)") { isReadOnly = true }, t => t.weights.brakes, (t, v) => t.weights.brakes = v);
         Bind(form, new FloatField("Handling (0–1)") { isReadOnly = true }, t => t.weights.handling, (t, v) => t.weights.handling = v);
         Bind(form, new FloatField("Tire wear (0–1)") { isReadOnly = true }, t => t.weights.tireWear, (t, v) => t.weights.tireWear = v);

@@ -18,10 +18,10 @@ internal sealed class RaceExpenses
 
     public int Total => wearAndMaterials + engineLease + travelAndLogistics + tires;
 
-    public static RaceExpenses Generate(Random random) => new RaceExpenses
+    public static RaceExpenses Generate(Random random, EngineSupplier supplier) => new RaceExpenses
     {
         wearAndMaterials = Vary(WearAndMaterialsBase, random),
-        engineLease = Vary(EngineLeaseBase, random),
+        engineLease = supplier?.maintenancePerRace ?? Vary(EngineLeaseBase, random),
         travelAndLogistics = Vary(TravelAndLogisticsBase, random),
         tires = Vary(TiresBase, random)
     };
@@ -35,7 +35,7 @@ internal sealed class RaceExpenses
 
 internal static class RaceFinances
 {
-    public const long StartingBalance = 10_000;
+    public const long StartingBalance = 100_000;
     private const long StandardPurse = 11_233_037;
 
     // Cup charter payout weights, in thousandths of a percentage point.

@@ -7,10 +7,14 @@ internal static class TrackRatings
     private const float HandlingBandStart = 1f;
     private const float HandlingBandEnd = 1.5f;
 
+    public static float TransmissionWeight(TrackDefinition track) =>
+        track.majorStyle == "Road" ? 1f : track.lengthMiles <= 1f ? 0.25f : 0f;
+
     public static void Apply(TrackDefinition track, float shortest, float longest)
     {
         float length = track.lengthMiles;
         var weights = track.weights;
+        weights.transmission = TransmissionWeight(track);
         weights.aerodynamics = length >= MaxAeroLength ? 1f : Mathf.InverseLerp(shortest, MaxAeroLength, length);
         weights.handling = length < HandlingBandStart
             ? Mathf.InverseLerp(shortest, HandlingBandStart, length)

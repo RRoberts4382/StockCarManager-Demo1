@@ -71,6 +71,12 @@ internal static class CrewChiefMail
                 lines.Add($"Turn banking: {track.banking.turns12:0.#}° in Turns 1–2, {track.banking.turns34:0.#}° in Turns 3–4.");
             if (track.restrictorPlate)
                 lines.Add("Drafting will matter on this restrictor-plate track.");
+            if (track.weights is TrackWeights weights)
+            {
+                lines.Add($"Track weights (0–1): Aero {weights.aerodynamics:F2}, Horsepower {weights.horsepower:F2}, " +
+                    $"Brakes {weights.brakes:F2}, Suspension {weights.suspension:F2}, Transmission {weights.transmission:F2}, " +
+                    $"Handling {weights.handling:F2}, Tire wear {weights.tireWear:F2}, Surface roughness {weights.surfaceRoughness:F2}.");
+            }
         }
         else
             lines.Add("Track specifications are unavailable.");
@@ -98,6 +104,67 @@ internal static class CrewChiefMail
         lines.Add("Let's hit our marks from the first lap. The crew is ready to make the most of tomorrow.");
         Send(career, id, career.currentDate, $"Race prep at {race.trackName}", lines);
         return true;
+    }
+
+    internal sealed class StaffProgressSnapshot
+    {
+        private readonly string name;
+        private readonly (string Label, float Before, Func<float> Read)[] values;
+
+        public StaffProgressSnapshot(string name, params (string Label, Func<float> Read)[] attributes)
+        {
+            this.name = name;
+            values = attributes.Select(attribute => (attribute.Label, attribute.Read(), attribute.Read)).ToArray();
+        }
+
+        public string Summary()
+        {
+            var changes = values.Select(value => (value.Label, Change: value.Read() - value.Before))
+                .Where(value => value.Change != 0f)
+                .Select(value => $"{value.Label} {value.Change:+0.000###;-0.000###}");
+            string summary = string.Join(", ", changes);
+            return $"{name} — {(summary.Length == 0 ? "No change" : summary)}";
+        }
+    }
+
+    public static List<StaffProgressSnapshot> CaptureStaffProgress(Career career, TrackDefinition track)
+    {
+        var snapshots = new List<StaffProgressSnapshot>();
+        if (career.Driver is Driver driver)
+        {
+            string name = $"{driver.FullName} · Driver";
+            if (track != null)
+            {
+                var category = track.TrackCategory;
+                snapshots.Add(new StaffProgressSnapshot(name, ($"{TeamCar.DisplayChassisType(category)} XP", () => driver.TrackXp(category)),
+                    ("Morale", () => driver.morale)));
+            }
+            else
+                snapshots.Add(new StaffProgressSnapshot(name, ("Morale", () => driver.morale)));
+        }
+
+        foreach (var employee in career.employees ?? Enumerable.Empty<Employee>())
+        {
+            snapshots.Add(new StaffProgressSnapshot($"{employee.FullName} · {employee.RoleName}",
+                ("Aero", () => employee.bodywork), ("Suspension", () => employee.suspensions),
+                ("Transmission", () => employee.transmissions), ("Engine", () => employee.engines),
+                ("Morale", () => employee.morale)));
+        }
+        return snapshots;
+    }
+
+    public static void SendStaffProgress(Career career, ScheduledRace race, List<StaffProgressSnapshot> snapshots)
+    {
+        string id = EventId("staff-progress", race);
+        if (AlreadySent(career, id))
+            return;
+
+        var lines = new List<string> { $"Here are the team's skill and morale changes after {race.trackName}.", "" };
+        if (snapshots.Count == 0)
+            lines.Add("There are no staff members to report.");
+        else
+            lines.AddRange(snapshots.Select(snapshot => snapshot.Summary()));
+        Send(career, id, race.date, $"Team progress after {race.trackName}", lines);
     }
 
     public static void SendRecap(Career career, ScheduledRace race)
@@ -187,10 +254,7 @@ internal static class CrewChiefMail
             weights.horsepower * car.GetComponent(CarComponent.Engine).EffectiveValue +
             weights.brakes * car.GetComponent(CarComponent.Brakes).EffectiveValue +
             weights.suspension * car.GetComponent(CarComponent.Suspension).EffectiveValue;
-        var preferred = track?.majorStyle == "Road" ? ChassisType.RoadCourse
-            : track?.restrictorPlate == true ? ChassisType.SuperSpeedway
-            : track?.lengthMiles < 1f ? ChassisType.ShortTrack : ChassisType.IntermediateTrack;
-        return performance + (track != null && car.chassisType == preferred ? 0.5f : 0f) - car.Damage / 20f;
+        return performance + (car.chassisType == track?.TrackCategory ? 0.5f : 0f) - car.Damage / 20f;
     }
 
     private static string EventId(string kind, ScheduledRace race) => $"crew-{kind}/{race.date}/{race.trackId}";
@@ -201,7 +265,7 @@ internal static class CrewChiefMail
             career.inbox.RemoveRange(inboxCount, career.inbox.Count - inboxCount);
     }
 
-    private static bool AlreadySent(Career career, string id) => career.inbox?.Any(message => message.eventId == id) == true;
+    private static bool AlreadySent(Career career, string id) => TeamCommunications.HasReceivedMail(career, id);
 
     private static void Send(Career career, string id, string date, string subject, List<string> lines)
     {

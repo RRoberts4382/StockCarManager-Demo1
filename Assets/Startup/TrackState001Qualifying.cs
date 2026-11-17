@@ -6,6 +6,7 @@ internal sealed class TrackState001Qualifying
     private const double OpeningDelay = 3.0;
     private readonly TrackPitTraffic traffic;
     private readonly float stall;
+    private bool holdForGarage;
 
     public TrackPitTraffic.Car Car { get; }
     public SessionTrackState State { get; private set; } = SessionTrackState.TrackClosed;
@@ -23,6 +24,13 @@ internal sealed class TrackState001Qualifying
             State = SessionTrackState.TrackOpen;
     }
 
+    public void SetGarageVisit(bool visiting)
+    {
+        holdForGarage = visiting;
+        if (!visiting && State != SessionTrackState.Checkered)
+            Car.NextEntry = float.PositiveInfinity;
+    }
+
     public void Advance(RaceSessionRun timing, float seconds, float speed, float brakingLimit)
     {
         speed = timing.ConditionLimitedSpeed(0, speed, seconds, State == SessionTrackState.Checkered ? 0f : brakingLimit);
@@ -37,7 +45,7 @@ internal sealed class TrackState001Qualifying
             double beforeParking = Car.Odometer;
             traffic.Advance(Car, seconds, speed, stall);
             timing.RecordTravel(0, Car.Odometer - beforeParking,
-                (Car.Odometer - beforeParking) / seconds, reducedBurn: true);
+                (Car.Odometer - beforeParking) / seconds, Car.PreciseTrackDistance, reducedBurn: true, onTrack: !Car.InPit);
             if (Car.InPit && Car.PitDistance == stall)
                 State = SessionTrackState.Complete;
             return;
@@ -46,9 +54,11 @@ internal sealed class TrackState001Qualifying
         bool wasInPit = Car.InPit;
         float before = Car.TrackDistance;
         double beforeMovement = Car.Odometer;
-        traffic.Advance(Car, seconds, speed);
+        if (holdForGarage && !Car.InPit)
+            traffic.CallToStall(Car, stall);
+        traffic.Advance(Car, seconds, speed, holdForGarage ? stall : float.PositiveInfinity);
         timing.RecordTravel(0, Car.Odometer - beforeMovement,
-            (Car.Odometer - beforeMovement) / seconds, reducedBurn: wasInPit);
+            (Car.Odometer - beforeMovement) / seconds, Car.PreciseTrackDistance, reducedBurn: wasInPit, onTrack: !Car.InPit);
         if (!Car.InPit)
         {
             if (wasInPit)

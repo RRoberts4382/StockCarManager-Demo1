@@ -9,7 +9,7 @@ internal interface IVehicleBehaviorModel
     Func<float, float> BuildRacingLine(float lapLength, float inside, bool isOval, Func<float, UnityEngine.Vector3> heading);
     void AvoidTraffic(float lapLength, float inside, float seconds, bool allowPassing,
         float[] distances, float[] widths, bool[] onTrack, float[] lanes, float[] targets,
-        float[] currentSpeeds, float[] speeds, float brakingLimit, bool[] draftLine = null);
+        float[] currentSpeeds, float[] speeds, float brakingLimit, bool[] draftLine = null, bool respondToTraffic = true, float[] brakingFactors = null);
     float LaneOffset(int carIndex, float roadWidth, float distanceToPitMerge, float racingLine);
 }
 

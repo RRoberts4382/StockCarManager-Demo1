@@ -10,6 +10,9 @@ internal sealed class SponsorOffer
     public int duration;
     public bool lumpSum;
     public int maxFinishPosition;
+    public int seasonYear;
+    public long signingPayment;
+    public long perRacePayment;
 
     public bool Qualifies(int finishPosition) =>
         finishPosition > 0 && (maxFinishPosition == 0 || finishPosition <= maxFinishPosition);
@@ -25,6 +28,8 @@ internal sealed class SponsorContract
 
     public long Payout(int finishPosition)
     {
+        if (offer.seasonYear > 0)
+            return offer.perRacePayment;
         if (!offer.Qualifies(finishPosition))
             return 0;
         if (offer.lumpSum)
@@ -45,8 +50,6 @@ internal sealed class SponsorRacePayment
 
 internal static class Sponsorships
 {
-    public const int Slots = 3;
-
     private static readonly string[] Brands =
     {
         "Aldercrest", "Brindle Peak", "Copper Heron", "Driftmere", "Ember Hollow",
@@ -62,60 +65,51 @@ internal static class Sponsorships
     };
 
     public static string CompanyName(int id) => Brands[id / Industries.Length] + " " + Industries[id % Industries.Length];
-    public static string LogoText(int id) => string.Concat(Brands[id / Industries.Length][0], Industries[id % Industries.Length][0]);
-    public static string SlotName(int slot) => slot == 0 ? "Primary" : $"Associate {slot}";
-
     // Replace contracts so callers can restore the previous state if writing the save fails.
-    public static List<SponsorContract> Settle(IEnumerable<SponsorContract> contracts,
-        int finishPosition, out long income, out List<SponsorRacePayment> payments)
+    public static SponsorContract Settle(SponsorContract contract,
+        int finishPosition, int seasonYear, out long income, out List<SponsorRacePayment> payments)
     {
-        var remaining = new List<SponsorContract>();
         income = 0;
         payments = new List<SponsorRacePayment>();
-        foreach (var contract in contracts)
+        if (contract?.offer == null || contract.racesRemaining <= 0 ||
+            (contract.offer.seasonYear > 0 && contract.offer.seasonYear != seasonYear))
+            return null;
+
+        income = contract.Payout(finishPosition);
+        if (income != 0)
+            payments.Add(new SponsorRacePayment { companyId = contract.offer.companyId, amount = income });
+        return contract.racesRemaining > 1 ? new SponsorContract
         {
-            long payout = contract.Payout(finishPosition);
-            income += payout;
-            if (payout != 0)
-                payments.Add(new SponsorRacePayment { slot = contract.slot, companyId = contract.offer.companyId, amount = payout });
-            if (contract.racesRemaining > 1)
-                remaining.Add(new SponsorContract
-                {
-                    offer = contract.offer,
-                    slot = contract.slot,
-                    racesRemaining = contract.racesRemaining - 1,
-                    paid = contract.paid + payout
-                });
-        }
-        return remaining;
+            offer = contract.offer,
+            racesRemaining = contract.racesRemaining - 1,
+            paid = contract.paid + income
+        } : null;
     }
 
-    public static List<SponsorOffer> CreateOffers(IReadOnlyCollection<SponsorContract> contracts,
-        int position, int fieldSize, int remainingRaces, int seasonRaces, Random random)
+    public static SponsorOffer[] CreateSeasonOffers(SponsorContract contract, int seasonYear,
+        int raceCount, int rank, int fieldSize, Random random)
     {
-        var offers = new List<SponsorOffer>();
-        if (contracts.Count >= Slots || remainingRaces <= 0)
-            return offers;
-
-        var signed = contracts.Select(contract => contract.offer.companyId).ToHashSet();
-        var companies = Enumerable.Range(0, Brands.Length * Industries.Length).Where(id => !signed.Contains(id)).ToList();
-        double standing = fieldSize > 1 ? Math.Max(0, Math.Min(1, (fieldSize - position) / (double)(fieldSize - 1))) : 0;
-        for (int i = 0; i < Slots; i++)
+        int? signedCompany = contract?.offer?.companyId;
+        var companies = Enumerable.Range(0, Brands.Length * Industries.Length).Where(id => id != signedCompany).ToList();
+        double standing = fieldSize > 1 ? Math.Clamp((fieldSize - rank) / (double)(fieldSize - 1), 0, 1) : 0;
+        var offers = new SponsorOffer[2];
+        for (int i = 0; i < offers.Length; i++)
         {
             int choice = random.Next(companies.Count);
-            // The first offer matches the standing. The other two trade some value for easier terms.
-            double quality = standing * (1 - 0.12 * i);
-            int duration = 1 + (int)Math.Round((remainingRaces - 1) * quality);
-            double seasonShare = duration / (double)Math.Max(seasonRaces, duration);
-            int finishTarget = 10 + (int)Math.Round(10 * (1 - quality) / 0.5);
-            offers.Add(new SponsorOffer
+            double variation = 0.9 + random.NextDouble() * 0.2;
+            long signing = (long)Math.Round((300000 + 1700000 * standing) * variation);
+            long perRace = (long)Math.Round((12500 + 47500 * standing) * (2 - variation));
+            if (i > 0 && perRace == offers[0].perRacePayment)
+                perRace++;
+            offers[i] = new SponsorOffer
             {
                 companyId = companies[choice],
-                duration = duration,
-                totalValue = 5000 + (long)Math.Round(9995000 * quality * seasonShare),
-                lumpSum = random.Next(2) == 0,
-                maxFinishPosition = quality < 0.5 || finishTarget >= fieldSize ? 0 : finishTarget
-            });
+                seasonYear = seasonYear,
+                duration = raceCount,
+                signingPayment = signing,
+                perRacePayment = perRace,
+                totalValue = signing + perRace * raceCount
+            };
             companies.RemoveAt(choice);
         }
         return offers;

@@ -13,6 +13,7 @@ public sealed class TrackPreview : MonoBehaviour
     private Light previousSun;
     private UniversalRenderPipelineAsset bristolPipeline;
     private float previousShadowDistance;
+    internal const int DarlingtonTrackId = 4;
     internal const int BristolTrackId = 27;
     internal const int OrangeCountyTrackId = 28;
     internal const int SouthBostonTrackId = 29;
@@ -103,6 +104,260 @@ public sealed class TrackPreview : MonoBehaviour
     private TrackState001RaceStart raceStart;
     private TrackState001Stages stages;
     private SessionPitStops pitStops;
+    private bool playerGarageVisit;
+    private RivalPracticeEngineer[] rivalEngineers;
+    private GarageRunRecorder[] rivalRunRecorders;
+    private int playerRunStartLap;
+    private bool playerWasParked = true;
+    internal int PlayerRunLaps => System.Math.Max(0, (SessionRun?.PlayerLaps ?? 0) - playerRunStartLap);
+    private double lastHandlingSampleTime;
+    private GarageRunRecorder garageRunRecorder;
+    private int requestedGarageLaps;
+    private int garageSimulationStartLaps;
+    private readonly float[] garagePreviousWear = new float[4];
+    private readonly float[] garageWearPerMeter = new float[4];
+    private double garagePreviousOdometer;
+    private bool garageSimulationReturning;
+    private bool garageRunEndedForFuel;
+    private bool garageRunReportPending;
+    internal bool ConsumeGarageRunReport()
+    {
+        bool pending = garageRunReportPending;
+        garageRunReportPending = false;
+        return pending;
+    }
+    internal bool SimulatingGarageLaps => requestedGarageLaps > 0;
+    internal void CancelGarageLapSimulation() => requestedGarageLaps = 0;
+
+    internal void BeginGarageLaps(int laps)
+    {
+        requestedGarageLaps = laps;
+        garageSimulationStartLaps = garageRunRecorder?.TotalCompletedLaps ?? 0;
+        garagePreviousOdometer = trafficCars?[0]?.Odometer ?? 0;
+        for (int i=0;i<4;i++)
+        {
+            garagePreviousWear[i] = SessionRun.Vehicle(0)?.GetTire(i)?.wear ?? 0;
+            garageWearPerMeter[i] = 0;
+        }
+        garageRunEndedForFuel = false;
+        garageRunReportPending = false;
+        garageSimulationReturning = false;
+        SetPlayerGarageVisit(false);
+        SetSessionSpeed(200);
+    }
+
+    internal void FinishPracticeSetups()
+    {
+        if (SessionRun == null || simulation?.Session.kind != RaceSessionKind.Practice || simulation.Session.rivalFinalSetupReviewed) return;
+        if (rivalRunRecorders != null)
+            for (int i=1;i<rivalRunRecorders.Length;i++) rivalRunRecorders[i]?.Finish("Practice ended");
+        if (rivalEngineers != null && simulation.Event?.SetupLocked != true)
+            for (int i=1;i<rivalEngineers.Length;i++)
+                rivalEngineers[i].FinishPractice(i,SessionRun,simulation.Session,
+                    simulation.Session.rivalPracticeTelemetry[i-1],definition,simulation.Event);
+        simulation.Session.rivalFinalSetupReviewed=true;
+    }
+
+    internal void FinishGarageRun(string reason)
+    {
+        garageRunRecorder?.Finish(reason);
+        requestedGarageLaps = 0;
+    }
+
+    private GarageRunDiagnostics CaptureGarageRunDiagnostics(int index = 0)
+    {
+        var car = SessionRun.Vehicle(index);
+        var setup = SessionRun.SetupForCar(index) ?? car?.setup;
+        var data = new GarageRunDiagnostics
+        {
+            sessionSeconds = SessionRun.Elapsed,
+            actualTrackPositionMeters = RaceSessionRun.TrackPosition((qualifying != null && index == 0 ? qualifying.Car : trafficCars?[index])?.PreciseTrackDistance ?? sessionDistances[index], lapLength),
+            thermalTrackPositionMeters = SessionRun.ThermalTrackPosition(index),
+            thermalOnTrack = SessionRun.ThermalOnTrack(index),
+            chassis = car?.chassisNumber,
+            manufacturer = car?.manufacturer.ToString(),
+            carNumber = car?.number ?? 0,
+            trackModel = simulationModel.Id,
+            speedModel = speedModel.Id,
+            behaviorModel = behaviorModel.Id,
+            flag = TrackState?.ToString() ?? "Running",
+            collisions = collisionsEnabled,
+            trafficInteractions = TrafficLaneChangesEnabled,
+            playbackSpeed = sessionSpeed,
+            lapSpeedFactor = SessionRun.SpeedFactor(index),
+            damagePercent = car?.Damage ?? 0f,
+            weatherForecast = simulation.Session.weather,
+            weatherLocked = SessionRun.Weather.IsLocked,
+            ambientFahrenheit = SessionRun.Weather.AmbientFahrenheit,
+            trackFahrenheit = SessionRun.Weather.TrackFahrenheit,
+            cloudCover = SessionRun.Weather.CloudCover,
+            windMph = SessionRun.Weather.WindMph,
+            trackGripFactor = SessionRun.Weather.GripFactor,
+            fuelGallons = SessionRun.Fuel(index),
+            weightDynamicsEnabled = speedModel is VehicleSpeed003,
+            equalConditionTesting = simulation.EqualConditionTesting,
+            effectiveFrontWeightPercent = speedModel is VehicleSpeed003 ? VehicleSpeed003.FrontWeightPercent(setup, SessionRun.Fuel(index)) : 0f,
+            effectiveCrossWeightPercent = speedModel is VehicleSpeed003 ? VehicleSpeed003.CrossWeightPercent(setup, SessionRun.Fuel(index)) : 0f,
+            effectiveLeftWeightPercent = speedModel is VehicleSpeed003 ? VehicleSpeed003.LeftWeightPercent(setup, SessionRun.Fuel(index)) : 0f,
+            cornerWeightsPounds = speedModel is VehicleSpeed003 ? new float[4] : null,
+            dynamicCornerWeightsPounds = speedModel is VehicleSpeed003 ? new float[4] : null,
+            vehicleWeightPounds = speedModel is VehicleSpeed003 ? VehicleSpeed003.WeightPounds(SessionRun.Fuel(index)) : 0f,
+            fuelWeightPounds = speedModel is VehicleSpeed003 ? VehicleSpeed003.WeightPounds(SessionRun.Fuel(index)) - VehicleSpeed003.DryWeightPounds : 0f,
+            setup = setup == null ? null : JsonUtility.FromJson<Setup>(JsonUtility.ToJson(setup)),
+            tireWear = new float[4],
+            coldPressuresPsi = new float[4], runningPressuresPsi = new float[4],
+            componentNames = new string[TeamCar.Components.Length],
+            componentEffectiveValues = new float[TeamCar.Components.Length]
+        };
+        for (int tire = 0; tire < 4; tire++)
+        {
+            data.tireWear[tire] = car?.GetTire(tire)?.wear ?? 0f;
+            data.coldPressuresPsi[tire] = VehicleSpeed003.ColdPressure(setup, tire, car?.GetTire(tire));
+            data.runningPressuresPsi[tire] = VehicleSpeed003.HotPressure(data.coldPressuresPsi[tire], TireTemperatureModel.Fahrenheit(car?.GetTire(tire)?.temperature ?? 0f));
+            if (data.dynamicCornerWeightsPounds != null)
+                data.dynamicCornerWeightsPounds[tire] = SessionRun.DynamicCornerWeight(index, tire);
+            if (data.cornerWeightsPounds != null)
+                data.cornerWeightsPounds[tire] = VehicleSpeed003.CornerWeightPounds(setup, SessionRun.Fuel(index), tire);
+        }
+        for (int component = 0; component < TeamCar.Components.Length; component++)
+        {
+            data.componentNames[component] = TeamCar.Components[component].ToString();
+            data.componentEffectiveValues[component] = car?.GetComponent(TeamCar.Components[component]).EffectiveValue ?? 0f;
+        }
+        return data;
+    }
+
+    private void ObservePlayerRun()
+    {
+        if (SessionRun == null || garageRunRecorder == null)
+            return;
+        float handlingSeconds = (float)System.Math.Max(0d, SessionRun.PreciseElapsed - lastHandlingSampleTime);
+        lastHandlingSampleTime = SessionRun.PreciseElapsed;
+        bool green = HandlingRunTrend.AllowsRunningState(TrackState);
+        if (rivalRunRecorders != null)
+            for (int i = 1; i < rivalRunRecorders.Length; i++)
+            {
+                var rival = trafficCars[i];
+                var recorder = rivalRunRecorders[i];
+                bool atStall = rival.InPit && System.Math.Abs(rival.PitDistance - practiceStallDistances[i]) < 0.01f;
+                if (!SessionRun.Retired(i))
+                {
+                    recorder.Observe(rival.PreciseTrackDistance, SessionRun.PreciseElapsed, rival.InPit,
+                        atStall, SessionRun.CurrentSpeed(i) > 0.1f, SessionRun.Vehicle(i));
+                    if (!rival.InPit && green && SessionRun.TryHandlingFeedback(i, out int rp, out float rb, out float rt, out float rl))
+                        recorder.RecordHandling(rp, handlingSeconds, rb, rt, rl);
+                    if (rivalEngineers != null && pitStops != null)
+                        rivalEngineers[i].Observe(i, SessionRun, rival, practiceStallDistances[i], pitStops,
+                            green, handlingSeconds, simulation.Session, simulation.Session.rivalPracticeTelemetry[i-1], definition);
+                }
+                if (SessionRun.Retired(i) || SessionComplete)
+                    recorder.Finish(SessionRun.Retired(i) ? "Car retired" : "Session ended");
+            }
+        // Once fuel ends an automated run, coasting must not create another run.
+        if (garageRunEndedForFuel && SessionRun.Fuel(0) <= 0d)
+            return;
+        var player = qualifying?.Car ?? trafficCars?[0];
+        bool inPit = player?.InPit == true;
+        bool parked = inPit && player.PitDistance == practiceStallDistances[0] &&
+            (SessionRun.CurrentSpeed(0) < 0.1f || pitStops?.IsServicing(0) == true);
+        // Pit-stall parking is measured from movement, because commanded speed may remain positive.
+        if (inPit && player.PitDistance == practiceStallDistances[0] && playerGarageVisit)
+            parked = true;
+        if (parked) playerWasParked = true;
+        else if (playerWasParked && SessionRun.CurrentSpeed(0) > 0.1f)
+        {
+            playerRunStartLap = SessionRun.PlayerLaps;
+            playerWasParked = false;
+        }
+        garageRunRecorder.Observe(player?.PreciseTrackDistance ?? sessionDistances[0], SessionRun.PreciseElapsed,
+            inPit, parked, SessionRun.Vehicle(0) != null && SessionRun.CurrentSpeed(0) > 0.1f,
+            SessionRun.Vehicle(0));
+
+        // Basic Simulation has no flag-state controller. Its active on-track
+        // running is eligible; null must not discard all handling samples.
+
+        if (!inPit && !parked && green &&
+            SessionRun.TryHandlingFeedback(0, out int phase, out float balance, out float tireBalance, out float loadBalance))
+            garageRunRecorder.RecordHandling(phase, handlingSeconds, balance, tireBalance, loadBalance);
+        if (SimulatingGarageLaps && SessionRun.Fuel(0) <= 0d)
+        {
+            FinishGarageRun("Out of fuel");
+            garageRunEndedForFuel = true;
+            garageRunReportPending = true;
+            SetSessionSpeed(1);
+            pendingSessionTime = 0;
+            return;
+        }
+        if (SimulatingGarageLaps && !garageSimulationReturning &&
+            garageRunRecorder.TotalCompletedLaps - garageSimulationStartLaps >= requestedGarageLaps)
+        {
+            garageSimulationReturning = true;
+            SetPlayerGarageVisit(true);
+        }
+        if (SimulatingGarageLaps && !garageSimulationReturning)
+            ServiceGarageSimulation(player);
+        if (SimulatingGarageLaps && (PlayerParkedForGarage || SessionComplete || SessionRun.Retired(0)))
+        {
+            if (!PlayerParkedForGarage)
+                FinishGarageRun(SessionRun.Retired(0) ? "Car retired" : "Session ended");
+            requestedGarageLaps = 0;
+            garageRunReportPending = true;
+            SetSessionSpeed(1);
+            pendingSessionTime = 0;
+        }
+    }
+    // Reserve enough distance for reaching pit entry and transiting pit road.
+    // Wear prediction uses the highest observed rate since the last tire change.
+    internal static bool GarageServiceDue(double fuel, double fuelReserve, float wear, float wearRate, double serviceDistance) =>
+        fuel <= fuelReserve || wear >= 0.85f || wear + wearRate * serviceDistance >= 0.95f;
+
+    private void ServiceGarageSimulation(TrackPitTraffic.Car player)
+    {
+        if (player == null || pitStops == null || pitTraffic == null || SessionRun.Retired(0)) return;
+        double traveled = System.Math.Max(0, player.Odometer-garagePreviousOdometer);
+        garagePreviousOdometer = player.Odometer;
+        double reserveDistance = pitTraffic.DistanceToEntry(player) + lapLength + pitTraffic.RouteLength;
+        double fuelReserve = SessionRun.FuelForDistance(reserveDistance) + 0.5;
+        bool due = false;
+        for (int i=0;i<4;i++)
+        {
+            float wear = SessionRun.Vehicle(0)?.GetTire(i)?.wear ?? 0;
+            if (wear < garagePreviousWear[i]) garageWearPerMeter[i]=0;
+            else if (traveled>0.001)
+                garageWearPerMeter[i]=Mathf.Max(garageWearPerMeter[i],(float)((wear-garagePreviousWear[i])/traveled));
+            garagePreviousWear[i]=wear;
+            due |= GarageServiceDue(SessionRun.Fuel(0),fuelReserve,wear,garageWearPerMeter[i],reserveDistance);
+        }
+        if (!player.InPit && due && pitStops.CanRequest(SessionRun))
+            pitStops.RequestPlayer(SessionRun,(float)SessionFuel.TankCapacity,15,0f);
+    }
+
+    internal bool PlayerStoppedOnTrack
+    {
+        get
+        {
+            var player = qualifying?.Car ?? trafficCars?[0];
+            float speed = SessionRun?.CurrentSpeed(0) ?? float.NaN;
+            return player != null && !player.InPit && !float.IsNaN(speed) && speed <= 0.01f;
+        }
+    }
+
+    internal bool CanVisitGarage => qualifying != null || pitStops != null;
+    internal bool PlayerParkedForGarage
+    {
+        get
+        {
+            var player = qualifying?.Car ?? trafficCars?[0];
+            return playerGarageVisit && player?.InPit == true && player.PitDistance == practiceStallDistances[0];
+        }
+    }
+
+    internal void SetPlayerGarageVisit(bool visiting)
+    {
+        playerGarageVisit = visiting;
+        qualifying?.SetGarageVisit(visiting);
+        pitStops?.SetGarageVisit(visiting);
+    }
     internal bool CanRequestCaution => stages?.CanRequestCaution == true;
 
     internal void RequestCaution()
@@ -118,10 +373,10 @@ public sealed class TrackPreview : MonoBehaviour
         ? (crashes[0].Active || SessionRun.Vehicle(0)?.Damage >= 100f ? "Retired · damage" : "Out of fuel")
         : pitStops?.PlayerStatus ?? string.Empty;
 
-    internal void RequestPlayerPit(float fuelGallons, int tireMask, float repairPoints)
+    internal void RequestPlayerPit(float fuelGallons, int tireMask, float repairPoints, float[] pressures = null)
     {
         if (CanRequestPlayerPit)
-            pitStops.RequestPlayer(SessionRun, fuelGallons, tireMask, repairPoints);
+            pitStops.RequestPlayer(SessionRun, fuelGallons, tireMask, repairPoints, pressures);
     }
     private Renderer pitSignal;
     private Material pitOpenSignal;
@@ -461,7 +716,8 @@ public sealed class TrackPreview : MonoBehaviour
         IVehicleBehaviorModel behaviorModel, int[] qualifyingOrder = null, bool usePaceTruck = false, bool fullBristolStands = false)
     {
         this.simulation = simulation;
-        RaceSessionRun.ResetVehiclesForSession(simulation.Cars);
+        simulation.PrepareEqualConditions();
+        RaceSessionRun.ResetVehiclesForSession(simulation.Cars, simulation.PreservePlayerCondition);
         if (definition.id == BristolTrackId)
             SetBristolAttendance(fullBristolStands ? RaceSessionKind.Race : simulation.Session.kind);
         if (definition.id == BristolTrackId && simulation.Event != null && parkedHaulers == null)
@@ -470,7 +726,7 @@ public sealed class TrackPreview : MonoBehaviour
             AddTeamPitBoxes(simulation);
         simulationModel = model;
         this.speedModel = speedModel;
-        lapSpeedProfile = speedModel is VehicleSpeed002 ? new LapSpeedProfile(definition) : null;
+        lapSpeedProfile = speedModel.UsesLapSpeedProfile ? new LapSpeedProfile(definition) : null;
         if (this.behaviorModel != behaviorModel)
         {
             this.behaviorModel = behaviorModel;
@@ -482,6 +738,35 @@ public sealed class TrackPreview : MonoBehaviour
         drivingLanesReady = false;
         draft = definition.restrictorPlate && simulation.Session.kind == RaceSessionKind.Race
             ? new RestrictorPlateDraft(cars.Length) : null;
+        simulation.Session.garageRuns = new System.Collections.Generic.List<GarageRunReview>();
+        simulation.Session.rivalSetupChanges = new System.Collections.Generic.List<RivalSetupChange>();
+        simulation.Session.rivalFinalSetupReviewed = false;
+        simulation.Session.rivalPracticeTelemetry = new System.Collections.Generic.List<RivalPracticeTelemetry>();
+        rivalRunRecorders = null;
+        if (session.kind == RaceSessionKind.Practice && pitTraffic != null)
+        {
+            rivalRunRecorders = new GarageRunRecorder[cars.Length];
+            for (int i = 1; i < cars.Length; i++)
+            {
+                int index = i;
+                var telemetry = new RivalPracticeTelemetry { carIndex = i };
+                session.rivalPracticeTelemetry.Add(telemetry);
+                rivalRunRecorders[i] = new GarageRunRecorder(telemetry.runs, lapLength,
+                    definition.StartFinishFraction * lapLength, () => CaptureGarageRunDiagnostics(index));
+            }
+        }
+        playerRunStartLap = 0;
+        playerWasParked = true;
+        rivalEngineers = null;
+        if (simulation.Session.kind == RaceSessionKind.Practice && speedModel is VehicleSpeed003 &&
+            !simulation.EqualConditionTesting && simulation.Event?.SetupLocked != true && pitTraffic != null)
+        {
+            rivalEngineers = new RivalPracticeEngineer[cars.Length];
+            for (int i = 1; i < cars.Length; i++) rivalEngineers[i] = new RivalPracticeEngineer();
+        }
+        garageRunRecorder = new GarageRunRecorder(simulation.Session.garageRuns, lapLength,
+            definition.StartFinishFraction * lapLength, () => CaptureGarageRunDiagnostics());
+        requestedGarageLaps = 0;
         snapshot = new TrackSnapshot();
         snapshotTime = 0;
         collisions = new VehicleCollision001(cars.Length);
@@ -510,6 +795,8 @@ public sealed class TrackPreview : MonoBehaviour
         raceStart = null;
         stages = null;
         pitStops = null;
+        playerGarageVisit = false;
+        lastHandlingSampleTime = 0d;
         raceReleased = false;
         if (paceCar != null)
             Destroy(paceCar.gameObject);
@@ -535,7 +822,7 @@ public sealed class TrackPreview : MonoBehaviour
         pendingSessionTime = 0;
         sessionSpeed = 1;
         SessionRun = new RaceSessionRun(session, lapLength, startLine, simulation, speedModel, simulationRandom, initialDistances: sessionDistances);
-        if (pitTraffic != null && (session.kind == RaceSessionKind.Race || practice != null))
+        if (pitTraffic != null && !isQualifying)
         {
             ConfigurePitField();
             pitStops = new SessionPitStops(pitTraffic, trafficCars, practiceStallDistances);
@@ -589,6 +876,18 @@ public sealed class TrackPreview : MonoBehaviour
         return entries;
     }
 
+    internal bool EqualConditionTesting => simulation?.EqualConditionTesting == true;
+    internal void SetPlayerSetup(Setup setup) { if (simulation.Event?.SetupLocked != true) simulation.PlayerSetup = setup; }
+
+    internal void SetTrackRendering(bool visible)
+    {
+        raceCamera.enabled = visible;
+        if (visible)
+            EnableBristolLighting();
+        else
+            DisableBristolLighting();
+    }
+
     internal void SetSessionSpeed(int speed)
     {
         if (speed == 0)
@@ -631,6 +930,7 @@ public sealed class TrackPreview : MonoBehaviour
                 AdvanceSimulation(SessionRun.StepDuration(SessionStep));
                 pendingSessionTime -= SessionStep;
                 snapshotTime += SessionStep;
+                ObservePlayerRun();
                 CaptureSnapshot();
             }
         }
@@ -666,6 +966,7 @@ public sealed class TrackPreview : MonoBehaviour
                 AdvancePracticeStep();
             pendingSessionTime -= SessionStep;
             snapshotTime += SessionStep;
+            ObservePlayerRun();
             CaptureSnapshot();
         }
     }
@@ -678,7 +979,11 @@ public sealed class TrackPreview : MonoBehaviour
         if (pacedMeters > 0f)
         {
             for (int i = 0; i < cars.Length; i++)
-                SessionRun.RecordTravel(i, pacedMeters, pacedMeters / SessionStep, reducedBurn: true);
+            {
+                var grid = raceStart.GridPosition(i, 0f);
+                SessionRun.RecordTravel(i, pacedMeters, pacedMeters / SessionStep, grid.Distance,
+                    reducedBurn: true, onTrack: !grid.OnPitRoad);
+            }
         }
         if (raceStart.State != SessionTrackState.TrackOpen)
             return;
@@ -820,7 +1125,7 @@ public sealed class TrackPreview : MonoBehaviour
         for (int i = 0; i < cars.Length; i++)
         {
             var car = trafficCars[i];
-            float before = pitTraffic.RaceDistance(car);
+            double before = car.InPit ? pitTraffic.RaceDistance(car) : car.PreciseTrackDistance;
             if (crashes[i].Active)
             {
                 AdvanceCrash(i, seconds);
@@ -834,7 +1139,7 @@ public sealed class TrackPreview : MonoBehaviour
             car.Retired = SessionRun.Retired(i);
             bool serviceBeforeRelease = (pitRoadOutside || definition.restrictorPlate) && !practiceLeftStall[i] && car.InPit &&
                 car.PitDistance == practiceStallDistances[i] && SessionRun.FlatTireMask(i) != 0;
-            if (trackOpen && !car.Retired && (serviceBeforeRelease || pitStops.IsRequested(i) ||
+            if (trackOpen && !car.Retired && (i == 0 && playerGarageVisit || serviceBeforeRelease || pitStops.IsRequested(i) ||
                 (!car.InPit && SessionRun.FlatTireMask(i) != 0)))
             {
                 pitStops.Advance(i, SessionRun, seconds, speed, pitOpen: true);
@@ -847,10 +1152,11 @@ public sealed class TrackPreview : MonoBehaviour
                 if (flatTires == 0)
                     car.FlatTireLaneBlend = Mathf.MoveTowards(car.FlatTireLaneBlend, 0f, seconds);
             }
+            cars[i].gameObject.SetActive(!car.InGarage);
             practiceLeftStall[i] |= !car.InPit || car.PitDistance != practiceStallDistances[i];
-            SessionRun.RecordTravel(i, car.Odometer - beforeMovement, (car.Odometer - beforeMovement) / seconds, reducedBurn);
+            SessionRun.RecordTravel(i, car.Odometer - beforeMovement, (car.Odometer - beforeMovement) / seconds, car.PreciseTrackDistance, reducedBurn, onTrack: !car.InPit);
             if (trackOpen)
-                SessionRun.Record(i, before, pitTraffic.RaceDistance(car), seconds);
+                SessionRun.Record(i, before, car.InPit ? pitTraffic.RaceDistance(car) : car.PreciseTrackDistance, seconds);
         }
 
         ResolveTrackCollisions(seconds);
@@ -874,6 +1180,8 @@ public sealed class TrackPreview : MonoBehaviour
     private readonly float[] drivingLanes = new float[CarCount];
     private readonly float[] targetLanes = new float[CarCount];
     private bool drivingLanesReady;
+    internal bool TrafficLaneChangesEnabled { get; set; }
+    private bool collisionsEnabled;
     private VehicleCollision001 collisions;
     private VehicleCollision001 pitCollisions;
     private VehicleCollision001 backExitCollisions;
@@ -905,6 +1213,7 @@ public sealed class TrackPreview : MonoBehaviour
     private readonly float[] collisionStartLanes = new float[CarCount];
 
     private readonly float[] currentTrafficSpeeds = new float[CarCount];
+    private readonly float[] trafficBrakingFactors = new float[CarCount];
     private readonly float[] stoppedCarTime = new float[CarCount];
     private readonly int[] practiceCarAhead = new int[CarCount];
     private readonly float[] practiceGapAhead = new float[CarCount];
@@ -959,7 +1268,7 @@ public sealed class TrackPreview : MonoBehaviour
                     double beforeParking = finishedCar.Odometer;
                     stages.AdvanceFinishedCar(finishedCar, seconds, practiceStallDistances[i]);
                     SessionRun.RecordTravel(i, finishedCar.Odometer - beforeParking,
-                        (finishedCar.Odometer - beforeParking) / seconds, reducedBurn: true);
+                        (finishedCar.Odometer - beforeParking) / seconds, finishedCar.PreciseTrackDistance, reducedBurn: true, onTrack: !finishedCar.InPit);
                 }
                 continue;
             }
@@ -974,25 +1283,25 @@ public sealed class TrackPreview : MonoBehaviour
             if (pitTraffic != null && !isQualifying)
             {
                 var car = trafficCars[i];
-                float before = pitTraffic.RaceDistance(car);
+                double before = car.InPit ? pitTraffic.RaceDistance(car) : car.PreciseTrackDistance;
                 double beforeMovement = car.Odometer;
                 bool wasInPit = car.InPit;
                 bool reducedBurn = wasInPit || stages?.ReducedFuelBurn == true;
                 car.Retired = SessionRun?.Retired(i) == true;
-                if (pitStops != null && !car.Retired)
+                if (pitStops != null && !car.Retired && (SessionRun.IsRace || i == 0 && playerGarageVisit || pitStops.IsRequested(i)))
                     pitStops.Advance(i, SessionRun, seconds, speed, stages?.CanEnterPits(i, car) ?? true,
                         allowEmergencyEntry: stages?.IsCaution != true);
                 else
                     pitTraffic.Advance(car, seconds, speed);
                 pitMembershipChanged |= wasInPit != car.InPit;
-                TimingRun?.RecordTravel(i, car.Odometer - beforeMovement, (car.Odometer - beforeMovement) / seconds, reducedBurn);
-                TimingRun?.Record(i, before, pitTraffic.RaceDistance(car), seconds);
+                TimingRun?.RecordTravel(i, car.Odometer - beforeMovement, (car.Odometer - beforeMovement) / seconds, car.PreciseTrackDistance, reducedBurn, onTrack: !car.InPit);
+                TimingRun?.Record(i, before, car.InPit ? pitTraffic.RaceDistance(car) : car.PreciseTrackDistance, seconds);
             }
             else if (SessionRun != null)
             {
                 float before = sessionDistances[i];
                 sessionDistances[i] += speed * seconds;
-                SessionRun.RecordTravel(i, sessionDistances[i] - before, speed);
+                SessionRun.RecordTravel(i, sessionDistances[i] - before, speed, sessionDistances[i]);
                 SessionRun.Record(i, before, sessionDistances[i], seconds);
             }
         }
@@ -1002,7 +1311,7 @@ public sealed class TrackPreview : MonoBehaviour
             {
                 float offset = lapLength * i / cars.Length;
                 float speed = CarSpeed(i);
-                previewTiming.RecordTravel(i, seconds * speed, speed);
+                previewTiming.RecordTravel(i, seconds * speed, speed, offset + elapsed * speed);
                 previewTiming.Record(i, offset + previousElapsed * speed, offset + elapsed * speed, seconds);
             }
         }
@@ -1039,7 +1348,7 @@ public sealed class TrackPreview : MonoBehaviour
         }
     }
 
-    private bool DraftingActive => draft != null && stages?.ReducedFuelBurn != true &&
+    private bool DraftingActive => TrafficLaneChangesEnabled && draft != null && stages?.ReducedFuelBurn != true &&
         TrackState != SessionTrackState.Checkered;
 
     private void AvoidTrackTraffic(float seconds)
@@ -1053,6 +1362,7 @@ public sealed class TrackPreview : MonoBehaviour
             drivingDistances[i] = distance;
             draftPitApproach[i] = traffic == null ? float.PositiveInfinity : traffic.NextEntry - distance;
             currentTrafficSpeeds[i] = SessionRun.CurrentSpeed(i);
+            trafficBrakingFactors[i] = SessionRun.BrakingPerformanceFactor(i);
             drivingWidths[i] = RoadWidths(distance).x;
             targetLanes[i] = TargetDrivingLane(i, distance, traffic);
             if (!drivingLanesReady || !onTrack[i])
@@ -1077,9 +1387,15 @@ public sealed class TrackPreview : MonoBehaviour
             draft.Update(lapLength, seconds, SessionRun, onTrack, drivingDistances, drivingWidths, drivingLanes,
                 targetLanes, currentTrafficSpeeds, draftPitApproach);
 
+        if (!TrafficLaneChangesEnabled)
+        {
+            for (int i = 0; i < cars.Length; i++)
+                targetLanes[i] = TargetDrivingLane(i, drivingDistances[i], trafficCars?[i]);
+        }
+
         behaviorModel.AvoidTraffic(lapLength, inside, seconds, !practiceYellow && stages?.ReducedFuelBurn != true,
             drivingDistances, drivingWidths, onTrack, drivingLanes, targetLanes, currentTrafficSpeeds, stepSpeeds,
-            LapSpeedProfile.MaximumBraking(definition), DraftingActive ? draft.InLine : null);
+            LapSpeedProfile.MaximumBraking(definition), DraftingActive ? draft.InLine : null, TrafficLaneChangesEnabled, trafficBrakingFactors);
         drivingLanesReady = true;
     }
 
@@ -1176,7 +1492,7 @@ public sealed class TrackPreview : MonoBehaviour
         {
             sessionDistances[index] = after;
         }
-        SessionRun.RecordTravel(index, traveled, traveled / seconds, reducedBurn: true);
+        SessionRun.RecordTravel(index, traveled, traveled / seconds, after, reducedBurn: true, onTrack: traffic?.InPit != true);
         SessionRun.Record(index, before, after, seconds);
         if (crash.ForwardSpeed == 0f && crash.SideSpeed == 0f)
         {
@@ -1186,15 +1502,29 @@ public sealed class TrackPreview : MonoBehaviour
         }
     }
 
+    internal void SetCollisionsEnabled(bool enabled)
+    {
+        collisionsEnabled = enabled;
+        if (enabled)
+        {
+            collisions?.ClearContacts();
+            pitCollisions?.ClearContacts();
+            backExitCollisions?.ClearContacts();
+        }
+    }
+
     private void ResolveTrackCollisions(float seconds)
     {
+        if (!collisionsEnabled)
+            return;
+
         for (int i = 0; i < cars.Length; i++)
         {
             var traffic = trafficCars?[i];
             collisionParticipants[i] &= traffic?.InPit != true && (traffic?.FlatTireLaneBlend ?? 0f) == 0f;
             collisionEndDistances[i] = traffic?.TrackDistance ?? sessionDistances[i];
-            pitParticipants[i] &= traffic?.InPit == true && !traffic.BackExit;
-            backExitParticipants[i] &= traffic?.InPit == true && traffic.BackExit;
+            pitParticipants[i] &= traffic?.InPit == true && !traffic.InGarage && !traffic.BackExit;
+            backExitParticipants[i] &= traffic?.InPit == true && !traffic.InGarage && traffic.BackExit;
             pitEnd[i] = backExitParticipants[i] ? traffic.ConnectorDistance : traffic?.PitDistance ?? 0f;
             pitLaneEnd[i] = traffic?.PitLane ?? 0f;
         }
@@ -1254,6 +1584,8 @@ public sealed class TrackPreview : MonoBehaviour
             frame.cars[i] = new TrackSnapshot.CarSample
             {
                 number = simulation.Cars[i].carNumber,
+                thermalTrackPositionMeters = SessionRun.ThermalTrackPosition(i),
+                thermalOnTrack = SessionRun.ThermalOnTrack(i),
                 visible = cars[i].gameObject.activeSelf,
                 inPit = inPit,
                 retired = SessionRun.Retired(i),
@@ -1291,7 +1623,8 @@ public sealed class TrackPreview : MonoBehaviour
     private float SpeedAt(int index, float distance)
     {
         float baseSpeed = CarSpeed(index) * SessionRun.SpeedFactor(index);
-        return lapSpeedProfile?.SpeedAt(distance, baseSpeed) ?? baseSpeed;
+        float speed = lapSpeedProfile?.SpeedAt(distance, baseSpeed) ?? baseSpeed;
+        return SessionRun.SetupAdjustedSpeed(index, distance, speed);
     }
 
     private float CarSpeed(int index) => baseSpeeds[index];
@@ -1703,11 +2036,11 @@ public sealed class TrackPreview : MonoBehaviour
     }
 
     private static bool UsesDetailedPavement(int trackId) =>
-        trackId == BristolTrackId || trackId == OrangeCountyTrackId || trackId == SouthBostonTrackId ||
+        trackId == DarlingtonTrackId || trackId == BristolTrackId || trackId == OrangeCountyTrackId || trackId == SouthBostonTrackId ||
         trackId == DaytonaTrackId || trackId == TexasTrackId || trackId == KansasTrackId || trackId == CotaTrackId;
 
     private static bool UsesBottomLanePitMerge(int trackId) =>
-        trackId == DaytonaTrackId || trackId == TexasTrackId || trackId == KansasTrackId || trackId == CotaTrackId;
+        trackId == DarlingtonTrackId || trackId == DaytonaTrackId || trackId == TexasTrackId || trackId == KansasTrackId || trackId == CotaTrackId;
 
     private bool AddImportedTrackGeometry(string resourceName)
     {
@@ -2591,12 +2924,8 @@ public sealed class TrackPreview : MonoBehaviour
         AddNumber(Anchor("RightNumber", new Vector3(0.776f, 0.49f, 0f)), Quaternion.Euler(0f, model == null ? -90f : (Anchor("RightNumber", Vector3.right).x > 0f ? -90f : 90f), 0f));
         AddNumber(Anchor("LeftNumber", new Vector3(-0.776f, 0.49f, 0f)), Quaternion.Euler(0f, model == null ? 90f : (Anchor("LeftNumber", Vector3.left).x > 0f ? -90f : 90f), 0f));
 
-        if (sponsorNames != null)
-        {
-            AddSponsor(0, Anchor("HoodSponsor", new Vector3(0f, 0.686f, 0.975f)), hoodAndTrunkPaint);
-            AddSponsor(1, Anchor("TrunkSponsor", new Vector3(0f, 0.686f, -1.095f)), hoodAndTrunkPaint);
-            AddSponsor(2, Anchor("RoofSponsor", new Vector3(0f, 1.066f, -0.43f)), bodyPaint);
-        }
+        if (sponsorNames?.Length > 0 && !string.IsNullOrEmpty(sponsorNames[0]))
+            AddSponsor(sponsorNames[0], Anchor("HoodSponsor", new Vector3(0f, 0.686f, 0.975f)), hoodAndTrunkPaint);
 
         Vector3 Anchor(string name, Vector3 fallback)
         {
@@ -2611,12 +2940,8 @@ public sealed class TrackPreview : MonoBehaviour
             return point;
         }
 
-        void AddSponsor(int slot, Vector3 position, Material paint)
+        void AddSponsor(string sponsor, Vector3 position, Material paint)
         {
-            string sponsor = sponsorNames[slot];
-            if (string.IsNullOrEmpty(sponsor))
-                return;
-
             var decal = CreateObject("Sponsor decal", car);
             decal.transform.localPosition = position;
             decal.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
@@ -2626,7 +2951,7 @@ public sealed class TrackPreview : MonoBehaviour
             text.anchor = TextAnchor.MiddleCenter;
             text.fontStyle = FontStyle.Bold;
             text.fontSize = 48;
-            text.characterSize = Mathf.Min(0.035f, (slot == 2 ? 0.11f : 0.15f) / sponsor.Length);
+            text.characterSize = Mathf.Min(0.035f, 0.15f / sponsor.Length);
             Color background = wrapped ? (Color)paintStyle.Value.ColorAt(position, paint == hoodAndTrunkPaint) : paint.color;
             text.color = 0.213f * background.r + 0.715f * background.g + 0.072f * background.b > 0.52f
                 ? Color.black : Color.white;
@@ -2779,7 +3104,9 @@ public sealed class TrackPreview : MonoBehaviour
         }
     }
 
-    private void OnDisable()
+    private void OnDisable() => DisableBristolLighting();
+
+    private void DisableBristolLighting()
     {
         if (bristolSun == null || RenderSettings.sun != bristolSun)
             return;

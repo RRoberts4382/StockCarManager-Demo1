@@ -21,6 +21,27 @@ internal sealed class ScheduledRace
     public int carNumber = 0;
     public string carChassisNumber = string.Empty;
     public List<RaceSession> sessions;
+    public EventCarCondition playerCondition;
+    public bool setupLocked;
+    public List<EventChassisSetup> eventSetups = new List<EventChassisSetup>();
+    public bool SetupLocked => setupLocked || sessions?.Any(s => s.kind == RaceSessionKind.Qualifying && s.Completed) == true;
+    internal Setup EventSetup(TeamCar car) => eventSetups?.Find(s => s.chassis == car.chassisNumber && s.number == car.number)?.setup;
+    internal void StoreEventSetup(TeamCar car, Setup setup)
+    {
+        if (SetupLocked) return;
+        CaptureEventSetup(car, setup);
+    }
+    internal void CaptureEventSetup(TeamCar car, Setup setup)
+    {
+        eventSetups ??= new List<EventChassisSetup>();
+        var entry = eventSetups.Find(s => s.chassis == car.chassisNumber && s.number == car.number);
+        if (entry == null) { entry = new EventChassisSetup { chassis = car.chassisNumber, number = car.number }; eventSetups.Add(entry); }
+        entry.setup = RivalSetup001.Copy(setup);
+    }
+
+    public EventCarCondition ConditionFor(TeamCar car) =>
+        playerCondition != null && playerCondition.chassis == car.chassisNumber
+            ? playerCondition : new EventCarCondition { chassis = car.chassisNumber };
     public void EnsureStages()
     {
         if (stageCount > 0 && stageLaps?.Length == stageCount &&
@@ -69,23 +90,29 @@ internal sealed class SeasonSchedule
     public long componentUpgrades;
     public long componentRepairs;
     public long sponsorIncome;
+    public long sponsorSigningIncome;
     public List<ScheduledRace> races = new List<ScheduledRace>();
 
-    public static SeasonSchedule Generate(int year, IEnumerable<TrackDefinition> tracks, Random random,
-        DateTime? previousRace = null)
+    public static SeasonSchedule Generate(int year, IEnumerable<TrackDefinition> tracks, Random random)
     {
+        const int eventsPerSeason = 36;
         var schedule = new SeasonSchedule { season = year };
-        var date = new DateTime(year, 1, 1);
-        date = date.AddDays(((int)DayOfWeek.Sunday - (int)date.DayOfWeek + 7) % 7);
-        if (previousRace.HasValue && date <= previousRace.Value)
-            date = previousRace.Value.AddDays(7);
+        var date = new DateTime(year, 2, 1);
+        date = date.AddDays(7 + ((int)DayOfWeek.Sunday - (int)date.DayOfWeek + 7) % 7);
 
-        foreach (var track in tracks)
+        var rotation = tracks.GroupBy(track => track.id).Select(group => group.First()).ToArray();
+        while (schedule.races.Count < eventsPerSeason && rotation.Length > 0)
         {
-            for (int race = 0; race < 2; race++)
+            for (int i = rotation.Length - 1; i > 0; i--)
             {
-                schedule.races.Add(new ScheduledRace
+                int other = random.Next(i + 1);
+                (rotation[i], rotation[other]) = (rotation[other], rotation[i]);
+            }
+            foreach (var track in rotation.Take(eventsPerSeason - schedule.races.Count))
+            {
+                var race = new ScheduledRace
                 {
+                    date = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                     trackId = track.id,
                     trackName = track.name,
                     laps = track.raceLaps,
@@ -93,24 +120,22 @@ internal sealed class SeasonSchedule
                     stageLaps = (int[])track.raceStageLaps?.Clone(),
                     purse = RaceFinances.PurseForTrack(track.lengthMiles),
                     sessions = RaceSession.Create(random.Next(1, 3), track.NumberOfQualifyingLaps)
-                });
+                };
+                foreach (var session in race.sessions)
+                    SessionWeatherForecast.Ensure(session, track, race);
+                race.EnsureStages();
+                schedule.races.Add(race);
+                date = date.AddDays(7);
             }
-        }
-
-        for (int i = schedule.races.Count - 1; i > 0; i--)
-        {
-            int other = random.Next(i + 1);
-            var race = schedule.races[i];
-            schedule.races[i] = schedule.races[other];
-            schedule.races[other] = race;
-        }
-
-        foreach (var race in schedule.races)
-        {
-            race.EnsureStages();
-            race.date = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-            date = date.AddDays(7);
         }
         return schedule;
     }
+}
+
+[Serializable]
+internal sealed class EventChassisSetup
+{
+    public string chassis;
+    public int number;
+    public Setup setup;
 }

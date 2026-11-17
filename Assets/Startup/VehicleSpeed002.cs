@@ -8,6 +8,7 @@ internal sealed class VehicleSpeed002 : IVehicleSpeedModel
 
     public string Id => "vehicle-speed-002";
     public string Name => "VehicleSpeed002";
+    public bool UsesLapSpeedProfile => true;
 
     public float BaseSpeed(CarSimulationContext context, int carIndex, Random random)
     {

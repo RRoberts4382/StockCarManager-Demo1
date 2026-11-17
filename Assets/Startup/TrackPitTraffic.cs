@@ -28,13 +28,20 @@ internal sealed class TrackPitTraffic
 
     internal sealed class Car
     {
-        public float TrackDistance;
+        // Keep cumulative travel in double precision; Unity geometry still uses floats.
+        public double PreciseTrackDistance;
+        public float TrackDistance
+        {
+            get => (float)PreciseTrackDistance;
+            set => PreciseTrackDistance = value;
+        }
         public float PitDistance;
         public float PitLane;
         public int FieldIndex = -1;
         public float NextEntry = float.PositiveInfinity;
         public float LastExit = float.NegativeInfinity;
         public bool InPit;
+        public bool InGarage;
         public bool FrontEntry;
         public bool BackExit;
         public float ConnectorDistance;
@@ -229,7 +236,7 @@ internal sealed class TrackPitTraffic
 
         foreach (var other in field)
         {
-            if (other == car || !other.InPit || other.BackExit || (other.FrontEntry != car.FrontEntry && Mathf.Min(other.PitDistance, car.PitDistance) < frontJoin) || Mathf.Abs(other.PitLane - car.PitLane) >= 1.85f)
+            if (other == car || other.InGarage || !other.InPit || other.BackExit || (other.FrontEntry != car.FrontEntry && Mathf.Min(other.PitDistance, car.PitDistance) < frontJoin) || Mathf.Abs(other.PitLane - car.PitLane) >= 1.85f)
                 continue;
             float gap = other.PitDistance - car.PitDistance;
             if (gap > 0f || (gap == 0f && other.FieldIndex < index))
@@ -242,7 +249,7 @@ internal sealed class TrackPitTraffic
         {
             foreach (var other in field)
             {
-                if (other == car || !other.InPit || other.BackExit || (other.FrontEntry != car.FrontEntry && Mathf.Min(other.PitDistance, car.PitDistance) < frontJoin))
+                if (other == car || other.InGarage || !other.InPit || other.BackExit || (other.FrontEntry != car.FrontEntry && Mathf.Min(other.PitDistance, car.PitDistance) < frontJoin))
                     continue;
                 float gap = other.PitDistance - car.PitDistance;
                 float separation = Mathf.Abs(other.PitLane - lane);
@@ -264,7 +271,7 @@ internal sealed class TrackPitTraffic
                 if (toEntry > trackSpeed * seconds)
                 {
                     car.Odometer += trackSpeed * seconds;
-                    car.TrackDistance += trackSpeed * seconds;
+                    car.PreciseTrackDistance += (double)trackSpeed * seconds;
                     return;
                 }
 
@@ -285,7 +292,7 @@ internal sealed class TrackPitTraffic
                 float travel = Mathf.Min(backExitLength - car.ConnectorDistance, seconds * trackSpeed);
                 foreach (var other in field)
                 {
-                    if (!other.InPit || !other.BackExit || other == car)
+                    if (other.InGarage || !other.InPit || !other.BackExit || other == car)
                         continue;
                     float gap = other.ConnectorDistance - car.ConnectorDistance;
                     if (gap > 0f || (gap == 0f && other.FieldIndex < car.FieldIndex))
@@ -300,7 +307,7 @@ internal sealed class TrackPitTraffic
                 seconds -= travel / trackSpeed;
                 car.BackExit = false;
                 car.InPit = false;
-                car.TrackDistance += Mathf.Repeat(backExit - entryDistance, lapLength);
+                car.PreciseTrackDistance += Mathf.Repeat(backExit - entryDistance, lapLength);
                 car.LastExit = car.TrackDistance;
                 continue;
             }
@@ -316,7 +323,7 @@ internal sealed class TrackPitTraffic
                 target = backLeave;
                 foreach (var other in field)
                 {
-                    if (other.InPit && other.BackExit)
+                    if (!other.InGarage && other.InPit && other.BackExit)
                         target = Mathf.Min(target, Mathf.Max(car.PitDistance, backLeave + other.ConnectorDistance - 3.4f));
                 }
                 takeBackExit = target == backLeave;
@@ -356,7 +363,7 @@ internal sealed class TrackPitTraffic
             if (segment == 2)
             {
                 car.InPit = false;
-                car.TrackDistance += car.FrontEntry ? Mathf.Repeat(ExitDistance - frontEntry, lapLength) : bypassDistance;
+                car.PreciseTrackDistance += car.FrontEntry ? Mathf.Repeat(ExitDistance - frontEntry, lapLength) : bypassDistance;
                 car.LastExit = car.TrackDistance;
             }
         }

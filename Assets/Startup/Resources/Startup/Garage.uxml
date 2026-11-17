@@ -55,9 +55,6 @@
                 </ui:VisualElement>
                 <ui:VisualElement name="financeBreakdown" class="results-grid" />
             </ui:VisualElement>
-            <ui:VisualElement name="sponsorsPage" class="garage-page">
-                <ui:Label text="No active sponsors." class="garage-detail" />
-            </ui:VisualElement>
         </ui:ScrollView>
         <ui:VisualElement name="mailPage" class="garage-page mail-page" />
         <ui:VisualElement name="employeesPage" class="garage-page employees-page">
@@ -137,13 +134,13 @@
             <ui:Button name="scheduleTab" text="Schedule" class="nav-button" />
             <ui:Button name="resultsTab" text="Results" class="nav-button" />
             <ui:Button name="financesTab" text="Finances" class="nav-button" />
-            <ui:Button name="sponsorsTab" text="Sponsors" class="nav-button" />
             <ui:VisualElement class="team-calendar">
                 <ui:VisualElement class="team-date-panel">
                     <ui:Label name="teamDayOfWeek" class="team-date-label" />
                     <ui:Label name="teamDate" class="team-date-label" />
                 </ui:VisualElement>
                 <ui:Button name="nextDayButton" text="Next Day" class="nav-button" />
+                <ui:Label name="requiredEmailTooltip" text="A Required Email Message Needs A Response" class="required-email-tooltip" picking-mode="Ignore" />
             </ui:VisualElement>
         </ui:VisualElement>
         <ui:VisualElement name="carOptionsOverlay" class="skip-race-overlay">

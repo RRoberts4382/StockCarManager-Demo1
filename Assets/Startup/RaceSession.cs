@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 
 internal enum RaceSessionKind { Practice, Qualifying, Race }
+internal enum RaceFinishBand { Good, Middle, Bad }
 
 [Serializable]
 internal sealed class PracticeWear
@@ -51,16 +52,26 @@ internal static class SessionWear
 [Serializable]
 internal sealed class RaceSession
 {
+    public static RaceFinishBand ClassifyFinish(double position, int fieldSize) =>
+        position <= Math.Max(1, (fieldSize + 3) / 4) ? RaceFinishBand.Good
+        : position > (fieldSize + 1) / 2 ? RaceFinishBand.Bad : RaceFinishBand.Middle;
+
     public RaceSessionKind kind;
     public string name;
     public int minutes;
     public int laps;
     public List<SessionCarResult> results = new List<SessionCarResult>();
     public bool completed;
+    public bool rivalFinalSetupReviewed;
     public List<PracticeWear> practiceWear;
     public List<DriverContact> playerContacts;
     public PlayerSessionReport playerReport;
+    public List<RivalPracticeTelemetry> rivalPracticeTelemetry = new List<RivalPracticeTelemetry>();
+    public List<RivalSetupChange> rivalSetupChanges = new List<RivalSetupChange>();
+    public List<GarageRunReview> garageRuns = new List<GarageRunReview>();
     public int[] qualifyingOrder;
+    public SessionWeatherForecast weather;
+    public bool lockPracticeWeather;
 
     public static int[] GridSlots(IReadOnlyList<SessionCarResult> entries, int[] qualifyingOrder)
     {
@@ -78,7 +89,7 @@ internal sealed class RaceSession
     public List<SessionCarResult> DisplayResults => temporaryResults ?? results;
     public bool Completed => completed || (results?.Count ?? 0) > 0;
 
-    public const int PracticeMinutes = 10;
+    public const int PracticeMinutes = 999; // Temporary development duration.
 
     public const int TestOpeningStageLaps = 15;
     public const int TestFinalStageLaps = 30;
@@ -113,6 +124,7 @@ internal sealed class SessionCarResult
     [NonSerialized] public List<DriverContact> contacts;
     [NonSerialized] public float damageSustained;
     [NonSerialized] public float damageAtFinish;
+    [NonSerialized] public EventCarCondition trackCondition;
     public long winnings = 0;
     public int pointsEarned = 0;
     public int[] stagePoints;
@@ -130,6 +142,15 @@ internal sealed class RaceSessionRun
     private readonly bool recordContacts;
     private readonly double gallonsPerMeter;
     private readonly double tireWearPerMeter;
+    private readonly TireTemperatureModel tireTemperatures;
+    private readonly CarSimulationContext simulationContext;
+    private readonly bool usesSpringPerformance;
+    private readonly DynamicTireLoads[] dynamicLoads;
+    private readonly float[] thermalSpeeds;
+    private readonly bool[] thermalRacing;
+    private readonly float[] previousThermalSpeeds;
+    private readonly float[] thermalDistances;
+    private readonly bool[] thermalOnTrack;
     private int scoredStages;
     private float leaderProgress;
     private readonly bool finishOnCheckered;
@@ -139,8 +160,11 @@ internal sealed class RaceSessionRun
     private float stageCrossingTime = float.PositiveInfinity;
     public int CurrentStage => scoredStages + 1;
     public int StageStartLap { get; private set; }
+    internal bool SetupLocked => simulationContext.Event?.SetupLocked == true;
     public bool IsRace => session.kind == RaceSessionKind.Race;
-    public float Elapsed { get; private set; }
+    public double PreciseElapsed { get; private set; }
+    public float Elapsed => (float)PreciseElapsed;
+    public SessionWeatherState Weather { get; }
     public int TimingRevision { get; private set; }
     public float Remaining => Math.Max(0f, session.minutes * 60f - Elapsed);
     public float PlayerBestLap => cars[0].Result.FastestLap;
@@ -176,14 +200,15 @@ internal sealed class RaceSessionRun
     public int[] RaceCarIndices() => Enumerable.Range(0, cars.Length)
         .OrderBy(index => cars[index].Retired).ThenByDescending(Progress).ThenBy(index => cars[index].Result.carNumber).ToArray();
 
+    internal int CompletedLaps(int index) => cars[index].Result.lapTimes.Count;
     public int PlayerLaps => cars[0].Result.lapTimes.Count;
     public bool Complete => session.minutes > 0 ? Remaining <= 0f : cars.All(car => car.Finished);
 
     private sealed class CarTiming
     {
         public SessionCarResult Result;
-        public float NextCrossing;
-        public float LastCrossing = -1f;
+        public double NextCrossing;
+        public double LastCrossing = -1d;
         public float FinishTime;
         public float CrossingThisStep = float.NegativeInfinity;
         public float CrossingDistance;
@@ -210,6 +235,18 @@ internal sealed class RaceSessionRun
         gallonsPerMeter = SessionFuel.GallonsPerMeter(simulation.Track);
         float roughness = UnityEngine.Mathf.Clamp01(simulation.Track.weights?.surfaceRoughness ?? 0.5f);
         tireWearPerMeter = (0.001 + 0.003 * roughness) / TrackDefinition.MetersPerMile;
+        simulationContext = simulation;
+        Weather = new SessionWeatherState(SessionWeatherForecast.Ensure(session, simulation.Track, simulation.Event), simulation.Track.surface, session.kind == RaceSessionKind.Practice);
+        Weather.SetLocked(session.lockPracticeWeather);
+        usesSpringPerformance = speedModel is VehicleSpeed003;
+        if (usesSpringPerformance) simulation.PrepareRivalSetups();
+        tireTemperatures = new TireTemperatureModel(simulation.Track);
+        dynamicLoads = Enumerable.Range(0, simulation.Cars.Count).Select(_ => new DynamicTireLoads()).ToArray();
+        thermalSpeeds = new float[simulation.Cars.Count];
+        thermalRacing = new bool[simulation.Cars.Count];
+        previousThermalSpeeds = new float[simulation.Cars.Count];
+        thermalDistances = new float[simulation.Cars.Count];
+        thermalOnTrack = new bool[simulation.Cars.Count];
         var entries = simulation.Cars;
         cars = new CarTiming[entries.Count];
         for (int i = 0; i < cars.Length; i++)
@@ -229,6 +266,8 @@ internal sealed class RaceSessionRun
                 timing.LastCrossing = startsOnLine ? 0f : -1f;
             }
             timing.Progress = initialDistances == null ? startLine - gridSpacing * i : initialDistances[i];
+            thermalDistances[i] = TrackPosition(timing.Progress + (simulation.IsInstant ? simulation.Track.StartFinishFraction * lapLength : 0f), lapLength);
+            thermalOnTrack[i] = true;
             if (IsRace)
                 timing.History.Add((timing.Progress, 0f));
             timing.StepStartProgress = timing.Progress;
@@ -239,12 +278,13 @@ internal sealed class RaceSessionRun
         }
     }
 
-    internal static void ResetVehiclesForSession(IReadOnlyList<SessionCarResult> entries)
+    internal static void ResetVehiclesForSession(IReadOnlyList<SessionCarResult> entries, bool preservePlayerCondition)
     {
-        foreach (var entry in entries)
+        for (int i = 0; i < entries.Count; i++)
         {
-            entry.Fuel = SessionFuel.TankCapacity;
-            entry.car?.ResetTrackCondition();
+            entries[i].Fuel = SessionFuel.TankCapacity;
+            if (i != 0 || !preservePlayerCondition)
+                entries[i].car?.ResetTrackCondition();
         }
     }
 
@@ -253,7 +293,8 @@ internal sealed class RaceSessionRun
     {
         var session = simulation.Session;
         var entries = simulation.Cars;
-        ResetVehiclesForSession(entries);
+        if (speedModel is VehicleSpeed003) simulation.PrepareRivalSetups(includesPlayer);
+        ResetVehiclesForSession(entries, simulation.PreservePlayerCondition);
         float lapLength = simulation.Track.lengthMiles * TrackDefinition.MetersPerMile;
         var distances = new float[entries.Count];
         if (session.kind == RaceSessionKind.Race)
@@ -263,12 +304,13 @@ internal sealed class RaceSessionRun
             for (int i = 0; i < distances.Length; i++)
                 distances[i] = -spacing * slots[i];
         }
+        var preciseDistances = distances.Select(value => (double)value).ToArray();
         var baseSpeeds = new float[entries.Count];
         for (int i = 0; i < baseSpeeds.Length; i++)
             baseSpeeds[i] = speedModel.BaseSpeed(simulation, i, random);
 
         var run = new RaceSessionRun(session, lapLength, 0f, simulation, speedModel, random, initialDistances: distances);
-        var profile = speedModel is VehicleSpeed002 ? new LapSpeedProfile(simulation.Track) : null;
+        var profile = speedModel.UsesLapSpeedProfile ? new LapSpeedProfile(simulation.Track) : null;
         float profileStart = simulation.Track.StartFinishFraction * lapLength;
         while (!run.Complete)
         {
@@ -280,9 +322,10 @@ internal sealed class RaceSessionRun
                 if (run.Finished(i))
                     continue;
 
-                float previous = distances[i];
+                double previous = preciseDistances[i];
                 float baseSpeed = baseSpeeds[i] * run.SpeedFactor(i);
                 float speed = profile?.SpeedAt(distances[i] + profileStart, baseSpeed) ?? baseSpeed;
+                speed = run.SetupAdjustedSpeed(i, distances[i] + profileStart, speed);
                 if (run.IsRace && run.Fuel(i) <= run.FuelForDistance(lapLength) + 0.5)
                 {
                     double remaining = Math.Max(0, session.laps - run.LeaderLaps) * (double)lapLength;
@@ -290,9 +333,10 @@ internal sealed class RaceSessionRun
                 }
                 speed = run.ConditionLimitedSpeed(i, speed, seconds,
                     profile?.BrakingLimitAt(distances[i] + profileStart) ?? 0f);
-                distances[i] += speed * seconds;
-                run.RecordTravel(i, distances[i] - previous, speed);
-                run.Record(i, previous, distances[i], seconds);
+                preciseDistances[i] += (double)speed * seconds;
+                distances[i] = (float)preciseDistances[i];
+                run.RecordTravel(i, preciseDistances[i] - previous, speed, preciseDistances[i] + profileStart);
+                run.Record(i, previous, preciseDistances[i], seconds);
             }
             run.AdvanceClock(seconds);
         }
@@ -341,8 +385,27 @@ internal sealed class RaceSessionRun
             {
                 float factor = car.SpeedFactor;
                 float speed = baseSpeed(i) * factor;
+                if (usesSpringPerformance)
+                {
+                    const int samples = 128;
+                    float lapSeconds = 0f;
+                    float segment = lapLength / samples;
+                    for (int sample = 0; sample < samples; sample++)
+                    {
+                        float distance = startLine + sample * segment;
+                        float adjusted = SetupAdjustedSpeed(i, distance, speed);
+                        float seconds = segment / Math.Max(1f, adjusted);
+                        dynamicLoads[i].Advance(SetupForCar(i), Fuel(i), 0f,
+                            adjusted * adjusted * tireTemperatures.CurvatureAt(distance) / 9.80665f, seconds);
+                        tireTemperatures.Advance(car.Result.car, seconds, distance, adjusted, adjusted,
+                            simulationContext.Track, SetupForCar(i), trackFahrenheit: Weather.TrackFahrenheit,
+                            fuelGallons: Fuel(i), dynamicLoads: dynamicLoads[i]);
+                        lapSeconds += seconds;
+                    }
+                    speed = lapLength / lapSeconds;
+                }
                 car.Result.lapTimes.Add(lapLength / speed);
-                RecordTravel(i, lap == 0 ? 2.0 * lapLength : lapLength, speed);
+                RecordTravel(i, lap == 0 ? 2.0 * lapLength : lapLength, speed, startLine);
                 TimingRevision++;
             }
             car.Result.InstantSpeed = double.NaN;
@@ -436,7 +499,19 @@ internal sealed class RaceSessionRun
         result.Fuel = Math.Min(SessionFuel.TankCapacity, result.Fuel + Math.Max(0, gallons));
     }
 
+    internal void SetFuel(int index, double gallons)
+    {
+        if (double.IsNaN(gallons) || double.IsInfinity(gallons))
+            return;
+        if (simulationContext.EqualConditionTesting) gallons = SessionFuel.TankCapacity;
+        cars[index].Result.Fuel = Math.Max(0d, Math.Min(SessionFuel.TankCapacity, gallons));
+    }
+
     public double Fuel(int index) => cars[index].Result.Fuel;
+
+    internal float BrakingPerformanceFactor(int index) => !usesSpringPerformance ? 1f :
+        UnityEngine.Mathf.Min(1f, VehicleSpeed003.WeightForceFactor(Fuel(index)) *
+            VehicleSpeed003.DistributionBrakingFactor(SetupForCar(index), Fuel(index))) * Weather.GripFactor;
 
     public float CurrentSpeed(int index) => (float)cars[index].Result.InstantSpeed;
 
@@ -452,6 +527,13 @@ internal sealed class RaceSessionRun
             float currentSpeed = (float)car.Result.InstantSpeed;
             float rollingSpeed = UnityEngine.Mathf.InverseLerp(60f, 180f, currentSpeed * metersPerSecondToMph);
             float acceleration = UnityEngine.Mathf.Lerp(7.89f, 3.5f, rollingSpeed);
+            if (usesSpringPerformance)
+            {
+                float weightFactor = VehicleSpeed003.WeightForceFactor(car.Result.Fuel);
+                var setup = SetupForCar(index);
+                acceleration *= UnityEngine.Mathf.Min(1f, weightFactor * VehicleSpeed003.DistributionAccelerationFactor(setup, car.Result.Fuel));
+                brakingLimit *= UnityEngine.Mathf.Min(1f, weightFactor * VehicleSpeed003.DistributionBrakingFactor(setup, car.Result.Fuel)) * Weather.GripFactor;
+            }
             float target = speed * (1f - damage / 100f);
             if (brakingLimit > 0f && target < currentSpeed)
                 return Math.Max(target, currentSpeed - brakingLimit * seconds);
@@ -491,12 +573,25 @@ internal sealed class RaceSessionRun
     public bool Finished(int index) => cars[index].Finished;
     public float StepDuration(float seconds) => session.minutes > 0 ? Math.Min(seconds, Remaining) : seconds;
 
-    public void RecordTravel(int index, double meters, double speedMetersPerSecond, bool reducedBurn = false)
+    // Position is supplied by the route controller, never inferred from the odometer.
+    internal static float TrackPosition(double distance, float length) => (float)((distance % length + length) % length);
+    internal float ThermalTrackPosition(int index) => thermalDistances[index];
+    internal bool ThermalOnTrack(int index) => thermalOnTrack[index];
+
+    public void RecordTravel(int index, double meters, double speedMetersPerSecond, double trackPosition,
+        bool reducedBurn = false, bool onTrack = true)
     {
         var result = cars[index].Result;
         result.InstantSpeed = meters > 0 ? speedMetersPerSecond : 0;
+        thermalSpeeds[index] = (float)result.InstantSpeed;
+        thermalRacing[index] = onTrack && !reducedBurn && meters > 0;
+        thermalOnTrack[index] = onTrack;
+        thermalDistances[index] = TrackPosition(trackPosition, lapLength);
         if (meters <= 0)
             return;
+        double fuelBeforeTravel = result.Fuel;
+        float weightWearFactor = usesSpringPerformance
+            ? VehicleSpeed003.WeightTireWearFactor(result.Fuel) : 1f;
         double adjustedMeters = meters * (reducedBurn ? SessionFuel.ReducedBurnFactor : 1.0);
         result.Fuel = Math.Max(0, result.Fuel - adjustedMeters * gallonsPerMeter);
 
@@ -505,19 +600,25 @@ internal sealed class RaceSessionRun
 
         const float rightSideWearMultiplier = 1.5f;
         const double referenceSpeed = 63.0;
-        float wear = (float)(adjustedMeters * tireWearPerMeter * (speedMetersPerSecond / referenceSpeed));
+        float wear = (float)(adjustedMeters * tireWearPerMeter * (speedMetersPerSecond / referenceSpeed)) * weightWearFactor;
         for (int indexOnCar = 0; indexOnCar < 4; indexOnCar++)
         {
             var tire = result.car.GetTire(indexOnCar);
             if (tire != null)
             {
                 float tireWear = indexOnCar % 2 == 0 ? wear : wear * rightSideWearMultiplier;
+                if (usesSpringPerformance)
+                    tireWear *= VehicleSpeed003.TireTemperatureWearFactor(
+                        TireTemperatureModel.Fahrenheit(tire.temperature)) *
+                        VehicleSpeed003.DistributionTireLoadFactor(SetupForCar(index), indexOnCar, fuelBeforeTravel) *
+                        VehicleSpeed003.PressureWear(SetupForCar(index), indexOnCar, tire) *
+                        dynamicLoads[index].Ratio(indexOnCar, SetupForCar(index), fuelBeforeTravel);
                 tire.wear = UnityEngine.Mathf.Clamp01(tire.wear + tireWear);
             }
         }
     }
 
-    public void Record(int index, float before, float after, float seconds)
+    public void Record(int index, double before, double after, float seconds)
     {
         var car = cars[index];
         if (car.Finished || after <= before)
@@ -525,16 +626,17 @@ internal sealed class RaceSessionRun
 
         if (IsRace)
         {
-            car.Progress = after;
-            car.Speed = (after - before) / seconds;
+            car.Progress = (float)after;
+            car.Speed = (float)((after - before) / seconds);
         }
         while (after >= car.NextCrossing)
         {
-            float fraction = Math.Max(0f, Math.Min(1f, (car.NextCrossing - before) / (after - before)));
-            float crossing = Elapsed + seconds * fraction;
+            double fraction = Math.Max(0d, Math.Min(1d, (car.NextCrossing - before) / (after - before)));
+            double preciseCrossing = PreciseElapsed + (double)seconds * fraction;
+            float crossing = (float)preciseCrossing;
             if (car.LastCrossing >= 0f)
             {
-                car.Result.lapTimes.Add(crossing - car.LastCrossing);
+                car.Result.lapTimes.Add((float)(preciseCrossing - car.LastCrossing));
                 if (IsRace && scoredStages < RaceSession.TestBonusStages &&
                     car.Result.lapTimes.Count == StageEnd)
                     stageCrossingTime = Math.Min(stageCrossingTime, crossing);
@@ -542,7 +644,7 @@ internal sealed class RaceSessionRun
                 if (finishOnCheckered)
                 {
                     car.CrossingThisStep = crossing;
-                    car.CrossingDistance = car.NextCrossing;
+                    car.CrossingDistance = (float)car.NextCrossing;
                     if (!FinishSuspended && car.Result.lapTimes.Count >= TargetLaps)
                         checkeredTime = Math.Min(checkeredTime, crossing);
                 }
@@ -552,21 +654,76 @@ internal sealed class RaceSessionRun
                     car.FinishTime = crossing;
                     if (IsRace)
                     {
-                        car.Progress = car.NextCrossing;
+                        car.Progress = (float)car.NextCrossing;
                         car.History.Add((car.Progress, crossing));
                     }
                     return;
                 }
             }
-            car.LastCrossing = crossing;
+            car.LastCrossing = preciseCrossing;
             car.NextCrossing += lapLength;
         }
         if (IsRace && Elapsed + seconds - car.History[car.History.Count - 1].Time >= 0.25f)
-            car.History.Add((after, Elapsed + seconds));
+            car.History.Add(((float)after, Elapsed + seconds));
+    }
+
+    internal bool TryHandlingFeedback(int index, out int phase, out float balance,
+        out float tireContribution, out float loadContribution)
+    {
+        phase = -1;
+        balance = tireContribution = loadContribution = 0f;
+        if (!usesSpringPerformance || !thermalOnTrack[index] || Retired(index)) return false;
+        float speed = CurrentSpeed(index);
+        if (speed < 15f || Math.Abs(tireTemperatures.CurvatureAt(thermalDistances[index])) * speed * speed / 9.80665f < 0.35f)
+            return false;
+        phase = tireTemperatures.HandlingPhaseAt(thermalDistances[index]);
+        if (phase < 0) return false;
+        balance = VehicleSpeed003.HandlingBalance(SetupForCar(index), Vehicle(index), dynamicLoads[index],
+            Fuel(index), out tireContribution, out loadContribution);
+        return true;
+    }
+
+    internal float DynamicCornerWeight(int index, int corner) =>
+        dynamicLoads[index].Load(corner, SetupForCar(index), Fuel(index));
+
+    internal Setup SetupForCar(int index) =>
+        (index == 0 || simulationContext.EqualConditionTesting) && simulationContext.PlayerSetup != null
+            ? simulationContext.PlayerSetup : simulationContext.RivalSetup(index) ?? cars[index].Result.car?.setup;
+
+    internal float SetupAdjustedSpeed(int index, float distance, float speed)
+    {
+        if (!usesSpringPerformance)
+            return speed;
+        float cornerLoad = UnityEngine.Mathf.SmoothStep(0f, 1f,
+            UnityEngine.Mathf.InverseLerp(0.05f, 1.5f,
+                speed * speed * UnityEngine.Mathf.Abs(tireTemperatures.CurvatureAt(distance)) / 9.80665f));
+        var setup = SetupForCar(index);
+        float factor = VehicleSpeed003.CornerSpeedFactor(simulationContext.Track, setup,
+            cars[index].Result.car, Fuel(index));
+        factor *= VehicleSpeed003.ShockSpeedFactor(simulationContext.Track, setup,
+            tireTemperatures.ShockMotionAt(distance, speed));
+        factor *= dynamicLoads[index].CornerSpeedFactor(setup, Fuel(index));
+        factor *= VehicleSpeed003.WeightCornerSpeedFactor(Fuel(index)) * UnityEngine.Mathf.Sqrt(Weather.GripFactor);
+        return speed * UnityEngine.Mathf.Lerp(VehicleSpeed003.PressureStraightSpeed(setup, cars[index].Result.car), factor, cornerLoad);
     }
 
     public void AdvanceClock(float seconds)
     {
+        for (int i = 0; i < cars.Length; i++)
+        {
+            if (usesSpringPerformance && seconds > 0f)
+            {
+                float longitudinalG = (thermalSpeeds[i] - previousThermalSpeeds[i]) / seconds / 9.80665f;
+                float lateralG = thermalOnTrack[i] ? thermalSpeeds[i] * thermalSpeeds[i] * tireTemperatures.CurvatureAt(thermalDistances[i]) / 9.80665f : 0f;
+                dynamicLoads[i].Advance(SetupForCar(i), Fuel(i), longitudinalG, lateralG, seconds);
+            }
+            tireTemperatures.Advance(cars[i].Result.car, seconds, thermalDistances[i],
+                thermalSpeeds[i], previousThermalSpeeds[i],
+                usesSpringPerformance ? simulationContext.Track : null, SetupForCar(i), thermalRacing[i], Weather.TrackFahrenheit, Fuel(i), usesSpringPerformance ? dynamicLoads[i] : null, onTrack: thermalOnTrack[i]);
+            previousThermalSpeeds[i] = thermalSpeeds[i];
+            thermalSpeeds[i] = 0f;
+            thermalRacing[i] = false;
+        }
         if (IsRace)
         {
             if (stageCrossingTime < float.PositiveInfinity)
@@ -601,7 +758,8 @@ internal sealed class RaceSessionRun
             }
             leaderProgress = cars.Max(car => car.Progress);
         }
-        Elapsed += seconds;
+        PreciseElapsed += seconds;
+        Weather.Advance(seconds, PreciseElapsed);
     }
 
     public IEnumerable<(SessionCarResult Car, int LapsBehind, float SecondsBehind)> RunningOrder()

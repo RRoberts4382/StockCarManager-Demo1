@@ -48,6 +48,8 @@ internal sealed class GameSettings
     private int savedSize;
     private int savedSimulationModel;
     private int savedSpeedModel;
+    public bool EqualConditionPractice { get; private set; }
+    private readonly Toggle equalConditionPractice = new Toggle("Equal-condition practice testing");
     private int savedBehaviorModel;
     private int savedPaceVehicle;
     public bool UsePaceTruck => savedPaceVehicle == 1;
@@ -68,7 +70,30 @@ internal sealed class GameSettings
         savedMode = Mathf.Clamp(PlayerPrefs.GetInt(Key + "Mode"), 0, 1);
         savedSize = Mathf.Clamp(PlayerPrefs.GetInt(Key + "Size"), 0, Sizes.Length - 1);
         savedSimulationModel = CarSimulationModels.IndexForId(PlayerPrefs.GetString(Key + "SimulationModel"));
+        // One-time switch for setup testing. Later user selections remain persistent.
+        if (!PlayerPrefs.HasKey(Key + "VehicleSpeed003SetupTesting"))
+        {
+            PlayerPrefs.SetString(Key + "VehicleSpeedModel", "vehicle-speed-003");
+            PlayerPrefs.SetInt(Key + "VehicleSpeed003SetupTesting", 1);
+            PlayerPrefs.Save();
+        }
         savedSpeedModel = VehicleSpeedModels.IndexForId(PlayerPrefs.GetString(Key + "VehicleSpeedModel"));
+        // End the temporary parity test once, while retaining its optional switch.
+        if (!PlayerPrefs.HasKey(Key + "RivalSetup001Enabled"))
+        {
+            PlayerPrefs.SetInt(Key + "EqualConditionPractice", 0);
+            PlayerPrefs.SetInt(Key + "RivalSetup001Enabled", 1);
+            PlayerPrefs.Save();
+        }
+        // Restore normal practice after rival setup development tests, once per installation.
+        // Keep the optional parity switch available for deliberate future comparisons.
+        if (!PlayerPrefs.HasKey(Key + "NormalPracticeDefaults001"))
+        {
+            PlayerPrefs.SetInt(Key + "EqualConditionPractice", 0);
+            PlayerPrefs.SetInt(Key + "NormalPracticeDefaults001", 1);
+            PlayerPrefs.Save();
+        }
+        EqualConditionPractice = PlayerPrefs.GetInt(Key + "EqualConditionPractice", 0) != 0;
         savedBehaviorModel = VehicleBehaviorModels.IndexForId(PlayerPrefs.GetString(Key + "VehicleBehaviorModel"));
         savedPaceVehicle = Mathf.Clamp(PlayerPrefs.GetInt(Key + "PaceVehicle"), 0, paceVehicle.choices.Count - 1);
         savedColors = new string[Defaults.Length];
@@ -93,6 +118,8 @@ internal sealed class GameSettings
         form.Add(size);
         form.Add(simulationModel);
         form.Add(vehicleSpeedModel);
+        equalConditionPractice.tooltip = "New practice sessions: all cars use the player setup/component levels and wear, fresh tires, no damage, and full fuel. Restart practice for a fresh comparison.";
+        form.Add(equalConditionPractice);
         form.Add(vehicleBehaviorModel);
         form.Add(paceVehicle);
         teamColors.Add(new Label("Team colors") { style = { marginTop = 14, marginBottom = 6 } });
@@ -155,6 +182,7 @@ internal sealed class GameSettings
         size.SetValueWithoutNotify(size.choices[savedSize]);
         simulationModel.SetValueWithoutNotify(simulationModel.choices[savedSimulationModel]);
         vehicleSpeedModel.SetValueWithoutNotify(vehicleSpeedModel.choices[savedSpeedModel]);
+        equalConditionPractice.SetValueWithoutNotify(EqualConditionPractice);
         vehicleBehaviorModel.SetValueWithoutNotify(vehicleBehaviorModel.choices[savedBehaviorModel]);
         paceVehicle.SetValueWithoutNotify(paceVehicle.choices[savedPaceVehicle]);
         SetColorFields(savedColors);
@@ -248,6 +276,8 @@ internal sealed class GameSettings
             savedColors[i] = "#" + ColorUtility.ToHtmlStringRGB(palette[i]);
             PlayerPrefs.SetString(Key + "Color." + i, savedColors[i]);
         }
+        EqualConditionPractice = equalConditionPractice.value;
+        PlayerPrefs.SetInt(Key + "EqualConditionPractice", EqualConditionPractice ? 1 : 0);
         savedSpeedModel = vehicleSpeedModel.index;
         PlayerPrefs.SetString(Key + "VehicleSpeedModel", SpeedModel.Id);
         savedBehaviorModel = vehicleBehaviorModel.index;

@@ -16,6 +16,8 @@ internal sealed class VehicleCollision001
         crashImpulse = new float[count];
     }
 
+    public void ClearContacts() => Array.Clear(touching, 0, touching.Length);
+
     public float CrashImpulse(int index) => crashImpulse[index];
 
     public bool HadImpact(int index) => impactDamage[index] > 0f;

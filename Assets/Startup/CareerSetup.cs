@@ -21,10 +21,16 @@ internal sealed class Career
     public string hometownState;
     public string teamName;
     public List<TeamMailMessage> inbox = new List<TeamMailMessage>();
+    public List<string> deletedMailIds = new List<string>();
     public List<string> deletedSocialPostIds = new List<string>();
     public string socialStartDate;
     public string primaryTeamColor;
     public string secondaryTeamColor;
+    public EngineSupplier engineSupplier;
+
+    public EngineSupplier EngineSupplierFor(TeamCar car) =>
+        car != null && engineSupplier?.maintenancePerRace > 0 && engineSupplier.manufacturer == car.manufacturer
+            ? engineSupplier : null;
     public string seriesId;
     public string seriesName;
     public SeasonSchedule schedule;
@@ -37,14 +43,23 @@ internal sealed class Career
     public void SetDate(DateTime date) =>
         currentDate = date.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
 
-    public void SetSeasonStartDate()
-    {
-        string firstRace = schedule.races?.FirstOrDefault()?.date;
-        SetDate(TryReadDate(firstRace, out var date) ? date.AddMonths(-1) : new DateTime(schedule.season, 1, 1).AddMonths(-1));
-    }
+    public void SetSeasonStartDate() => SetDate(new DateTime(schedule.season, 1, 1));
     public long teamBalance;
-    public List<SponsorContract> sponsors = new List<SponsorContract>();
-    public List<SponsorOffer> sponsorOffers = new List<SponsorOffer>();
+    public SponsorContract primarySponsor;
+    [SerializeField] private List<SponsorContract> sponsors;
+
+    public SponsorContract PrimarySponsor =>
+        primarySponsor?.racesRemaining > 0 && primarySponsor.offer != null ? primarySponsor : null;
+
+    public bool MigrateSponsorship()
+    {
+        if (sponsors?.Count > 0 != true)
+            return false;
+        primarySponsor = PrimarySponsor ?? sponsors.Find(contract =>
+            contract?.slot == 0 && contract.racesRemaining > 0 && contract.offer != null);
+        sponsors = null;
+        return true;
+    }
     public bool financesInitialized;
     public List<SeasonSchedule> completedSeasons = new List<SeasonSchedule>();
     public List<TeamCar> cars = new List<TeamCar> { new TeamCar { number = 27 } };
@@ -85,7 +100,13 @@ internal sealed class Career
         {
             drivers = MigrateDrivers(employees, random);
             if (drivers.Count == 0)
-                drivers.Add(Driver.Create(random, playerName, hometownCity, hometownState));
+            {
+                Driver driver;
+                do
+                    driver = Driver.Create(random, null);
+                while (string.Equals(driver.FullName, playerName, StringComparison.OrdinalIgnoreCase));
+                drivers.Add(driver);
+            }
             changed = true;
         }
         employees ??= new List<Employee>();
@@ -126,10 +147,14 @@ internal sealed class Career
         {
             changed |= driver.EnsureEthnicity();
             changed |= Employee.InitializeYearsExperience(driver.age, random, ref driver.yearsExperience, ref driver.experienceInitialized);
+            changed |= Employee.InitializeMorale(random, ref driver.morale, ref driver.moraleInitialized);
         }
         foreach (var employee in employees.Concat(recruitCandidates ?? Enumerable.Empty<Employee>())
             .Concat(rivalEmployees.SelectMany(team => team.employees ?? Enumerable.Empty<Employee>())))
+        {
             changed |= Employee.InitializeYearsExperience(employee.age, random, ref employee.yearsExperience, ref employee.experienceInitialized);
+            changed |= Employee.InitializeMorale(random, ref employee.morale, ref employee.moraleInitialized);
+        }
 
         return changed;
     }
@@ -248,7 +273,7 @@ internal sealed class ComponentRepair
     }
 }
 
-internal enum CarManufacturer { Chevrolet, Ford, Toyota }
+internal enum CarManufacturer { Chevrolet, Ford, Toyota, Dodge }
 
 internal enum ChassisType { IntermediateTrack, RoadCourse, ShortTrack, SuperSpeedway }
 
@@ -294,6 +319,12 @@ internal sealed class TeamCar
     public string chassisNumber;
     public CarManufacturer manufacturer = CarManufacturer.Chevrolet;
     public ChassisType chassisType = ChassisType.IntermediateTrack;
+    public Setup setup = new Setup();
+    public List<TrackSetup> trackSetups = new List<TrackSetup>();
+
+    public IEnumerable<TrackSetup> SetupsFor(int trackId) =>
+        (trackSetups ?? Enumerable.Empty<TrackSetup>())
+            .Where(item => item?.trackId == trackId && item.setup != null);
 
     public string ChassisTypeName => DisplayChassisType(chassisType);
 
@@ -370,7 +401,8 @@ internal sealed class TeamCar
     public bool Initialize(System.Random random)
     {
         bool changed = !componentWearInitialized ||
-            frontLeft == null || frontRight == null || rearLeft == null || rearRight == null;
+            frontLeft == null || frontRight == null || rearLeft == null || rearRight == null || setup == null;
+        setup ??= new Setup();
         if (!componentWearInitialized)
         {
             engineWear = (float)random.NextDouble();
@@ -432,6 +464,7 @@ internal sealed class TeamCar
 [Serializable]
 internal sealed class CarTire
 {
+    public float coldPressurePsi; // Zero uses the chassis setup (legacy saves/new tires).
     [Range(0f, 1f)] public float wear = 0f;
     [Range(0f, 1f)] public float temperature = 0f;
 }
@@ -508,6 +541,8 @@ internal sealed class Employee
     public int age;
     public int yearsExperience;
     public bool experienceInitialized;
+    [Range(0f, 1f)] public float morale;
+    public bool moraleInitialized;
     public string gender;
     public string hometownCity;
     public string hometownState;
@@ -533,6 +568,15 @@ internal sealed class Employee
 
     public static int GenerateYearsExperience(int age, System.Random random) =>
         Math.Max(0, age - 15 - random.Next(6));
+
+    public static bool InitializeMorale(System.Random random, ref float morale, ref bool initialized)
+    {
+        if (initialized)
+            return false;
+        morale = 0.3f + (float)random.NextDouble() * 0.5f;
+        initialized = true;
+        return true;
+    }
 
     public float RepairSkill(CarComponent component) => component switch
     {
@@ -573,6 +617,7 @@ internal sealed class Employee
             brakes = (float)random.NextDouble()
         };
         InitializeYearsExperience(employee.age, random, ref employee.yearsExperience, ref employee.experienceInitialized);
+        InitializeMorale(random, ref employee.morale, ref employee.moraleInitialized);
         return employee;
     }
 }
@@ -586,6 +631,25 @@ internal sealed class CareerSetup
     private readonly TextField team = new TextField("Team name") { maxLength = 80 };
     private readonly DropdownField seriesField;
     private readonly Label status = new Label();
+    private readonly ScrollView playerForm = new ScrollView();
+    private readonly ScrollView teamForm = new ScrollView();
+    private readonly Button backButton;
+    private readonly Label heading = new Label("Create a New Career") { style = { fontSize = 24 } };
+    private readonly Label teamStatus = new Label();
+    private readonly Label engineDetails = new Label();
+    private readonly DropdownField manufacturer;
+    private readonly DropdownField supplier = new DropdownField("Engine supplier");
+    private readonly IntegerField carNumber = new IntegerField("Car number");
+    private readonly Button schemeSelector;
+    private readonly ScrollView schemeChoices = new ScrollView();
+    private int schemeIndex;
+    private readonly TextField[] colors;
+    private readonly CarManufacturer[] manufacturers = (CarManufacturer[])Enum.GetValues(typeof(CarManufacturer));
+    private readonly CarPaintScheme[] schemes = (CarPaintScheme[])Enum.GetValues(typeof(CarPaintScheme));
+    private Dictionary<CarManufacturer, EngineSupplier[]> engineChoices;
+    private EngineSupplier[] shownSuppliers;
+    private readonly CarThumbnails previewThumbnails = new CarThumbnails(640);
+    private readonly Image carPreview;
     private readonly Action<Career> start;
     private readonly TrackCatalog catalog;
     private readonly System.Random scheduleRandom = new System.Random();
@@ -612,40 +676,193 @@ internal sealed class CareerSetup
         View.AddToClassList("tracks-editor");
         var header = new VisualElement();
         header.AddToClassList("header");
-        header.Add(new Label("Create a New Career") { style = { fontSize = 24 } });
-        header.Add(Button("Back to Title", back));
+        header.Add(heading);
+        backButton = Button("Back to Title", () =>
+        {
+            if (teamForm.style.display == DisplayStyle.Flex)
+                ShowTeamForm(false);
+            else
+                back();
+        });
+        header.Add(backButton);
         View.Add(header);
 
-        var form = new ScrollView();
-        form.AddToClassList("garage-body");
-        form.Add(player);
-        form.Add(hometownCity);
-        form.Add(hometownState);
-        form.Add(team);
-        form.Add(seriesField);
+        playerForm.AddToClassList("garage-body");
+        playerForm.Add(player);
+        playerForm.Add(hometownCity);
+        playerForm.Add(hometownState);
+        playerForm.Add(team);
+        playerForm.Add(seriesField);
         status.style.whiteSpace = WhiteSpace.Normal;
-        form.Add(status);
-        var create = Button("Create Career", Save);
-        create.SetEnabled(series.Length > 0);
-        form.Add(create);
-        View.Add(form);
+        playerForm.Add(status);
+        var next = Button("Next", () =>
+        {
+            if (ReadPlayerInfo() != null)
+                ShowTeamForm(true);
+        });
+        next.SetEnabled(series.Length > 0);
+        playerForm.Add(next);
+        View.Add(playerForm);
+
+        teamForm.AddToClassList("garage-body");
+        carPreview = previewThumbnails.CreateOrbitPreview();
+        teamForm.Add(carPreview);
+        manufacturer = new DropdownField("Manufacturer", manufacturers.Select(make => make.ToString()).ToList(), 0);
+        teamForm.Add(manufacturer);
+        teamForm.Add(supplier);
+        engineDetails.style.whiteSpace = WhiteSpace.Normal;
+        teamForm.Add(engineDetails);
+        teamForm.Add(carNumber);
+        schemeSelector = Button(string.Empty, () =>
+        {
+            bool opening = schemeChoices.style.display == DisplayStyle.None;
+            schemeChoices.style.display = opening ? DisplayStyle.Flex : DisplayStyle.None;
+        });
+        teamForm.Add(schemeSelector);
+        schemeChoices.style.maxHeight = 160;
+        schemeChoices.style.flexShrink = 0;
+        schemeChoices.style.display = DisplayStyle.None;
+        for (int i = 0; i < schemes.Length; i++)
+        {
+            int index = i;
+            schemeChoices.Add(Button(CarPaintStyle.SchemeName(schemes[index]), () =>
+            {
+                SelectPaintScheme(index);
+                schemeSelector.Focus();
+            }));
+        }
+        teamForm.Add(schemeChoices);
+        colors = new[] { AddColor("Primary team color"), AddColor("Secondary team color"), AddColor("Trim color") };
+        teamStatus.style.whiteSpace = WhiteSpace.Normal;
+        teamForm.Add(teamStatus);
+        var actions = new VisualElement();
+        actions.AddToClassList("actions");
+        actions.Add(Button("Cancel", back));
+        actions.Add(Button("Save Career", Save));
+        teamForm.Add(actions);
+        View.Add(teamForm);
+
+        manufacturer.RegisterValueChangedCallback(_ => RefreshSuppliers());
+        supplier.RegisterValueChangedCallback(_ => RefreshEngineDetails());
+        carNumber.RegisterValueChangedCallback(_ => UpdateCarPreview());
+        foreach (var color in colors)
+            color.RegisterValueChangedCallback(_ => UpdateCarPreview());
+        teamForm.style.display = DisplayStyle.None;
     }
 
     public void Open()
     {
+        ShowTeamForm(false);
         player.SetValueWithoutNotify(string.Empty);
         hometownCity.SetValueWithoutNotify(string.Empty);
         hometownState.SetValueWithoutNotify(string.Empty);
         team.SetValueWithoutNotify(string.Empty);
         seriesField.index = 0;
         status.text = series.Length > 0 ? string.Empty : "No racing series definitions could be loaded.";
-        player.Focus();
+        engineChoices = EngineSupplier.CreateChoices(new System.Random());
+        manufacturer.SetValueWithoutNotify(CarManufacturer.Chevrolet.ToString());
+        RefreshSuppliers();
+        carNumber.SetValueWithoutNotify(27);
+        SelectPaintScheme(0);
+        var paint = TrackPreview.TeamLivery(27);
+        colors[0].value = "#" + ColorUtility.ToHtmlStringRGB(paint.HoodAndTrunk);
+        colors[1].value = "#" + ColorUtility.ToHtmlStringRGB(paint.RoofAndSides);
+        colors[2].value = "#F0F0F0";
+        teamStatus.text = string.Empty;
     }
 
     public string SeriesName(Career career) =>
         series.FirstOrDefault(item => item.id == career.seriesId)?.name ?? career.seriesName;
 
-    private void Save()
+    private void ShowTeamForm(bool show)
+    {
+        schemeChoices.style.display = DisplayStyle.None;
+        heading.text = show ? "Team and Car Setup" : "Create a New Career";
+        backButton.text = show ? "Back to Player Info" : "Back to Title";
+        playerForm.style.display = show ? DisplayStyle.None : DisplayStyle.Flex;
+        teamForm.style.display = show ? DisplayStyle.Flex : DisplayStyle.None;
+        if (show)
+        {
+            UpdateCarPreview();
+            manufacturer.Focus();
+        }
+        else
+        {
+            ClosePreview();
+            player.Focus();
+        }
+    }
+
+    private void SelectPaintScheme(int index)
+    {
+        schemeIndex = index;
+        schemeSelector.text = $"Paint scheme   ·   {CarPaintStyle.SchemeName(schemes[index])}   ▾";
+        schemeChoices.style.display = DisplayStyle.None;
+        UpdateCarPreview();
+    }
+
+    public void ClosePreview()
+    {
+        carPreview.image = null;
+        previewThumbnails.Dispose();
+    }
+
+    private void UpdateCarPreview()
+    {
+        if (teamForm.style.display != DisplayStyle.Flex)
+            return;
+        var car = ReadCarDraft();
+        if (car == null)
+            return;
+        car.chassisNumber = "career-setup-preview";
+        carPreview.image = previewThumbnails.Get(car, Array.Empty<string>(), car.PaintStyle);
+    }
+
+    private void RefreshSuppliers()
+    {
+        shownSuppliers = engineChoices[manufacturers[manufacturer.index]];
+        supplier.choices = shownSuppliers.Select(engine => engine.name).ToList();
+        supplier.index = 0;
+        RefreshEngineDetails();
+    }
+
+    private void RefreshEngineDetails()
+    {
+        if (supplier.index < 0 || supplier.index >= shownSuppliers.Length)
+            return;
+        var engine = shownSuppliers[supplier.index];
+        engineDetails.text = $"Power {engine.power:F2}   ·   Reliability {engine.reliability:F2}   ·   " +
+            $"{RaceFinances.Dollars(engine.maintenancePerRace)} maintenance per race";
+    }
+
+    private TextField AddColor(string label)
+    {
+        var field = new TextField(label) { maxLength = 7 };
+        var swatch = Button("Pick color", () =>
+        {
+            ColorUtility.TryParseHtmlString(field.value, out var initial);
+            if (WindowsColorPicker.TryPick(initial, out var chosen))
+                field.value = "#" + ColorUtility.ToHtmlStringRGB(chosen);
+        });
+        var chip = new VisualElement { pickingMode = PickingMode.Ignore };
+        chip.AddToClassList("car-paint-swatch");
+        swatch.AddToClassList("car-paint-color");
+        swatch.Insert(0, chip);
+        field.RegisterValueChangedCallback(evt =>
+        {
+            if (ColorUtility.TryParseHtmlString(evt.newValue, out var color))
+                chip.style.backgroundColor = color;
+        });
+        var row = new VisualElement();
+        row.AddToClassList("actions");
+        field.style.flexGrow = 1;
+        row.Add(field);
+        row.Add(swatch);
+        teamForm.Add(row);
+        return field;
+    }
+
+    private Career ReadPlayerInfo()
     {
         string playerName = player.value?.Trim();
         string teamName = team.value?.Trim();
@@ -656,15 +873,46 @@ internal sealed class CareerSetup
             string.IsNullOrWhiteSpace(city) || string.IsNullOrWhiteSpace(state) || selected < 0 || selected >= series.Length)
         {
             status.text = "Enter a player name, hometown city and state, and team name, then choose a racing series.";
-            return;
+            return null;
         }
 
-        var career = new Career
+        status.text = string.Empty;
+        return new Career
         {
             playerName = playerName, hometownCity = city, hometownState = state, teamName = teamName,
             seriesId = series[selected].id, seriesName = series[selected].name,
             teamBalance = RaceFinances.StartingBalance, financesInitialized = true
         };
+    }
+
+    private void Save()
+    {
+        var career = ReadPlayerInfo();
+        if (career == null)
+        {
+            ShowTeamForm(false);
+            return;
+        }
+        if (carNumber.value < 1 || carNumber.value > 99)
+        {
+            teamStatus.text = "Enter a car number from 1 to 99.";
+            return;
+        }
+        if (supplier.index < 0 || supplier.index >= shownSuppliers.Length)
+        {
+            teamStatus.text = "Choose an engine supplier.";
+            return;
+        }
+        var car = ReadCarDraft();
+        if (car == null)
+        {
+            teamStatus.text = "Enter a valid hex color for each paint color.";
+            return;
+        }
+        career.engineSupplier = shownSuppliers[supplier.index];
+        career.primaryTeamColor = car.primaryPaint;
+        career.secondaryTeamColor = car.secondaryPaint;
+        career.cars[0] = car;
         try
         {
             catalog.Refresh();
@@ -673,22 +921,44 @@ internal sealed class CareerSetup
             career.InitializeEmployees(random);
             career.schedule = GenerateSeason(DateTime.Today.Year);
             career.SetSeasonStartDate();
+            ScenarioMail.SendCareerStart(career);
+            ScenarioMail.SendSeasonSponsorship(career, 0, 0);
             Directory.CreateDirectory(folder);
             career.savePath = Path.Combine(folder, Guid.NewGuid().ToString("N") + ".json");
             SaveProgress(career);
         }
         catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
         {
-            status.text = "Could not save the career. " + ex.Message;
+            teamStatus.text = "Could not save the career. " + ex.Message;
             return;
         }
 
         Latest = career;
+        ClosePreview();
         start(career);
     }
 
-    public SeasonSchedule GenerateSeason(int year, DateTime? previousRace = null) =>
-        SeasonSchedule.Generate(year, catalog.Entries.Select(entry => entry.Definition), scheduleRandom, previousRace);
+    private TeamCar ReadCarDraft()
+    {
+        if (carNumber.value < 1 || carNumber.value > 99)
+            return null;
+
+        var paint = new string[colors.Length];
+        for (int i = 0; i < colors.Length; i++)
+        {
+            if (!ColorUtility.TryParseHtmlString(colors[i].value, out var color))
+                return null;
+            paint[i] = "#" + ColorUtility.ToHtmlStringRGB(color);
+        }
+        return new TeamCar
+        {
+            number = carNumber.value, manufacturer = manufacturers[manufacturer.index], paintScheme = schemes[schemeIndex],
+            primaryPaint = paint[0], secondaryPaint = paint[1], trimPaint = paint[2]
+        };
+    }
+
+    public SeasonSchedule GenerateSeason(int year) =>
+        SeasonSchedule.Generate(year, catalog.Entries.Select(entry => entry.Definition), scheduleRandom);
 
     public void SaveProgress(Career career)
     {

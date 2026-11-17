@@ -17,6 +17,10 @@ internal sealed class Driver
     public int age;
     public int yearsExperience;
     public bool experienceInitialized;
+    [Range(0f, 1f)] public float morale;
+    public bool moraleInitialized;
+    public const int MaximumTrackXp = 1000;
+    public int shortTrackXp, intermediateXp, superspeedwayXp, roadCourseXp;
     public string gender;
     public DriverEthnicity ethnicity;
     public string hometownCity;
@@ -42,18 +46,36 @@ internal sealed class Driver
     public static Driver Create(System.Random random, string name, string city = null, string state = null) =>
         FromEmployee(Employee.Create(EmployeeRole.Driver, random, name, city, state), random);
 
-    public static Driver FromEmployee(Employee employee, System.Random random) => new Driver
+    public ref int TrackXp(ChassisType category)
     {
-        firstName = employee.firstName,
-        lastName = employee.lastName,
-        age = employee.age,
-        yearsExperience = employee.experienceInitialized ? employee.yearsExperience : Employee.GenerateYearsExperience(employee.age, random),
-        experienceInitialized = true,
-        gender = employee.gender,
-        ethnicity = (DriverEthnicity)random.Next(1, 5),
-        hometownCity = employee.hometownCity,
-        hometownState = employee.hometownState,
-        annualSalary = employee.annualSalary,
-        personalityTraits = new PersonalityTraits { aggression = (float)random.NextDouble() }
-    };
+        switch (category)
+        {
+            case ChassisType.ShortTrack: return ref shortTrackXp;
+            case ChassisType.IntermediateTrack: return ref intermediateXp;
+            case ChassisType.SuperSpeedway: return ref superspeedwayXp;
+            case ChassisType.RoadCourse: return ref roadCourseXp;
+            default: throw new ArgumentOutOfRangeException(nameof(category));
+        }
+    }
+
+    public static Driver FromEmployee(Employee employee, System.Random random)
+    {
+        var driver = new Driver
+        {
+            firstName = employee.firstName,
+            lastName = employee.lastName,
+            age = employee.age,
+            yearsExperience = employee.experienceInitialized ? employee.yearsExperience : Employee.GenerateYearsExperience(employee.age, random),
+            experienceInitialized = true,
+            morale = employee.morale,
+            moraleInitialized = employee.moraleInitialized,
+            gender = employee.gender,
+            ethnicity = (DriverEthnicity)random.Next(1, 5),
+            hometownCity = employee.hometownCity,
+            hometownState = employee.hometownState,
+            annualSalary = employee.annualSalary,
+            personalityTraits = new PersonalityTraits { aggression = (float)random.NextDouble() }
+        };
+        return driver;
+    }
 }

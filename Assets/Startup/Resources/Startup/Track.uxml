@@ -3,7 +3,12 @@
     <ui:VisualElement name="trackScreen" class="screen">
         <ui:VisualElement class="header">
             <ui:Label text="SCM  /  RACE OPERATIONS" class="brand" />
-            <ui:Label name="trackFpsLabel" text="FPS --" class="muted" picking-mode="Ignore" />
+            <ui:VisualElement style="flex-direction: row; align-items: center;">
+                <ui:Label name="playerTrackLaps" text="Run laps: 0 / Session laps: 0" style="font-size: 12px; margin-right: 12px;" />
+                <ui:Toggle name="trafficLaneChangesToggle" text="Traffic interactions" style="margin-right: 16px;" />
+                <ui:Toggle name="trackCollisionsToggle" text="Collisions" style="margin-right: 16px;" />
+                <ui:Label name="trackFpsLabel" text="FPS --" class="muted" picking-mode="Ignore" />
+            </ui:VisualElement>
         </ui:VisualElement>
         <ui:VisualElement class="track-heading">
             <ui:VisualElement class="track-heading-labels">
@@ -19,6 +24,7 @@
             </ui:VisualElement>
             <ui:VisualElement class="actions">
                 <ui:DropdownField name="sessionSpeedSelector" label="Speed" class="session-speed" />
+                <ui:Button name="visitGarageButton" text="Garage" class="action" style="display: none;" />
                 <ui:Button name="returnToGarageButton" text="Team" class="action" />
                 <ui:Button name="cautionButton" text="Caution" class="action quit-action" />
                 <ui:Button name="snapshotButton" text="Snapshot" class="action quit-action" />

@@ -113,20 +113,28 @@
     background-repeat: no-repeat;
 }
 
-.tracks-editor .unity-base-field__label {
+.tracks-editor .unity-base-field__label,
+.setup-preset-name .unity-base-field__label,
+.setup-notes .unity-base-field__label {
     color: #e3e9f2;
 }
-.tracks-editor .unity-base-text-field__input {
+.tracks-editor .unity-base-text-field__input,
+.setup-preset-name .unity-base-text-field__input,
+.setup-notes .unity-base-text-field__input {
     background-color: #202b39;
     border-color: #69798c;
     color: #f5f7fa;
     --unity-cursor-color: #ffffff;
     --unity-selection-color: #315b87;
 }
-.tracks-editor .unity-base-text-field__input:focus {
+.tracks-editor .unity-base-text-field__input:focus,
+.setup-preset-name .unity-base-text-field__input:focus,
+.setup-notes .unity-base-text-field__input:focus {
     border-color: #ffaf63;
 }
-.tracks-editor .unity-base-text-field__input .unity-text-element {
+.tracks-editor .unity-base-text-field__input .unity-text-element,
+.setup-preset-name .unity-base-text-field__input .unity-text-element,
+.setup-notes .unity-base-text-field__input .unity-text-element {
     color: #f5f7fa;
     --unity-cursor-color: #ffffff;
     --unity-selection-color: #315b87;
@@ -289,16 +297,48 @@
     -unity-font-style: bold;
     white-space: normal;
 }
-.mail-inbox > .mail-subheading {
+.mail-inbox-header {
+    flex-direction: row;
+    align-items: flex-start;
     margin-bottom: 6px;
 }
+.mail-inbox-header > .mail-subheading {
+    flex-grow: 1;
+    align-self: center;
+}
+.mail-inbox-row {
+    position: relative;
+    flex-shrink: 0;
+    margin-bottom: 5px;
+}
 .mail-page .mail-message-row {
+    flex-grow: 1;
+    min-width: 0;
     height: auto;
     min-height: 54px;
-    margin: 0 0 5px;
-    padding: 6px 8px;
+    margin: 0;
+    padding: 6px 38px 6px 8px;
     align-items: stretch;
     -unity-text-align: middle-left;
+}
+.game-neutral .mail-page .mail-message-row.mail-unread {
+    border-left-width: 3px;
+    border-left-color: #36aee4;
+    background-color: var(--game-button-selected);
+}
+.game-neutral .mail-page .mail-message-row.mail-scenario {
+    border-width: 1px;
+    border-color: #e55353;
+}
+.mail-page .mail-scenario-alert {
+    color: #e55353;
+    font-size: 18px;
+    -unity-font-style: bold;
+    align-self: center;
+}
+.mail-page .mail-scenario-choice {
+    align-self: flex-start;
+    margin: 8px 0 0;
 }
 .mail-sender, .mail-meta {
     font-size: 12px;
@@ -370,6 +410,12 @@
 .mail-trash-icon {
     width: 16px;
     height: 16px;
+}
+.mail-page .mail-inbox-delete {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    margin: 0;
 }
 .victory-results-background {
     background-size: cover;
@@ -599,6 +645,9 @@
 .garage-page {
     padding: 22px 12px;
 }
+.garage-page.event-setup-page {
+    padding: 4px 12px;
+}
 .garage-page-title {
     font-size: 38px;
     -unity-font-style: bold;
@@ -626,6 +675,215 @@
     margin: 0 2px;
     padding-left: 1px;
     padding-right: 1px;
+}
+.event-session-control {
+    position: relative;
+    flex-direction: row;
+    flex-grow: 1;
+    flex-basis: 0;
+    min-width: 0;
+    margin: 0 2px;
+}
+.garage-footer .event-session-control .event-next-session {
+    margin: 0;
+}
+.garage-footer .event-session-control .event-session-options {
+    flex-grow: 0;
+    flex-basis: 27px;
+    margin: 0;
+}
+.garage-footer .event-session-control .event-simulate-session {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 100%;
+    margin: 0;
+}
+.event-overview {
+    flex-direction: row;
+}
+.event-detail-panel {
+    flex-grow: 0;
+    flex-shrink: 0;
+    flex-basis: auto;
+    min-width: 0;
+    margin: 0 8px 10px;
+    padding: 8px 10px;
+    background-color: var(--game-surface);
+}
+.event-detail-panel .garage-detail {
+    white-space: normal;
+}
+.setup-editor {
+    flex-grow: 1;
+    flex-shrink: 0;
+    width: 100%;
+    min-width: 0;
+    padding: 0 10px;
+}
+.setup-board {
+    flex-direction: row;
+    justify-content: center;
+    align-items: stretch;
+    flex-shrink: 0;
+    flex-grow: 1;
+    margin: 4px 0;
+}
+.setup-side, .setup-center {
+    flex-basis: 0;
+    min-width: 0;
+    flex-grow: 1;
+    margin: 0 6px;
+}
+.setup-side {
+    justify-content: space-between;
+    max-width: 300px;
+    padding-top: 26px;
+}
+.setup-center {
+    max-width: 360px;
+}
+.setup-corner {
+    flex-shrink: 0;
+    padding: 6px;
+    background-color: var(--game-surface);
+    margin-bottom: 6px;
+}
+.setup-field {
+    flex-direction: row;
+    align-items: center;
+    min-height: 24px;
+    flex-shrink: 0;
+}
+.setup-part-row {
+    flex-direction: row;
+    align-items: center;
+}
+.setup-part-icon {
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+    margin-right: 7px;
+}
+.game-neutral .setup-navigation-icon {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    padding: 0;
+    align-items: center;
+    justify-content: center;
+}
+.setup-navigation-icon .setup-part-icon {
+    margin: 0;
+}
+.garage-open-setup {
+    position: absolute;
+    right: 8px;
+    top: 28px;
+}
+.setup-part-controls {
+    flex-grow: 1;
+    min-width: 0;
+}
+.setup-field > .unity-slider {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-width: 0;
+    min-height: 24px;
+}
+.setup-field .unity-base-field__label {
+    min-width: 94px;
+    flex-basis: 0;
+    white-space: nowrap;
+}
+.setup-field .unity-base-field__input {
+    min-width: 0;
+    flex-grow: 1;
+}
+.setup-slider-value {
+    width: 38px;
+    flex-shrink: 0;
+    -unity-text-align: middle-right;
+}
+.setup-overhead-car {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-height: 224px;
+    flex-shrink: 0;
+    margin-top: 6px;
+}
+.setup-actions {
+    align-self: flex-end;
+    margin: 0 0 8px 12px;
+}
+.setup-footer {
+    flex-direction: row;
+    flex-wrap: wrap;
+}
+.setup-summary {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: space-between;
+}
+.setup-current-name {
+    -unity-font-style: bold;
+}
+.setup-notes {
+    flex-direction: column;
+    align-items: stretch;
+    flex-shrink: 0;
+    flex-grow: 1;
+    flex-basis: 240px;
+    min-width: 0;
+    margin: 2px 0 8px;
+}
+.setup-notes .unity-base-field__input {
+    height: 48px;
+    min-width: 0;
+    white-space: normal;
+}
+.setup-notes .unity-text-element {
+    white-space: normal;
+}
+.setup-preset-list {
+    max-height: 150px;
+    margin: 8px 0;
+}
+.setup-preset-list .nav-button {
+    margin: 2px 0;
+    white-space: normal;
+}
+.event-track-outline {
+    height: 140px;
+    margin: 6px 0;
+    color: var(--game-text);
+}
+.event-tire-row {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 6px;
+}
+.event-tire-row > .garage-detail {
+    width: 75px;
+}
+.event-tire-row > .unity-progress-bar {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-width: 0;
+    margin-right: 4px;
+}
+.required-email-tooltip {
+    display: none;
+    position: absolute;
+    right: 0;
+    bottom: 100%;
+    margin-bottom: 6px;
+    padding: 6px 9px;
+    background-color: var(--game-surface);
+    color: var(--game-text);
+    border-width: 1px;
+    border-color: #e55353;
+    white-space: nowrap;
 }
 
 .title-screen {
@@ -833,6 +1091,7 @@
 }
 .rating-label {
     font-size: 12px;
+    white-space: normal;
     -unity-text-align: middle-center;
 }
 
@@ -1062,8 +1321,14 @@
     font-size: 12px;
 }
 .employee-skill-name {
-    width: 86px;
+    width: 96px;
     flex-shrink: 0;
+}
+.employee-morale-divider {
+    height: 1px;
+    margin: 4px 0;
+    background-color: var(--game-divider);
+    opacity: 0.6;
 }
 .employee-skill-track {
     flex-grow: 1;
@@ -1078,7 +1343,7 @@
     border-radius: 2px;
 }
 .employee-skill-value {
-    width: 34px;
+    width: 44px;
     flex-shrink: 0;
     -unity-text-align: middle-right;
 }
@@ -1294,28 +1559,6 @@
     margin-bottom: 4px;
 }
 
-.sponsor-row {
-    flex-direction: row;
-    align-items: center;
-    margin-top: 6px;
-    margin-bottom: 6px;
-    padding: 8px;
-    border-bottom-width: 1px;
-    border-bottom-color: rgb(81, 91, 103);
-}
-
-.sponsor-logo {
-    width: 70px;
-    height: 55px;
-    margin-right: 12px;
-    flex-shrink: 0;
-    border-left-width: 5px;
-    -unity-text-align: middle-center;
-    -unity-font-style: bold;
-    font-size: 25px;
-}
-
-
 .car-options-dialog {
     width: 520px;
     max-height: 85%;
@@ -1391,7 +1634,7 @@
     flex-direction: row;
 }
 .pit-tires {
-    width: 76px;
+    width: 110px;
     flex-shrink: 0;
     flex-direction: row;
     flex-wrap: wrap;
@@ -1454,4 +1697,227 @@
 #trackScreen .footer > .brand {
     flex-shrink: 0;
     margin-left: 12px;
+}
+
+.practice-run-report {
+    background-color: rgba(20, 28, 38, 0.96);
+    border-radius: 6px;
+    padding: 20px 24px;
+    margin-top: 14px;
+    margin-bottom: 8px;
+    flex-shrink: 0;
+}
+.practice-run-group {
+    flex-shrink: 0;
+    padding-bottom: 22px;
+    margin-bottom: 20px;
+    border-bottom-width: 1px;
+    border-bottom-color: #526171;
+}
+.practice-run-report Label {
+    color: #f4f7fb;
+    font-size: 18px;
+    white-space: normal;
+    flex-shrink: 0;
+    margin-top: 5px;
+    margin-bottom: 7px;
+}
+.practice-run-report .practice-run-title {
+    font-size: 22px;
+    -unity-font-style: bold;
+    margin-bottom: 14px;
+}
+.practice-run-tires {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    margin-top: 16px;
+    margin-bottom: 18px;
+    flex-shrink: 0;
+}
+.practice-run-tire {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-width: 0;
+    margin-right: 12px;
+}
+.practice-run-tire .unity-progress-bar {
+    height: 32px;
+    min-height: 32px;
+    margin-bottom: 10px;
+    flex-shrink: 0;
+}
+.practice-run-report .unity-progress-bar__title {
+    color: #ffffff;
+    font-size: 16px;
+    -unity-font-style: bold;
+    margin-top: 0;
+    margin-bottom: 0;
+    white-space: nowrap;
+    -unity-text-outline-width: 1px;
+    -unity-text-outline-color: #121a24;
+}
+.practice-run-laps {
+    flex-shrink: 0;
+    margin-top: 8px;
+}
+.practice-temperature-start {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background-color: black;
+}
+.practice-run-laps > .unity-foldout__toggle {
+    min-height: 32px;
+    margin-bottom: 8px;
+}
+.practice-chart {
+    background-color: #141c26;
+    padding: 18px;
+    flex-grow: 1;
+    min-height: 0;
+    min-width: 0;
+    flex-basis: 0;
+}
+.practice-chart Label {
+    color: #f4f7fb;
+    font-size: 16px;
+    margin-bottom: 8px;
+}
+.practice-chart Button {
+    height: 38px;
+    align-self: flex-start;
+    margin-bottom: 14px;
+}
+.practice-chart Toggle {
+    min-height: 25px;
+    margin-top: 2px;
+    margin-bottom: 2px;
+    flex-shrink: 0;
+}
+.practice-chart Toggle Label {
+    font-size: 14px;
+    margin-bottom: 0;
+}
+/* Vertical Garage sections must size to content, rather than sharing a zero basis. */
+.event-garage-page {
+    flex-shrink: 0;
+}
+.event-garage-page > .event-detail-panel {
+    flex-basis: auto;
+    flex-grow: 0;
+    flex-shrink: 0;
+    margin-bottom: 16px;
+}
+.event-garage-page > .event-overview {
+    flex-shrink: 0;
+    margin-bottom: 8px;
+}
+.event-garage-page .event-detail-panel > Label,
+.event-garage-page > Label {
+    flex-shrink: 0;
+    min-height: 22px;
+    margin-bottom: 6px;
+}
+.event-garage-page .event-tire-row {
+    min-height: 30px;
+    flex-shrink: 0;
+}
+.event-garage-page .event-tire-row > .garage-detail {
+    width: 82px;
+    min-width: 82px;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+.event-garage-page .garage-fuel-panel {
+    min-height: 112px;
+}
+.event-garage-page #garageStartingFuel {
+    flex-shrink: 0;
+    height: 32px;
+}
+.event-garage-page #garageStartingFuel > .unity-base-field__label {
+    min-width: 135px;
+    flex-shrink: 0;
+    color: #f4f7fb;
+}
+.event-garage-page #garageStartingFuel .unity-text-field__input {
+    background-color: #263342;
+    color: #ffffff;
+    min-width: 52px;
+}
+.garage-simulation-controls {
+    align-items: center;
+    flex-wrap: wrap;
+    flex-shrink: 0;
+    min-height: 42px;
+    margin: 0 8px 18px;
+}
+.garage-simulation-controls > .unity-dropdown-field {
+    width: 170px;
+    min-width: 170px;
+    height: 32px;
+    margin-right: 12px;
+}
+.garage-simulation-controls .unity-base-field__label {
+    min-width: 40px;
+    width: 40px;
+    flex-shrink: 0;
+    color: #f4f7fb;
+}
+.garage-simulation-controls > Button {
+    min-width: 130px;
+    height: 32px;
+    margin-top: 0;
+    margin-bottom: 0;
+}
+.event-garage-page .shop-component-row {
+    flex-shrink: 0;
+}
+.event-overview > .event-detail-panel {
+    flex-grow: 1;
+    flex-basis: 0;
+}
+.event-information-page,
+.event-information-page > .event-overview {
+    flex-shrink: 0;
+}
+.event-information-page > .event-overview {
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+}
+.event-information-page > .event-overview > .event-detail-panel {
+    flex-basis: 320px;
+}
+.event-information-page .event-detail-panel > Label {
+    flex-shrink: 0;
+    min-height: 22px;
+    white-space: normal;
+    margin-bottom: 8px;
+}
+.event-information-page .schedule-race {
+    min-height: 54px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+}
+.event-information-page .event-track-outline {
+    flex-shrink: 0;
+}
+.event-information-page .track-ratings {
+    flex-wrap: wrap;
+    flex-shrink: 0;
+}
+.event-information-page .rating-column {
+    flex-basis: 76px;
+    min-width: 76px;
+    flex-shrink: 0;
+    margin-bottom: 10px;
+}
+.event-information-page .rating-label,
+.event-information-page .rating-well,
+.event-information-page .shop-component-row {
+    flex-shrink: 0;
+}
+.event-information-page .rating-label {
+    min-height: 20px;
 }

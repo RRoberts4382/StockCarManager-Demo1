@@ -21,6 +21,9 @@ public sealed class TrackDefinition
     public string minorStyle = "Oval";
     public string surface = "Asphalt";
     public bool restrictorPlate;
+    internal ChassisType TrackCategory => majorStyle == "Road" ? ChassisType.RoadCourse
+        : restrictorPlate ? ChassisType.SuperSpeedway
+        : lengthMiles < 1f ? ChassisType.ShortTrack : ChassisType.IntermediateTrack;
     public TrackBanking banking = new TrackBanking();
     public float widthMeters = 9f;
     public int pitStalls;
@@ -56,7 +59,7 @@ public sealed class TrackDefinition
             .All(value => InRange(value, 0f, 60f)))
             return "Enter banking angles from 0 to 60 degrees.";
         if (weights == null || !new[] { weights.surfaceRoughness, weights.aerodynamics, weights.horsepower,
-            weights.brakes, weights.suspension, weights.handling, weights.tireWear }.All(value => InRange(value, 0f, 1f)))
+            weights.brakes, weights.suspension, weights.transmission, weights.handling, weights.tireWear }.All(value => InRange(value, 0f, 1f)))
             return "Enter weights from 0 to 1.";
 
         if (!InRange(qualifyingReferenceMph, 0f, 300f))
@@ -117,6 +120,7 @@ public sealed class TrackBanking
 [Serializable]
 public sealed class TrackWeights
 {
+    public float transmission;
     public float surfaceRoughness = 0.5f;
     public float aerodynamics = 0.5f;
     public float horsepower = 0.5f;

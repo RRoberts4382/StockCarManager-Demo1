@@ -11,6 +11,13 @@ internal sealed class TeamMailMessage
     public string date;
     public string subject;
     public string body;
+    public bool isRead;
+    public string[] scenarioOptions;
+    public string scenarioResponse;
+    public SponsorOffer[] scenarioSponsorOffers;
+
+    public bool IsScenario => scenarioOptions?.Length > 0;
+    public bool NeedsResponse => IsScenario && string.IsNullOrEmpty(scenarioResponse);
 }
 
 internal enum SocialSentiment { Positive, Neutral, Negative }
@@ -96,7 +103,7 @@ internal static class TeamCommunications
     public static bool AddDriverWelcome(Career career)
     {
         const string eventId = "driver-welcome";
-        if (career.Driver == null || career.inbox?.Any(message => message.eventId == eventId) == true)
+        if (career.Driver == null || HasReceivedMail(career, eventId))
             return false;
 
         string sender = career.Driver.FullName;
@@ -111,6 +118,10 @@ internal static class TeamCommunications
         });
         return true;
     }
+
+    public static bool HasReceivedMail(Career career, string eventId) =>
+        career.inbox?.Any(message => message.eventId == eventId) == true ||
+        career.deletedMailIds?.Contains(eventId) == true;
 
     public static IEnumerable<TeamSocialPost> RaceFeed(Career career)
     {
@@ -199,8 +210,12 @@ internal static class TeamCommunications
         // Seed from saved race data so reopening Mail doesn't rewrite the feed.
         var random = new Random(SeedForDate(race.date, race.trackId));
         var sources = Sources.OrderBy(_ => random.Next()).ToArray();
-        var sentiment = position <= Math.Max(1, (fieldSize + 3) / 4) ? SocialSentiment.Positive
-            : position > (fieldSize + 1) / 2 ? SocialSentiment.Negative : SocialSentiment.Neutral;
+        var sentiment = RaceSession.ClassifyFinish(position, fieldSize) switch
+        {
+            RaceFinishBand.Good => SocialSentiment.Positive,
+            RaceFinishBand.Bad => SocialSentiment.Negative,
+            _ => SocialSentiment.Neutral
+        };
         var templates = sentiment == SocialSentiment.Positive ? Positive
             : sentiment == SocialSentiment.Negative ? Negative : Neutral;
         var lines = templates.OrderBy(_ => random.Next()).ToArray();

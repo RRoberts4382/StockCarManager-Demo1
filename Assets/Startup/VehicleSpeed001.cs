@@ -8,10 +8,11 @@ internal sealed class VehicleSpeed001 : IVehicleSpeedModel
 
     public string Id => "vehicle-speed-001";
     public string Name => "VehicleSpeed001";
+    public bool UsesLapSpeedProfile => false;
 
     public float BaseSpeed(CarSimulationContext context, int carIndex, Random random)
     {
-        float reference = (context.Track.id == TrackPreview.OrangeCountyTrackId || context.Track.id == TrackPreview.SouthBostonTrackId || context.Track.id == TrackPreview.DaytonaTrackId ||
+        float reference = (context.Track.id == TrackPreview.DarlingtonTrackId || context.Track.id == TrackPreview.OrangeCountyTrackId || context.Track.id == TrackPreview.SouthBostonTrackId || context.Track.id == TrackPreview.DaytonaTrackId ||
             context.Track.id == TrackPreview.TexasTrackId || context.Track.id == TrackPreview.KansasTrackId ||
             context.Track.id == TrackPreview.CotaTrackId) &&
             context.Track.qualifyingReferenceMph > 0f

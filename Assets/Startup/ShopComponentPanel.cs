@@ -8,7 +8,7 @@ internal static class ShopComponentPanel
 
     public static void Show(VisualElement panel, TeamCar car, DateTime? date, DateTime? nextRaceDate, Func<ComponentRepair, Image> repairPortrait,
         Func<CarComponent, bool> canUpgrade, long balance, Action<CarComponent> upgrade, Action<CarComponent> openRepair,
-        Action<ComponentRepair> cancelRepair)
+        Action<ComponentRepair> cancelRepair, bool showRepairAvailability = false)
     {
         panel.Clear();
         panel.style.display = car == null ? DisplayStyle.None : DisplayStyle.Flex;
@@ -39,29 +39,32 @@ internal static class ShopComponentPanel
             var repair = car.repairs?.Find(job => job.component == component);
             var buttons = AddElement(row, "shop-component-actions");
             var upgradeLine = AddElement(buttons, "shop-component-action-line");
-            if (repair == null && condition.Level < TeamCar.MaximumComponentLevel)
+            if (upgrade != null && repair == null && condition.Level < TeamCar.MaximumComponentLevel)
             {
                 var upgradeButton = AddActionButton(upgradeLine, $"Upgrade {component}", ActionIcon.Upgrade, () => upgrade(component));
                 upgradeButton.SetEnabled(canUpgrade(component));
                 AddLabel(upgradeLine, RaceFinances.Dollars(TeamCar.ComponentUpgradeCost), "shop-component-action-cost");
             }
             var repairLine = AddElement(buttons, "shop-component-action-line");
-            if (repair != null)
+            if (repair != null && cancelRepair != null)
             {
                 AddActionButton(repairLine, $"Cancel {component} repair", ActionIcon.Cancel, () => cancelRepair(repair))
                     .SetEnabled(date.HasValue);
             }
-            else if (condition.Wear > 0f)
+            else if (repair == null && openRepair != null && condition.Wear > 0f)
             {
                 int repairCost = ComponentRepair.CostForWear(condition.Wear);
+                bool affordable = balance >= repairCost;
                 AddActionButton(repairLine, $"Repair {component}", ActionIcon.Repair, () => openRepair(component))
-                    .SetEnabled(balance >= repairCost);
+                    .SetEnabled(affordable);
                 AddLabel(repairLine, RaceFinances.Dollars(repairCost), "shop-component-action-cost");
+                if (showRepairAvailability && !affordable)
+                    AddLabel(service, "Insufficient funds", "shop-component-caption");
             }
             if (repair == null)
                 continue;
 
-            var portrait = repairPortrait(repair);
+            var portrait = repairPortrait?.Invoke(repair);
             if (portrait != null)
                 service.Add(portrait);
             var details = AddElement(service, "shop-component-repair-details");

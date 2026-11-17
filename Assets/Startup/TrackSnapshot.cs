@@ -26,6 +26,8 @@ internal sealed class TrackSnapshot
     internal struct CarSample
     {
         public int number, flatTireMask;
+        public float thermalTrackPositionMeters;
+        public bool thermalOnTrack;
         public bool visible, inPit, retired, spinning, servicing, pitRequested, collisionFlash;
         public float trackMeters, pitMeters, laneMeters, mph, damage;
         public double fuelGallons;
@@ -36,11 +38,13 @@ internal sealed class TrackSnapshot
     [Serializable]
     private sealed class FileData
     {
-        public int formatVersion = 1;
+        public int formatVersion = 6;
         public string savedUtc;
         public string trackModel, speedModel, behaviorModel, session;
         public TrackDefinition track;
         public Frame[] frames;
+        public System.Collections.Generic.List<RivalSetupChange> rivalSetupChanges;
+        public System.Collections.Generic.List<RivalPracticeTelemetry> rivalPracticeTelemetry;
     }
 
     public Frame BeginFrame(double simulationSeconds, int carCount, bool force)
@@ -71,6 +75,8 @@ internal sealed class TrackSnapshot
             behaviorModel = behaviorModel,
             session = context.Session.name,
             track = context.Track,
+            rivalSetupChanges = context.Session.rivalSetupChanges,
+            rivalPracticeTelemetry = context.Session.rivalPracticeTelemetry,
             frames = new Frame[count]
         };
         int oldest = (next + Capacity - count) % Capacity;

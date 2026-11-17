@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.UIElements;
 
 internal sealed class CarThumbnails : IDisposable
 {
@@ -15,10 +16,12 @@ internal sealed class CarThumbnails : IDisposable
 
     public CarThumbnails(int width = 256) => this.width = width;
 
-    public RenderTexture Get(TeamCar car, string[] sponsorNames, CarPaintStyle? preview = null)
+    public RenderTexture Get(TeamCar car, string[] sponsorNames, CarPaintStyle? preview = null, bool overhead = false)
     {
         int number = car.number;
         string key = car.chassisNumber ?? number.ToString();
+        if (overhead)
+            key += ":overhead";
         var livery = preview ?? car.PaintStyle;
         string liveryKey = $"{number}|{livery.Scheme}|{livery.Primary}|{livery.Secondary}|{livery.Trim}|{livery.HasTrim}|{string.Join("|", sponsorNames)}";
         if (images.TryGetValue(key, out var cached))
@@ -40,7 +43,8 @@ internal sealed class CarThumbnails : IDisposable
         root.transform.position = new Vector3(0f, preview.HasValue ? -4000f : -3000f, 0f);
         var materials = new List<Material>(4);
         var paintTextures = new List<Texture2D>();
-        var image = new RenderTexture(width, width * 9 / 16, 16) { name = $"Car {number} thumbnail" };
+        var image = overhead ? new RenderTexture(width, width * 3 / 2, 16) : new RenderTexture(width, width * 9 / 16, 16);
+        image.name = $"Car {number} thumbnail";
         bool keepScene = false;
         try
         {
@@ -57,7 +61,13 @@ internal sealed class CarThumbnails : IDisposable
             camera.orthographic = true;
             camera.orthographicSize = 1.24f;
             camera.farClipPlane = 25f;
-            if (preview.HasValue)
+            if (overhead)
+            {
+                camera.orthographicSize = 1.68f;
+                camera.transform.localPosition = Vector3.up * 6f;
+                camera.transform.localRotation = Quaternion.LookRotation(Vector3.down, Vector3.forward);
+            }
+            else if (preview.HasValue)
                 PositionOrbitCamera(camera);
             else
             {
@@ -72,7 +82,7 @@ internal sealed class CarThumbnails : IDisposable
             camera.targetTexture = image;
             camera.Render();
             images.Add(key, (liveryKey, image));
-            if (preview.HasValue)
+            if (preview.HasValue && !overhead)
             {
                 keepScene = true;
                 orbitCamera = camera;
@@ -119,7 +129,36 @@ internal sealed class CarThumbnails : IDisposable
         }
     }
 
-    public void RotatePreview(Vector2 drag)
+    public Image CreateOrbitPreview()
+    {
+        var preview = new Image { scaleMode = ScaleMode.ScaleToFit, tooltip = "Right-drag to rotate the car" };
+        preview.AddToClassList("car-paint-preview");
+        preview.RegisterCallback<PointerDownEvent>(evt =>
+        {
+            if (evt.button != 1)
+                return;
+            preview.CapturePointer(evt.pointerId);
+            evt.StopPropagation();
+        });
+        preview.RegisterCallback<PointerMoveEvent>(evt =>
+        {
+            if (!preview.HasPointerCapture(evt.pointerId) || (evt.pressedButtons & 2) == 0)
+                return;
+            RotatePreview(evt.deltaPosition);
+            preview.MarkDirtyRepaint();
+            evt.StopPropagation();
+        });
+        preview.RegisterCallback<PointerUpEvent>(evt =>
+        {
+            if (evt.button != 1 || !preview.HasPointerCapture(evt.pointerId))
+                return;
+            preview.ReleasePointer(evt.pointerId);
+            evt.StopPropagation();
+        });
+        return preview;
+    }
+
+    private void RotatePreview(Vector2 drag)
     {
         if (orbitCamera == null)
             return;

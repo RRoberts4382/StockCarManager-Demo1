@@ -24,6 +24,10 @@ public sealed class StartupMenu : MonoBehaviour
     private readonly TeamMailView teamMail = new TeamMailView();
     private ScheduledRace activeRace;
     private RaceSession activeSession;
+    private bool sessionInGarage;
+    private bool garageVisitPending;
+    private int playerLapsAtGarageDeparture;
+    private bool garageCarParked;
     private bool developmentPractice;
     private VisualElement developmentTrackPicker;
     private const string DevelopmentTrackPreference = "SCM.DevelopmentPractice.TrackId";
@@ -51,10 +55,10 @@ public sealed class StartupMenu : MonoBehaviour
     private int previewCarNumber;
     private Button startRaceButton;
     private Button simulateEventButton;
-    private VisualElement scheduleTrackOutline;
-    private readonly Vector2[] scheduleOutlinePoints = new Vector2[256];
-    private Rect scheduleOutlineBounds;
+    private TrackOutlineView scheduleTrackOutline;
     private Label raceProgressLabel;
+    private Label trackWeatherLabel;
+    private Toggle trackWeatherLock;
     private Label playerCarStatus;
     private Label playerPitStatus;
     private Button requestPitStop;
@@ -66,10 +70,14 @@ public sealed class StartupMenu : MonoBehaviour
     private Label pitDamageLabel;
     private VisualElement pitFuelFill;
     private VisualElement pitDamageFill;
+    private RaceSessionRun pressurePanelRun;
+    private readonly FloatField[] pitPressures = new FloatField[4];
     private readonly Toggle[] pitTires = new Toggle[4];
     private readonly Label[] pitTireWear = new Label[4];
     private readonly VisualElement[] pitTireFill = new VisualElement[4];
     private DropdownField sessionSpeedSelector;
+    private Toggle trackCollisionsToggle;
+    private Toggle trafficLaneChangesToggle;
     private VisualElement practiceFlags;
     private VisualElement primaryPracticeFlag;
     private VisualElement blackPracticeFlag;
@@ -93,10 +101,12 @@ public sealed class StartupMenu : MonoBehaviour
     private VisualElement garageScreen;
     private VisualElement trackScreen;
     private Label trackFpsLabel;
+    private Label playerTrackLaps;
     private double fpsSampleStart;
     private int fpsSampleFrames;
     private VisualElement raceViewport;
     private Button returnToGarageButton;
+    private Button visitGarageButton;
     private TrackPreview trackPreview;
     private TrackCatalog catalog;
     private TracksEditor tracksEditor;
@@ -188,10 +198,23 @@ public sealed class StartupMenu : MonoBehaviour
 
         trackScreen = root.Q("trackScreen");
         trackFpsLabel = trackScreen.Q<Label>("trackFpsLabel");
+        playerTrackLaps = trackScreen.Q<Label>("playerTrackLaps");
         trackScreen.style.display = DisplayStyle.None;
         raceViewport = trackScreen.Q("raceViewport");
         trackTimingRows = trackScreen.Q<ScrollView>("trackTimingRows");
         raceProgressLabel = trackScreen.Q<Label>("raceProgressLabel");
+        trackWeatherLabel = new Label();
+        trackWeatherLabel.AddToClassList("muted");
+        trackWeatherLabel.style.marginLeft = 12;
+        trackFpsLabel.parent.Add(trackWeatherLabel);
+        trackFpsLabel.parent.style.flexWrap = Wrap.Wrap;
+        trackWeatherLock = new Toggle("Lock weather");
+        trackWeatherLock.style.marginLeft = 12;
+        trackWeatherLock.style.display = DisplayStyle.None;
+        trackWeatherLock.tooltip = "Freeze current practice weather across runs. Unlock to resume changes.";
+        trackWeatherLock.RegisterValueChangedCallback(evt =>
+            trackPreview?.SessionRun?.Weather.SetLocked(evt.newValue));
+        trackFpsLabel.parent.Add(trackWeatherLock);
         playerCarStatus = trackScreen.Q<Label>("playerCarStatus");
         playerPitStatus = trackScreen.Q<Label>("playerPitStatus");
         requestPitStop = trackScreen.Q<Button>("requestPitStop");
@@ -208,6 +231,13 @@ public sealed class StartupMenu : MonoBehaviour
             pitTires[i] = trackScreen.Q<Toggle>($"pitTire{i}");
             pitTireWear[i] = trackScreen.Q<Label>($"pitTireWear{i}");
             pitTireFill[i] = trackScreen.Q($"pitTireFill{i}");
+            var pressure = new FloatField { tooltip = "New tire cold pressure (10-60 PSI). Applies only when this tire is changed." };
+            pressure.style.width = 48;
+            pressure.style.fontSize = 11;
+            pressure.RegisterValueChangedCallback(evt => pressure.SetValueWithoutNotify(
+                float.IsNaN(evt.newValue) || float.IsInfinity(evt.newValue) ? 30f : Mathf.Clamp(evt.newValue, 10f, 60f)));
+            pitPressures[i] = pressure;
+            pitTires[i].parent.Add(pressure);
         }
         requestPitStop.clicked += QueuePlayerPitStop;
         practiceFlags = trackScreen.Q("practiceFlags");
@@ -232,14 +262,19 @@ public sealed class StartupMenu : MonoBehaviour
         sessionSpeedSelector.choices = new System.Collections.Generic.List<string> { "1x", "2x", "4x", "8x", "16x", "Pause" };
         sessionSpeedSelector.style.display = DisplayStyle.None;
         sessionSpeedSelector.RegisterValueChangedCallback(ChangeSessionSpeed);
+        trackCollisionsToggle = trackScreen.Q<Toggle>("trackCollisionsToggle");
+        trackCollisionsToggle.SetValueWithoutNotify(false);
+        trackCollisionsToggle.RegisterValueChangedCallback(ChangeTrackCollisions);
+        trafficLaneChangesToggle = trackScreen.Q<Toggle>("trafficLaneChangesToggle");
+        trafficLaneChangesToggle.SetValueWithoutNotify(false);
+        trafficLaneChangesToggle.RegisterValueChangedCallback(ChangeTrafficLaneChanges);
         startRaceButton = garageScreen.Q<Button>("startRaceButton");
         startRaceButton.clicked += OpenSelectedEvent;
         simulateEventButton = garageScreen.Q<Button>("simulateEventButton");
         simulateEventButton.clicked += SimulateEvent;
         garageScreen.Q<Button>("eventCarPicker").clicked += ShowRaceCarPicker;
         garageScreen.Q<Button>("carOptionsClose").clicked += CloseCarOptions;
-        scheduleTrackOutline = garageScreen.Q("scheduleTrackOutline");
-        scheduleTrackOutline.generateVisualContent += DrawScheduleTrackOutline;
+        scheduleTrackOutline = new TrackOutlineView(garageScreen.Q("scheduleTrackOutline"));
         addTeamCarButton = garageScreen.Q<Button>("addTeamCarButton");
         addTeamCarButton.clicked += OpenCarMarket;
         garageScreen.Q<Button>("recruitEmployeeButton").clicked += OpenRecruitment;
@@ -280,6 +315,9 @@ public sealed class StartupMenu : MonoBehaviour
         snapshotButton.clicked += SaveTrackSnapshot;
         returnToGarageButton = trackScreen.Q<Button>("returnToGarageButton");
         returnToGarageButton.clicked += ReturnToGarage;
+        visitGarageButton = trackScreen.Q<Button>("visitGarageButton");
+        visitGarageButton.style.display = DisplayStyle.None;
+        visitGarageButton.clicked += VisitGarageDuringSession;
 
         tracksButton = titleScreen.Q<Button>("tracksButton");
         tracksButton.clicked += OpenTracks;
@@ -297,7 +335,7 @@ public sealed class StartupMenu : MonoBehaviour
         quitButton = titleScreen.Q<Button>("quitButton");
         backButton = garageScreen.Q<Button>("backButton");
         garageQuitButton = garageScreen.Q<Button>("garageQuitButton");
-        string[] garagePageNames = { "home", "mail", "cars", "shop", "employees", "schedule", "results", "finances", "sponsors" };
+        string[] garagePageNames = { "home", "mail", "cars", "shop", "employees", "schedule", "results", "finances" };
         garageTabs = garagePageNames.Select(name => garageScreen.Q<Button>(name + "Tab")).ToArray();
         garagePages = garagePageNames.Select(name => garageScreen.Q(name + "Page")).ToArray();
         var shopComponents = garageScreen.Q("shopCarComponents");
@@ -327,6 +365,9 @@ public sealed class StartupMenu : MonoBehaviour
         root.Add(settings.ScreenView);
         raceEventView = new RaceEventView(() => StartNextSession(false), () => StartNextSession(true), LeaveRaceEvent,
             settings.RestorePalette, () => activeCareer?.TeamColors ?? (default, default));
+        raceEventView.ChangeCollisions = enabled => trackCollisionsToggle.value = enabled;
+        raceEventView.ChangeTraffic = enabled => trafficLaneChangesToggle.value = enabled;
+        raceEventView.SetTrafficOptions(trackCollisionsToggle.value, trafficLaneChangesToggle.value);
         raceEventView.Screen.styleSheets.Add(Resources.Load<StyleSheet>("Startup/Startup"));
         raceEventView.Screen.style.display = DisplayStyle.None;
         root.Add(raceEventView.Screen);
@@ -393,8 +434,9 @@ public sealed class StartupMenu : MonoBehaviour
         titleScreen.style.display = DisplayStyle.None;
         returnToGarageButton.text = "Leave Session";
         activeSession = session;
+        playerLapsAtGarageDeparture = 0;
         var simulation = new CarSimulationContext(track.Definition, race, session,
-            TrackPreview.CreateTimingEntries(car, career));
+            TrackPreview.CreateTimingEntries(car, career)) { EqualConditionTesting = settings.EqualConditionPractice };
         trackPreview.BeginSession(simulation, new TrackState001(), settings.SpeedModel, settings.BehaviorModel);
         RefreshTrackTiming();
         sessionSpeedSelector.SetValueWithoutNotify(sessionSpeedSelector.choices[0]);
@@ -462,6 +504,7 @@ public sealed class StartupMenu : MonoBehaviour
         employeePortraits.Dispose();
         carThumbnails.Dispose();
         paintPreviewThumbnails.Dispose();
+        careerSetup?.ClosePreview();
         teamShopPreview.Dispose();
         scheduleHauler.Dispose();
         teamShopExterior.Dispose();
@@ -477,6 +520,8 @@ public sealed class StartupMenu : MonoBehaviour
         }
         trackUtility?.CloseReferenceImage();
         sessionSpeedSelector?.UnregisterValueChangedCallback(ChangeSessionSpeed);
+        trackCollisionsToggle?.UnregisterValueChangedCallback(ChangeTrackCollisions);
+        trafficLaneChangesToggle?.UnregisterValueChangedCallback(ChangeTrafficLaneChanges);
         if (startRaceButton != null)
             startRaceButton.clicked -= OpenSelectedEvent;
         if (simulateEventButton != null)
@@ -500,6 +545,8 @@ public sealed class StartupMenu : MonoBehaviour
             garageQuitButton.clicked -= Quit;
         if (returnToGarageButton != null)
             returnToGarageButton.clicked -= ReturnToGarage;
+        if (visitGarageButton != null)
+            visitGarageButton.clicked -= VisitGarageDuringSession;
         if (tracksButton != null)
             tracksButton.clicked -= OpenTracks;
         if (trackUtilityButton != null)
@@ -580,7 +627,8 @@ public sealed class StartupMenu : MonoBehaviour
         body.style.display = pageName == "schedulePage" || pageName == "employeesPage" || pageName == "mailPage"
             ? DisplayStyle.None : DisplayStyle.Flex;
         if (pageName == "mailPage" && activeCareer != null)
-            teamMail.Show(garagePages[selected], activeCareer, settings.RestorePalette, DeleteSocialPosts, SocialDriverPortrait);
+            teamMail.Show(garagePages[selected], activeCareer, settings.RestorePalette, DeleteSocialPosts,
+                MarkMailRead, DeleteMail, RespondToScenario, SocialDriverPortrait);
         if (pageName == "schedulePage")
             RefreshSchedule(selectNext: true);
 
@@ -590,8 +638,6 @@ public sealed class StartupMenu : MonoBehaviour
             DisplayFinances();
         if (pageName == "carsPage")
             RefreshTeamCars();
-        if (pageName == "sponsorsPage")
-            DisplaySponsors();
         body.scrollOffset = Vector2.zero;
         settings?.RestorePalette();
     }
@@ -631,7 +677,7 @@ public sealed class StartupMenu : MonoBehaviour
         toggle.EnableInClassList("nav-button-selected", showingWorkInProgress);
         if (!showingWorkInProgress)
         {
-            settings.RestorePalette();
+            DisplayEmployees(activeCareer);
             return;
         }
 
@@ -704,6 +750,89 @@ public sealed class StartupMenu : MonoBehaviour
         return portrait;
     }
 
+    private string MarkMailRead(TeamMailMessage message)
+    {
+        if (message.isRead)
+            return null;
+
+        message.isRead = true;
+        return SaveMailChange(() => message.isRead = false);
+    }
+
+    private string DeleteMail(TeamMailMessage[] messages)
+    {
+        messages = messages.Where(message => !message.NeedsResponse).ToArray();
+        if (messages.Length == 0)
+            return null;
+
+        var previousInbox = activeCareer.inbox;
+        var previousDeleted = activeCareer.deletedMailIds;
+        var removed = new HashSet<TeamMailMessage>(messages);
+        activeCareer.inbox = previousInbox.Where(message => !removed.Contains(message)).ToList();
+        activeCareer.deletedMailIds = (previousDeleted ?? Enumerable.Empty<string>())
+            .Union(messages.Select(message => message.eventId).Where(id => !string.IsNullOrEmpty(id))).ToList();
+        return SaveMailChange(() =>
+        {
+            activeCareer.inbox = previousInbox;
+            activeCareer.deletedMailIds = previousDeleted;
+        });
+    }
+
+    private string RespondToScenario(TeamMailMessage message, string option)
+    {
+        if (!activeCareer.inbox.Contains(message) || !message.NeedsResponse || !message.scenarioOptions.Contains(option))
+            return "This scenario response is no longer available.";
+
+        message.scenarioResponse = option;
+        var previousSponsor = activeCareer.PrimarySponsor;
+        long previousBalance = activeCareer.teamBalance;
+        var season = activeCareer.schedule;
+        long previousIncome = season.sponsorIncome;
+        long previousSigningIncome = season.sponsorSigningIncome;
+        int choice = System.Array.IndexOf(message.scenarioOptions, option);
+        if (message.scenarioSponsorOffers is { } offers)
+        {
+            var offer = offers[choice];
+            activeCareer.primarySponsor = new SponsorContract
+            {
+                offer = offer,
+                racesRemaining = season.races.Count(race => !race.completed),
+                paid = offer.signingPayment
+            };
+            activeCareer.teamBalance += offer.signingPayment;
+            season.sponsorIncome += offer.signingPayment;
+            season.sponsorSigningIncome += offer.signingPayment;
+        }
+        string error = SaveMailChange(() =>
+        {
+            message.scenarioResponse = null;
+            activeCareer.primarySponsor = previousSponsor;
+            activeCareer.teamBalance = previousBalance;
+            season.sponsorIncome = previousIncome;
+            season.sponsorSigningIncome = previousSigningIncome;
+        });
+        if (error == null)
+        {
+            RefreshCareerDate();
+            RefreshTeamBalance();
+        }
+        return error;
+    }
+
+    private string SaveMailChange(System.Action rollback)
+    {
+        try
+        {
+            careerSetup.SaveProgress(activeCareer);
+            return null;
+        }
+        catch (System.Exception ex) when (ex is IOException || ex is System.UnauthorizedAccessException)
+        {
+            rollback();
+            return "Could not save inbox changes. " + ex.Message;
+        }
+    }
+
     private string DeleteSocialPosts(IEnumerable<string> postIds)
     {
         var previous = activeCareer.deletedSocialPostIds;
@@ -746,7 +875,7 @@ public sealed class StartupMenu : MonoBehaviour
             teamShopPreview.Dispose();
             RenderTexture image = null;
             if (showingSchedule)
-                image = scheduleHauler.Render(activeCareer, ActiveSponsorNames()[0]);
+                image = scheduleHauler.Render(activeCareer, ActiveSponsorName());
             else if (showingHome)
                 image = teamShopExterior.Render(activeCareer);
             else if (showingFinances)
@@ -784,101 +913,6 @@ public sealed class StartupMenu : MonoBehaviour
         }
     }
 
-    private void DisplaySponsors(string message = null)
-    {
-        var page = garageScreen.Q("sponsorsPage");
-        page.Clear();
-        var contracts = activeCareer.sponsors ?? new List<SponsorContract>();
-        for (int slot = 0; slot < Sponsorships.Slots; slot++)
-        {
-            var contract = contracts.Find(item => item.slot == slot);
-            string title = Sponsorships.SlotName(slot);
-            if (contract == null)
-                AddDetail(page, $"{title} — Open");
-            else
-                AddSponsorRow(contract.offer, $"{title}  •  {contract.racesRemaining} races remaining  •  " +
-                    $"{RaceFinances.Dollars(contract.paid)} paid");
-        }
-
-        AddDetail(page, message ?? (contracts.Count == Sponsorships.Slots ? "All sponsorship slots are filled."
-            : "New offers arrive after each race when a slot is open."));
-        foreach (var offer in activeCareer.sponsorOffers ?? Enumerable.Empty<SponsorOffer>())
-            AddSponsorRow(offer, "Offer", () => AcceptSponsor(offer));
-
-        void AddSponsorRow(SponsorOffer offer, string status, System.Action accept = null)
-        {
-            var row = new VisualElement();
-            row.AddToClassList("sponsor-row");
-            var logo = new Label(Sponsorships.LogoText(offer.companyId));
-            logo.AddToClassList("sponsor-logo");
-            float hue = Mathf.Repeat(offer.companyId * 0.618034f, 1f);
-            logo.style.backgroundColor = Color.HSVToRGB(hue, 0.72f, 0.27f);
-            Color ink = Color.HSVToRGB(Mathf.Repeat(hue + 0.43f, 1f), 0.38f, 1f);
-            logo.style.color = ink;
-            logo.style.borderLeftColor = ink;
-            logo.style.borderTopLeftRadius = offer.companyId % 5 * 6;
-            logo.style.borderBottomRightRadius = offer.companyId % 5 * 6;
-            row.Add(logo);
-
-            var description = new VisualElement();
-            description.style.flexGrow = 1;
-            description.style.flexShrink = 1;
-            row.Add(description);
-            AddDetail(description, Sponsorships.CompanyName(offer.companyId) + "  •  " + status);
-            AddDetail(description, $"{RaceFinances.Dollars(offer.totalValue)} maximum  •  " +
-                $"{offer.duration} {(offer.duration == 1 ? "race" : "races")}  •  " +
-                (offer.lumpSum ? "Lump sum on first eligible race" : "Paid per eligible race"));
-            AddDetail(description, offer.maxFinishPosition > 0
-                ? $"Finish in the top {offer.maxFinishPosition}" : "Any race finish");
-            if (accept != null)
-            {
-                var button = new Button(accept) { text = "Accept Offer" };
-                button.AddToClassList("nav-button");
-                row.Add(button);
-            }
-            page.Add(row);
-        }
-
-        void AddDetail(VisualElement parent, string text)
-        {
-            var label = new Label(text);
-            label.AddToClassList("garage-detail");
-            label.style.whiteSpace = WhiteSpace.Normal;
-            parent.Add(label);
-        }
-    }
-
-    private void AcceptSponsor(SponsorOffer offer)
-    {
-        var offers = activeCareer.sponsorOffers;
-        var contracts = activeCareer.sponsors ?? new List<SponsorContract>();
-        if (offers == null || !offers.Contains(offer) || contracts.Count >= Sponsorships.Slots ||
-            contracts.Any(contract => contract.offer.companyId == offer.companyId))
-            return;
-
-        int slot = Enumerable.Range(0, Sponsorships.Slots)
-            .First(index => !contracts.Any(contract => contract.slot == index));
-        var contract = new SponsorContract { offer = offer, slot = slot, racesRemaining = offer.duration };
-        var previousContracts = activeCareer.sponsors;
-        activeCareer.sponsors = contracts.Append(contract).ToList();
-        activeCareer.sponsorOffers = activeCareer.sponsors.Count == Sponsorships.Slots
-            ? new List<SponsorOffer>() : offers.Where(candidate => candidate != offer).ToList();
-        try
-        {
-            careerSetup.SaveProgress(activeCareer);
-        }
-        catch (System.Exception ex) when (ex is IOException || ex is System.UnauthorizedAccessException)
-        {
-            activeCareer.sponsors = previousContracts;
-            activeCareer.sponsorOffers = offers;
-            DisplaySponsors("Could not save sponsorship. " + ex.Message);
-            settings?.RestorePalette();
-            return;
-        }
-        DisplaySponsors($"{Sponsorships.CompanyName(offer.companyId)} signed as {Sponsorships.SlotName(slot)} sponsor.");
-        settings?.RestorePalette();
-    }
-
     private void DisplayFinances()
     {
         var season = activeCareer.schedule;
@@ -893,12 +927,14 @@ public sealed class StartupMenu : MonoBehaviour
                     : result.teamName == activeCareer.teamName && result.driverName == activeCareer.playerName)?.winnings ?? 0);
 
         ShowAmount(garageScreen.Q<Label>("financeBalance"), activeCareer.teamBalance);
-        bool hasUpcomingRace = finished < races.Count;
+        var upcoming = races.FirstOrDefault(race => !race.completed);
+        var upcomingCar = EventCar(upcoming) ?? activeCareer.cars.FirstOrDefault();
+        int engineCost = activeCareer.EngineSupplierFor(upcomingCar)?.maintenancePerRace ?? RaceExpenses.EngineLeaseBase;
         var chargedExpenses = races.Where(race => race.completed && !race.playerSkipped && race.expenses != null)
             .Select(race => race.expenses).ToList();
         long expenseTotal = chargedExpenses.Sum(expenses => (long)expenses.Total);
         ShowAmount(garageScreen.Q<Label>("financeCostPerRace"), -payroll -
-            (hasUpcomingRace ? RaceExpenses.BaseTotal : 0));
+            (upcoming != null ? RaceExpenses.BaseTotal - RaceExpenses.EngineLeaseBase + engineCost : 0));
         long netIncome = winnings + season.sponsorIncome + season.carSales - season.payrollPaid - season.carPurchases -
             season.componentUpgrades - season.componentRepairs - expenseTotal;
         var averageProfit = garageScreen.Q<Label>("financeAverageProfitPerRace");
@@ -911,7 +947,7 @@ public sealed class StartupMenu : MonoBehaviour
             ShowAmount(averageProfit, (long)System.Math.Round((decimal)netIncome / finished,
                 System.MidpointRounding.AwayFromZero));
 
-        FinanceReport.Render(garageScreen.Q("financeBreakdown"), activeCareer, races, chargedExpenses, payroll, winnings);
+        FinanceReport.Render(garageScreen.Q("financeBreakdown"), activeCareer, races, chargedExpenses, payroll, winnings, engineCost);
 
         void ShowAmount(Label label, long amount)
         {
@@ -991,6 +1027,7 @@ public sealed class StartupMenu : MonoBehaviour
 
     private void CloseCareerSetup()
     {
+        careerSetup.ClosePreview();
         careerSetup.View.style.display = DisplayStyle.None;
         titleScreen.style.display = DisplayStyle.Flex;
         newCareerButton.Focus();
@@ -1014,6 +1051,7 @@ public sealed class StartupMenu : MonoBehaviour
         SetEmployeeStatus(null);
         RefreshDriverLabel(career);
         activeCareer = career;
+        careerChanged |= career.MigrateSponsorship();
         DisplayEmployees(career);
         catalog.Refresh();
         selectedEvent = null;
@@ -1054,6 +1092,12 @@ public sealed class StartupMenu : MonoBehaviour
         }
         careerChanged |= TeamCommunications.AddDriverWelcome(career);
         careerChanged |= CrewChiefMail.SendPreview(career, catalog, RaceCarBlockReason);
+        careerChanged |= ScenarioMail.SendTestToExistingCareer(career);
+        if (career.schedule?.races != null)
+        {
+            var (rank, fieldSize) = PreviousSeasonSponsorRanking();
+            careerChanged |= ScenarioMail.SendSeasonSponsorship(career, rank, fieldSize, test: true);
+        }
         if (careerChanged)
         {
             try
@@ -1093,6 +1137,12 @@ public sealed class StartupMenu : MonoBehaviour
             var traits = AddStaffRatings(card);
             float aggression = driver.personalityTraits?.aggression ?? 0.5f;
             AddStaffRating(traits, "Aggression", aggression, $"{aggression:P0}", new Color32(255, 193, 99, 255));
+            var trackColor = new Color32(104, 195, 255, 255);
+            AddStaffRating(traits, "Short Track", driver.shortTrackXp / (float)Driver.MaximumTrackXp, $"{driver.shortTrackXp} XP", trackColor);
+            AddStaffRating(traits, "Intermediate", driver.intermediateXp / (float)Driver.MaximumTrackXp, $"{driver.intermediateXp} XP", trackColor);
+            AddStaffRating(traits, "Superspeedway", driver.superspeedwayXp / (float)Driver.MaximumTrackXp, $"{driver.superspeedwayXp} XP", trackColor);
+            AddStaffRating(traits, "Road Course", driver.roadCourseXp / (float)Driver.MaximumTrackXp, $"{driver.roadCourseXp} XP", trackColor);
+            AddMoraleRating(traits, driver.morale);
             AddStaffDetails(card, driver.annualSalary, driver.age, driver.yearsExperience);
             AddFireButton(card, "Fire Driver", driver.FullName, career.drivers, driver);
             roster.Add(card);
@@ -1140,6 +1190,7 @@ public sealed class StartupMenu : MonoBehaviour
         AddSkill(CarComponent.Suspension, "Suspension");
         AddSkill(CarComponent.Transmission, "Transmission");
         AddSkill(CarComponent.Aerodynamics, "Aero");
+        AddMoraleRating(skills, employee.morale);
         AddStaffDetails(card, employee.annualSalary, employee.age, employee.yearsExperience);
 
         void AddSkill(CarComponent component, string title)
@@ -1179,6 +1230,14 @@ public sealed class StartupMenu : MonoBehaviour
         ratings.AddToClassList("employee-card-skills");
         card.Add(ratings);
         return ratings;
+    }
+
+    private static void AddMoraleRating(VisualElement ratings, float morale)
+    {
+        var divider = new VisualElement { pickingMode = PickingMode.Ignore };
+        divider.AddToClassList("employee-morale-divider");
+        ratings.Add(divider);
+        AddStaffRating(ratings, "Morale", morale, $"{morale:P0}", new Color32(106, 211, 210, 255));
     }
 
     private static void AddStaffRating(VisualElement ratings, string title, float value, string formattedValue, Color color)
@@ -1555,6 +1614,9 @@ public sealed class StartupMenu : MonoBehaviour
             date == System.DateTime.MaxValue.Date)
             return;
 
+        if (ShowRequiredEmailTooltip())
+            return;
+
         var race = DueRace(date);
         if (race != null)
         {
@@ -1571,6 +1633,8 @@ public sealed class StartupMenu : MonoBehaviour
         var undoRepairs = UpdateCareerRepairs();
         try
         {
+            ScenarioMail.SendNewYear(activeCareer, date, date.AddDays(1));
+            SendSeasonSponsorshipIfDue(date.AddDays(1));
             CrewChiefMail.SendPreview(activeCareer, catalog, RaceCarBlockReason);
             careerSetup.SaveProgress(activeCareer);
         }
@@ -1591,15 +1655,54 @@ public sealed class StartupMenu : MonoBehaviour
         var mailPage = garageScreen.Q("mailPage");
         if (mailPage.style.display == DisplayStyle.Flex)
         {
-            teamMail.Show(mailPage, activeCareer, settings.RestorePalette, DeleteSocialPosts, SocialDriverPortrait);
+            teamMail.Show(mailPage, activeCareer, settings.RestorePalette, DeleteSocialPosts,
+                MarkMailRead, DeleteMail, RespondToScenario, SocialDriverPortrait);
             settings.RestorePalette();
         }
+    }
+
+    private IVisualElementScheduledItem hideRequiredEmailTooltip;
+    private const string RequiredEmailMessage = "A Required Email Message Needs A Response";
+
+    private bool ShowRequiredEmailTooltip()
+    {
+        if (!ScenarioMail.HasPending(activeCareer))
+            return false;
+
+        var tooltip = garageScreen.Q<Label>("requiredEmailTooltip");
+        tooltip.text = RequiredEmailMessage;
+        tooltip.style.display = DisplayStyle.Flex;
+        hideRequiredEmailTooltip?.Pause();
+        hideRequiredEmailTooltip = tooltip.schedule.Execute(() => tooltip.style.display = DisplayStyle.None)
+            .StartingIn(4000);
+        return true;
     }
 
     private ScheduledRace DueRace(System.DateTime date)
     {
         var next = activeCareer?.schedule?.races?.FirstOrDefault(race => !race.completed);
         return Career.TryReadDate(next?.date, out var raceDate) && raceDate <= date ? next : null;
+    }
+
+    private void SendSeasonSponsorshipIfDue(System.DateTime date)
+    {
+        if (date.Year < activeCareer.schedule.season || ScenarioMail.HasSeasonSponsorship(activeCareer))
+            return;
+        var (rank, fieldSize) = PreviousSeasonSponsorRanking();
+        ScenarioMail.SendSeasonSponsorship(activeCareer, rank, fieldSize);
+    }
+
+    private (int Rank, int FieldSize) PreviousSeasonSponsorRanking()
+    {
+        var previous = activeCareer.completedSeasons?.Where(season => season.season < activeCareer.schedule.season)
+            .OrderByDescending(season => season.season).FirstOrDefault();
+        if (previous == null || activeCareer.cars.Count == 0)
+            return (0, 0);
+
+        var standings = GetStandings(previous);
+        var best = standings.FirstOrDefault(entry => entry.Key.IsPlayer);
+        int rank = best.Value > 0 ? standings.FindIndex(entry => entry.Value == best.Value) + 1 : standings.Count;
+        return (rank, standings.Count);
     }
 
     private void CloseSkipRacePrompt()
@@ -1613,6 +1716,13 @@ public sealed class StartupMenu : MonoBehaviour
         if (garageScreen.Q("skipRacePrompt").style.display != DisplayStyle.Flex ||
             !Career.TryReadDate(activeCareer.currentDate, out var date) || date == System.DateTime.MaxValue.Date)
             return;
+
+        if (ScenarioMail.HasPending(activeCareer))
+        {
+            CloseSkipRacePrompt();
+            ShowRequiredEmailTooltip();
+            return;
+        }
 
         var race = DueRace(date);
         if (race == null)
@@ -1633,8 +1743,6 @@ public sealed class StartupMenu : MonoBehaviour
         RefreshSchedule();
         if (garageScreen.Q("financesPage").style.display == DisplayStyle.Flex)
             DisplayFinances();
-        if (garageScreen.Q("sponsorsPage").style.display == DisplayStyle.Flex)
-            DisplaySponsors();
         if (garageScreen.Q("carsPage").style.display == DisplayStyle.Flex)
             RefreshTeamCars();
         settings?.RestorePalette();
@@ -1645,7 +1753,9 @@ public sealed class StartupMenu : MonoBehaviour
         bool valid = Career.TryReadDate(activeCareer.currentDate, out var date);
         garageScreen.Q<Label>("teamDayOfWeek").text = valid ? date.ToString("dddd", CultureInfo.CurrentCulture) : string.Empty;
         garageScreen.Q<Label>("teamDate").text = valid ? date.ToString("d", CultureInfo.CurrentCulture) : string.Empty;
-        garageScreen.Q<Button>("nextDayButton").SetEnabled(valid && date < System.DateTime.MaxValue.Date);
+        var nextDay = garageScreen.Q<Button>("nextDayButton");
+        nextDay.SetEnabled(valid && date < System.DateTime.MaxValue.Date);
+        garageScreen.Q<Label>("requiredEmailTooltip").style.display = DisplayStyle.None;
     }
 
     private void RefreshTeamBalance()
@@ -1795,30 +1905,7 @@ public sealed class StartupMenu : MonoBehaviour
         var colors = new[] { original.Primary, original.Secondary, original.Trim };
         bool hasTrim = original.HasTrim;
         var sponsors = ActiveSponsorNames();
-        var preview = new Image { scaleMode = ScaleMode.ScaleToFit, tooltip = "Right-drag to rotate the car" };
-        preview.AddToClassList("car-paint-preview");
-        preview.RegisterCallback<PointerDownEvent>(evt =>
-        {
-            if (evt.button != 1)
-                return;
-            preview.CapturePointer(evt.pointerId);
-            evt.StopPropagation();
-        });
-        preview.RegisterCallback<PointerMoveEvent>(evt =>
-        {
-            if (!preview.HasPointerCapture(evt.pointerId) || (evt.pressedButtons & 2) == 0)
-                return;
-            paintPreviewThumbnails.RotatePreview(evt.deltaPosition);
-            preview.MarkDirtyRepaint();
-            evt.StopPropagation();
-        });
-        preview.RegisterCallback<PointerUpEvent>(evt =>
-        {
-            if (evt.button != 1 || !preview.HasPointerCapture(evt.pointerId))
-                return;
-            preview.ReleasePointer(evt.pointerId);
-            evt.StopPropagation();
-        });
+        var preview = paintPreviewThumbnails.CreateOrbitPreview();
         rows.Add(preview);
         var scheme = new DropdownField("Paint scheme", schemes.Select(CarPaintStyle.SchemeName).ToList(),
             System.Array.IndexOf(schemes, original.Scheme));
@@ -2501,27 +2588,17 @@ public sealed class StartupMenu : MonoBehaviour
                 });
                 row.EnableInClassList("schedule-race-completed", race.completed);
                 rows.Add(row);
-                if (selectNext && race == selectedEvent)
+                if (selectNext && race == next)
                     rowToReveal = row;
             }
         }
         if (rowToReveal != null)
         {
-            rowToReveal.RegisterCallback<GeometryChangedEvent>(RevealSelectedRow);
+            RevealScheduleRow(rows, rowToReveal);
         }
         else
         {
             rows.schedule.Execute(() => rows.scrollOffset = scroll);
-        }
-
-        void RevealSelectedRow(GeometryChangedEvent evt)
-        {
-            rowToReveal.UnregisterCallback<GeometryChangedEvent>(RevealSelectedRow);
-            rows.schedule.Execute(() =>
-            {
-                if (rowToReveal.parent == rows.contentContainer)
-                    rows.ScrollTo(rowToReveal);
-            });
         }
 
         DisplayTeamStandings(schedule);
@@ -2532,13 +2609,15 @@ public sealed class StartupMenu : MonoBehaviour
 
         var eventTrack = selectedEvent == null ? null : catalog.Entries.Find(track => track.Definition.id == selectedEvent.trackId);
         bool available = eventTrack != null;
-        DisplayTrackRatings(eventTrack?.Definition.weights);
-        UpdateScheduleTrackOutline(eventTrack?.Definition);
+        DisplayTrackRatings(garageScreen.Q("scheduleTrackRatings"), eventTrack?.Definition.weights);
+        scheduleTrackOutline.SetTrack(eventTrack?.Definition);
         bool eventCompleted = selectedEvent?.completed == true;
         startRaceButton.text = eventCompleted ? "View Results" : "Go To Event";
         bool canRunEvent = available && !eventCompleted && HasDriver(activeCareer) &&
             chosenCar != null;
-        startRaceButton.SetEnabled(eventCompleted || canRunEvent);
+        bool canResume = available && HasDriver(activeCareer) &&
+            selectedEvent?.sessions?.Any(session => session.Completed) == true && EventGarageCar(selectedEvent) != null;
+        startRaceButton.SetEnabled(eventCompleted || canRunEvent || canResume);
         simulateEventButton.SetEnabled(canRunEvent);
         var details = garageScreen.Q<Label>("scheduleStatus");
         if (selectedEvent == null)
@@ -2558,6 +2637,43 @@ public sealed class StartupMenu : MonoBehaviour
                 details.text += $"\nPurse  /  {RaceFinances.Dollars(selectedEvent.purse)}";
         }
         settings?.RestorePalette();
+    }
+
+    private void RevealScheduleRow(ScrollView rows, VisualElement row)
+    {
+        var page = garageScreen.Q("schedulePage");
+        IVisualElementScheduledItem reveal = null;
+        reveal = rows.schedule.Execute(() =>
+        {
+            if (row.parent != rows || page.style.display == DisplayStyle.None)
+            {
+                reveal.Pause();
+                return;
+            }
+
+            // Use the row's position in the unscrolled content. Its panel bounds
+            // can still reflect the previous scroll offset while the tab opens.
+            float viewportHeight = rows.contentViewport.layout.height;
+            float contentHeight = rows.contentContainer.layout.height;
+            Rect rowLayout = row.layout;
+            if (!(viewportHeight > 0f && rowLayout.height > 0f && contentHeight >= rowLayout.yMax))
+                return;
+
+            float offset = rows.scrollOffset.y;
+            if (rowLayout.yMin < offset || rowLayout.yMax > offset + viewportHeight)
+            {
+                float target = Mathf.Max(0f, rowLayout.center.y - viewportHeight * 0.5f);
+                float maximum = Mathf.Max(0f, contentHeight - viewportHeight);
+                target = Mathf.Min(target, maximum);
+                if (!(rows.verticalScroller.highValue >= target - 0.5f))
+                    return;
+
+                rows.scrollOffset = new Vector2(rows.scrollOffset.x, target);
+                if (Mathf.Abs(rows.scrollOffset.y - target) > 0.5f)
+                    return;
+            }
+            reveal.Pause();
+        }).Every(16).ForDuration(2000);
     }
 
     private void DisplayTeamStandings(SeasonSchedule schedule)
@@ -2638,57 +2754,8 @@ public sealed class StartupMenu : MonoBehaviour
         }
     }
 
-    private void UpdateScheduleTrackOutline(TrackDefinition track)
+    internal static void DisplayTrackRatings(VisualElement chart, TrackWeights weights, bool all = false)
     {
-        scheduleTrackOutline.style.display = track == null ? DisplayStyle.None : DisplayStyle.Flex;
-        if (track == null)
-            return;
-
-        float lapLength = track.lengthMiles * TrackDefinition.MetersPerMile;
-        var points = track.layoutPoints?.Length >= 3 ? track.layoutPoints : TrackUtilityGeometry.EditableOval(track);
-        var layout = new TrackLayout(points, lapLength, track.widthMeters);
-        Vector2 min = new Vector2(float.PositiveInfinity, float.PositiveInfinity);
-        Vector2 max = -min;
-        for (int i = 0; i < scheduleOutlinePoints.Length; i++)
-        {
-            Vector3 position = layout.Sample(lapLength * i / scheduleOutlinePoints.Length, out _, out _);
-            var point = new Vector2(position.x, -position.z);
-            scheduleOutlinePoints[i] = point;
-            min = Vector2.Min(min, point);
-            max = Vector2.Max(max, point);
-        }
-
-        scheduleOutlineBounds = Rect.MinMaxRect(min.x, min.y, max.x, max.y);
-        scheduleTrackOutline.MarkDirtyRepaint();
-    }
-
-    private void DrawScheduleTrackOutline(MeshGenerationContext context)
-    {
-        Rect viewport = scheduleTrackOutline.contentRect;
-        const float padding = 6f;
-        if (viewport.width <= padding * 2f || viewport.height <= padding * 2f ||
-            scheduleOutlineBounds.size.sqrMagnitude <= 0f)
-            return;
-
-        float scale = Mathf.Min(
-            (viewport.width - padding * 2f) / Mathf.Max(1f, scheduleOutlineBounds.width),
-            (viewport.height - padding * 2f) / Mathf.Max(1f, scheduleOutlineBounds.height));
-        Vector2 offset = viewport.center - scheduleOutlineBounds.center * scale;
-        var painter = context.painter2D;
-        painter.strokeColor = scheduleTrackOutline.resolvedStyle.color;
-        painter.lineWidth = 2.5f;
-        painter.lineJoin = LineJoin.Round;
-        painter.BeginPath();
-        painter.MoveTo(scheduleOutlinePoints[0] * scale + offset);
-        for (int i = 1; i < scheduleOutlinePoints.Length; i++)
-            painter.LineTo(scheduleOutlinePoints[i] * scale + offset);
-        painter.ClosePath();
-        painter.Stroke();
-    }
-
-    private void DisplayTrackRatings(TrackWeights weights)
-    {
-        var chart = garageScreen.Q("scheduleTrackRatings");
         chart.Clear();
         chart.style.display = weights == null ? DisplayStyle.None : DisplayStyle.Flex;
         if (weights == null)
@@ -2697,7 +2764,14 @@ public sealed class StartupMenu : MonoBehaviour
         AddRatingBar(chart, "Aero", weights.aerodynamics);
         AddRatingBar(chart, "Handling", weights.handling);
         AddRatingBar(chart, "Brakes", weights.brakes);
+        AddRatingBar(chart, "Transmission", weights.transmission);
         AddRatingBar(chart, "Tire wear", weights.tireWear);
+        if (all)
+        {
+            AddRatingBar(chart, "Horsepower", weights.horsepower);
+            AddRatingBar(chart, "Suspension", weights.suspension);
+            AddRatingBar(chart, "Roughness", weights.surfaceRoughness);
+        }
     }
 
     private static void AddRatingBar(VisualElement chart, string title, float value)
@@ -2742,15 +2816,18 @@ public sealed class StartupMenu : MonoBehaviour
 
     private TeamCar EventCar(ScheduledRace race)
     {
+        var car = EventGarageCar(race);
+        return car != null && CanEnterRace(car, race) ? car : null;
+    }
+
+    private TeamCar EventGarageCar(ScheduledRace race)
+    {
         if (race == null)
             return null;
         var car = string.IsNullOrEmpty(race.carChassisNumber)
             ? activeCareer.cars.Find(item => item.number == race.carNumber)
             : activeCareer.cars.Find(item => item.chassisNumber == race.carChassisNumber);
-        if (race.completed)
-            return car;
-        car ??= activeCareer.cars[0];
-        return CanEnterRace(car, race) ? car : null;
+        return race.completed ? car : car ?? activeCareer.cars.FirstOrDefault();
     }
 
     private void AssignEventCar(TeamCar car)
@@ -2801,16 +2878,120 @@ public sealed class StartupMenu : MonoBehaviour
             return;
         }
 
+        if (ShowRequiredEmailTooltip())
+            return;
+
         var track = catalog.Entries.Find(entry => entry.Definition.id == race.trackId);
-        if (!HasDriver(activeCareer) || EventCar(race) == null ||
-            track == null)
+        var car = EventGarageCar(race);
+        bool started = race.sessions?.Any(session => session.Completed) == true;
+        if (!HasDriver(activeCareer) || car == null || (!started && !CanEnterRace(car, race)) || track == null)
             return;
 
         PrepareEventSessions(race, track.Definition);
         activeRace = race;
         garageScreen.style.display = DisplayStyle.None;
         raceEventView.Screen.style.display = DisplayStyle.Flex;
-        raceEventView.Open(race, EventCar(race)?.ChassisDisplayName ?? "Car not recorded");
+        raceEventView.SimulateGarageLaps = SimulateGarageRun;
+        raceEventView.CanSimulateGarageLaps = CanSimulateGarageRun;
+        raceEventView.Open(race, track.Definition, car, carThumbnails.Get(car, ActiveSponsorNames()),
+            () => activeCareer.teamBalance, component => RepairEventComponent(car, component),
+            () => ServiceEventCondition(race, car, changeTires: true),
+            () => ServiceEventCondition(race, car, changeTires: false),
+            (name, setup) => SaveTrackSetup(car, track.Definition.id, name, setup),
+            () => carThumbnails.Get(car, ActiveSponsorNames(), overhead: true),
+            () => ReadEventCondition(race, car), CanServiceInGarage);
+    }
+
+    private string SaveTrackSetup(TeamCar car, int trackId, string name, Setup setup)
+    {
+        if (activeRace?.SetupLocked == true) return "Setup locked: qualifying has started.";
+        if (TrackSetup.IsDefaultName(name))
+            return "Default is read-only. Enter a new setup name.";
+
+        var previous = car.trackSetups;
+        car.trackSetups = (previous ?? Enumerable.Empty<TrackSetup>())
+            .Where(item => item != null && !(item.trackId == trackId && item.Matches(name)))
+            .Append(new TrackSetup { trackId = trackId, name = name, setup = setup }).ToList();
+        try
+        {
+            careerSetup.SaveProgress(activeCareer);
+            return null;
+        }
+        catch (System.Exception ex) when (ex is IOException || ex is System.UnauthorizedAccessException)
+        {
+            car.trackSetups = previous;
+            return "Could not save the setup. " + ex.Message;
+        }
+    }
+
+    private void RepairEventComponent(TeamCar car, CarComponent component)
+    {
+        if (!CanServiceInGarage())
+            return;
+        float oldWear = car.ComponentWear(component);
+        int cost = ComponentRepair.CostForWear(oldWear);
+        if (cost <= 0 || car.repairs?.Any(job => job.component == component) == true)
+            return;
+        if (activeCareer.teamBalance < cost)
+        {
+            raceEventView.RefreshGarage($"Insufficient funds to repair {component}. The repair costs {RaceFinances.Dollars(cost)}.");
+            return;
+        }
+        car.ComponentWear(component) = 0f;
+        SaveEventService(cost, () => car.ComponentWear(component) = oldWear, $"{component} repaired.");
+    }
+
+    private void ServiceEventCondition(ScheduledRace race, TeamCar car, bool changeTires)
+    {
+        if (!CanServiceInGarage())
+            return;
+        var old = ReadEventCondition(race, car);
+        int cost = changeTires ? 0 : ComponentRepair.CostForWear(old.damage / 100f);
+        if (activeCareer.teamBalance < cost && cost > 0)
+            return;
+        var previous = race.playerCondition;
+        race.playerCondition = new EventCarCondition
+        {
+            chassis = car.chassisNumber,
+            damage = changeTires ? old.damage : 0f,
+            wear = changeTires ? null : old.wear,
+            coldPressures = changeTires ? null : old.coldPressures,
+            temperature = changeTires ? null : old.temperature
+        };
+        bool applyToLiveCar = sessionInGarage && trackPreview.SessionRun.Vehicle(0) == car;
+        if (applyToLiveCar)
+            race.playerCondition.Apply(car);
+        SaveEventService(cost, () =>
+        {
+            race.playerCondition = previous;
+            if (applyToLiveCar)
+                old.Apply(car);
+        }, changeTires ? "Four new tires fitted." : "Body repaired.");
+    }
+
+    private EventCarCondition ReadEventCondition(ScheduledRace race, TeamCar car) =>
+        sessionInGarage && trackPreview.SessionRun.Vehicle(0) == car
+            ? EventCarCondition.Capture(car, car.Damage) : race.ConditionFor(car);
+
+    private bool CanServiceInGarage() => !sessionInGarage || trackPreview.PlayerParkedForGarage;
+
+    private void SaveEventService(int cost, System.Action rollback, string message)
+    {
+        activeCareer.teamBalance -= cost;
+        activeCareer.schedule.componentRepairs += cost;
+        try
+        {
+            careerSetup.SaveProgress(activeCareer);
+        }
+        catch (System.Exception ex) when (ex is IOException || ex is System.UnauthorizedAccessException)
+        {
+            rollback();
+            activeCareer.teamBalance += cost;
+            activeCareer.schedule.componentRepairs -= cost;
+            message = "Could not save the work. " + ex.Message;
+        }
+        RefreshTeamBalance();
+        raceEventView.RefreshGarage(message);
     }
 
     private static void PrepareEventSessions(ScheduledRace race, TrackDefinition track)
@@ -2851,6 +3032,12 @@ public sealed class StartupMenu : MonoBehaviour
 
     private bool TrySimulateEvent(ScheduledRace race, System.DateTime? skipToDate, out string error)
     {
+        if (ScenarioMail.HasPending(activeCareer))
+        {
+            error = RequiredEmailMessage;
+            return false;
+        }
+
         var track = catalog.Entries.Find(entry => entry.Definition.id == race.trackId);
         if (track == null)
         {
@@ -2873,9 +3060,12 @@ public sealed class StartupMenu : MonoBehaviour
 
         var results = new List<(RaceSession Session, List<SessionCarResult> Results)>();
         var qualifyingOrder = QualifyingOrder(race);
+        var condition = skipped ? null : race.ConditionFor(car);
         foreach (var session in race.sessions.Where(session => !session.Completed))
         {
-            var sessionResults = SimulateSession(race, session, track, car, random, skipped, qualifyingOrder);
+            var sessionResults = SimulateSession(race, session, track, car, random, skipped, qualifyingOrder, condition);
+            if (!skipped)
+                condition = sessionResults.Find(result => result.car == car)?.trackCondition ?? condition;
             results.Add((session, sessionResults));
             if (session.kind == RaceSessionKind.Qualifying)
                 qualifyingOrder = sessionResults.Select(result => result.carNumber).ToArray();
@@ -2910,41 +3100,88 @@ public sealed class StartupMenu : MonoBehaviour
     }
 
     private List<SessionCarResult> SimulateSession(ScheduledRace race, RaceSession session, TrackCatalog.Entry track, TeamCar car,
-        System.Random random, bool rivalsOnly = false, int[] qualifyingOrder = null)
+        System.Random random, bool rivalsOnly = false, int[] qualifyingOrder = null, EventCarCondition condition = null)
     {
         var entries = TrackPreview.CreateTimingEntries(car, activeCareer);
         if (rivalsOnly)
             entries = entries.Skip(1).ToArray();
+        else
+            (condition ?? race.ConditionFor(car)).Apply(car);
 
-        var simulation = new CarSimulationContext(track.Definition, race, session, entries, isInstant: true);
-        return RaceSessionRun.Simulate(simulation, settings.SpeedModel, random, qualifyingOrder, includesPlayer: !rivalsOnly);
+        var simulation = new CarSimulationContext(track.Definition, race, session, entries, isInstant: true,
+            preservePlayerCondition: !rivalsOnly);
+        if (!rivalsOnly && activeRace == race) simulation.PlayerSetup = raceEventView.CurrentSetup;
+        var results = RaceSessionRun.Simulate(simulation, settings.SpeedModel, random, qualifyingOrder, includesPlayer: !rivalsOnly);
+        if (!rivalsOnly && results.Find(result => result.car == car) is SessionCarResult player)
+            player.trackCondition = EventCarCondition.Capture(car, player.damageAtFinish);
+        return results;
     }
 
     private static int[] QualifyingOrder(ScheduledRace race) =>
         race.sessions?.Find(session => session.kind == RaceSessionKind.Qualifying)?.qualifyingOrder;
 
+    private bool CanSimulateGarageRun() =>
+        activeRace != null && !activeRace.completed &&
+        (activeSession == null
+            ? activeRace.sessions.Any(session => !session.Completed)
+            : sessionInGarage && trackPreview.PlayerParkedForGarage && !trackPreview.SimulatingGarageLaps &&
+                !trackPreview.SessionComplete && !trackPreview.SessionRun.Retired(0));
+
+    private void SimulateGarageRun(int laps)
+    {
+        if (!CanSimulateGarageRun())
+            return;
+        if (activeSession == null)
+        {
+            StartNextSession(false);
+            if (activeSession == null || trackPreview == null)
+                return;
+            VisitGarageDuringSession();
+            if (!sessionInGarage)
+                return;
+        }
+        playerLapsAtGarageDeparture = trackPreview.SessionRun.PlayerLaps;
+        trackPreview.SetPlayerSetup(raceEventView.CurrentSetup);
+        trackPreview.SessionRun.SetFuel(0, raceEventView.StartingFuelGallons);
+        trackPreview.BeginGarageLaps(laps);
+        garageCarParked = false;
+        raceEventView.RefreshGarageParking();
+    }
+
     private void StartNextSession(bool simulate)
     {
+        if (sessionInGarage)
+        {
+            if (!simulate)
+                ResumeSession();
+            return;
+        }
+
         var session = activeRace?.sessions.FirstOrDefault(item => !item.Completed);
         if (session == null || activeRace.completed)
             return;
+        if (ScenarioMail.HasPending(activeCareer))
+        {
+            raceEventView.ShowEvent(RequiredEmailMessage);
+            return;
+        }
         var track = catalog.Entries.Find(entry => entry.Definition.id == activeRace.trackId);
         if (track == null)
         {
-            raceEventView.ShowSchedule("The track definition is unavailable.");
+            raceEventView.ShowEvent("The track definition is unavailable.");
             return;
         }
 
         var car = EventCar(activeRace);
         if (car == null)
         {
-            raceEventView.ShowSchedule("Choose a car that is available on race day.");
+            raceEventView.ShowEvent("Choose a car that is available on race day.");
             return;
         }
 
         if (!PrepareRivalCarsForEvent(activeRace, out string error))
         {
-            raceEventView.ShowSchedule(error);
+            raceEventView.ShowEvent(error);
             return;
         }
 
@@ -2965,30 +3202,47 @@ public sealed class StartupMenu : MonoBehaviour
         if (trackPreview.Image == null)
         {
             ReturnToGarage();
-            raceEventView.ShowSchedule("Could not start the session.");
+            raceEventView.ShowEvent("Could not start the session.");
             return;
         }
         if (settings.SimulationModel is TrackState001 && !trackPreview.HasSessionPitRoad)
         {
             ReturnToGarage();
-            raceEventView.ShowSchedule("TrackState001 requires a pit road with an entry and exit for this session.");
+            raceEventView.ShowEvent("TrackState001 requires a pit road with an entry and exit for this session.");
             return;
         }
 
         activeSession = session;
+        playerLapsAtGarageDeparture = 0;
+        raceEventView.SetRunningSession(session);
+        activeRace.ConditionFor(car).Apply(car);
         var simulation = new CarSimulationContext(track.Definition, activeRace, session,
-            TrackPreview.CreateTimingEntries(car, activeCareer));
+            TrackPreview.CreateTimingEntries(car, activeCareer), preservePlayerCondition: true)
+        {
+            PlayerSetup = raceEventView.CurrentSetup,
+            EqualConditionTesting = settings.EqualConditionPractice && session.kind == RaceSessionKind.Practice
+        };
         trackPreview.BeginSession(simulation, settings.SimulationModel, settings.SpeedModel, settings.BehaviorModel,
             QualifyingOrder(activeRace), settings.UsePaceTruck);
+        if (session.kind != RaceSessionKind.Practice)
+            careerSetup.SaveProgress(activeCareer); // Persist the qualifying lock before the session runs.
+        raceEventView.EqualConditionTesting = trackPreview.EqualConditionTesting;
+        trackPreview.SessionRun.SetFuel(0, raceEventView.StartingFuelGallons);
         RefreshTrackTiming();
         sessionSpeedSelector.SetValueWithoutNotify(sessionSpeedSelector.choices[0]);
         sessionSpeedSelector.style.display = DisplayStyle.Flex;
+        garageVisitPending = false;
+        visitGarageButton.text = "Garage";
+        visitGarageButton.style.display = DisplayStyle.Flex;
+        visitGarageButton.SetEnabled(trackPreview.CanVisitGarage);
+        visitGarageButton.tooltip = trackPreview.CanVisitGarage ? "Call your car to its pit stall" :
+            "Garage visits require a pit route for this session.";
         UpdateSessionLabel();
     }
 
     private void Update()
     {
-        if (trackPreview != null && trackPreview.gameObject.activeSelf)
+        if (!sessionInGarage && trackPreview != null && trackPreview.gameObject.activeSelf)
         {
             UpdateTrackFps();
             RefreshTrackTiming();
@@ -2996,7 +3250,38 @@ public sealed class StartupMenu : MonoBehaviour
         if (activeSession == null || trackPreview?.SessionRun == null)
             return;
 
-        UpdateSessionLabel();
+        if (garageVisitPending && trackPreview.PlayerParkedForGarage && !trackPreview.SessionComplete)
+            OpenGarageAfterParking();
+        else if (garageVisitPending && !sessionInGarage)
+        {
+            bool stopped = trackPreview.PlayerStoppedOnTrack;
+            visitGarageButton.SetEnabled(stopped);
+            visitGarageButton.text = stopped ? "Garage" : "Pitting...";
+            visitGarageButton.tooltip = stopped ? "Car stopped on track. Click to open the garage." :
+                "The garage will open when your car is parked in its pit stall.";
+        }
+
+        if (sessionInGarage)
+        {
+            raceEventView.UpdateSessionClock(trackPreview.SessionRun.Elapsed);
+            raceEventView.UpdateWeather(trackPreview.SessionRun.Weather);
+            raceEventView.UpdateSessionLaps(trackPreview.SessionRun.PlayerLaps, playerLapsAtGarageDeparture);
+            if (trackPreview.ConsumeGarageRunReport())
+            {
+                raceEventView.RefreshGarageParking();
+                raceEventView.ShowPracticeRunResults();
+            }
+            bool parked = trackPreview.PlayerParkedForGarage;
+            if (parked != garageCarParked)
+            {
+                garageCarParked = parked;
+                raceEventView.RefreshGarageParking();
+                if (parked)
+                    raceEventView.ShowPracticeRunResults();
+            }
+        }
+        else
+            UpdateSessionLabel();
         if (trackPreview.SessionComplete)
         {
             var session = activeSession;
@@ -3116,10 +3401,24 @@ public sealed class StartupMenu : MonoBehaviour
         return label;
     }
 
+    private void ChangeTrafficLaneChanges(ChangeEvent<bool> evt)
+    {
+        raceEventView?.SetTrafficOptions(trackCollisionsToggle.value, evt.newValue);
+        if (trackPreview != null)
+            trackPreview.TrafficLaneChangesEnabled = evt.newValue;
+    }
+
+    private void ChangeTrackCollisions(ChangeEvent<bool> evt)
+    {
+        raceEventView?.SetTrafficOptions(evt.newValue, trafficLaneChangesToggle.value);
+        if (trackPreview != null)
+            trackPreview.SetCollisionsEnabled(evt.newValue);
+    }
+
     private void ChangeSessionSpeed(ChangeEvent<string> evt)
     {
         int index = sessionSpeedSelector.index;
-        if (activeSession != null && index >= 0 && index < sessionSpeedSelector.choices.Count)
+        if (!sessionInGarage && activeSession != null && index >= 0 && index < sessionSpeedSelector.choices.Count)
             trackPreview.SetSessionSpeed(evt.newValue == "Pause" ? 0 : 1 << index);
     }
 
@@ -3189,12 +3488,17 @@ public sealed class StartupMenu : MonoBehaviour
             if (pitTires[i].value)
                 tires |= 1 << i;
         }
-        trackPreview?.RequestPlayerPit(refuelAtStop.value ? pitFuelAmount.value : 0f, tires, pitRepairAmount.value);
+        trackPreview?.RequestPlayerPit(refuelAtStop.value ? pitFuelAmount.value : 0f, tires, pitRepairAmount.value, pitPressures.Select(field => field.value).ToArray());
     }
 
     private void UpdatePlayerPitPanel(RaceSessionRun run)
     {
         var car = run.Vehicle(0);
+        if (pressurePanelRun != run)
+        {
+            pressurePanelRun = run;
+            for (int i = 0; i < 4; i++) pitPressures[i].SetValueWithoutNotify(VehicleSpeed003.ColdPressure(run.SetupForCar(0), i, car?.GetTire(i)));
+        }
         double fuel = run.Fuel(0);
         float damage = car?.Damage ?? 0f;
         playerCarStatus.text = $"Fuel {fuel:F1} / {SessionFuel.TankCapacity:F0} gal";
@@ -3216,6 +3520,7 @@ public sealed class StartupMenu : MonoBehaviour
             pitTireFill[i].style.height = Length.Percent((1f - wear) * 100f);
             pitTireWear[i].text = wear.ToString("P0");
             pitTires[i].SetEnabled(canRequest);
+            pitPressures[i].SetEnabled(canRequest && pitTires[i].value && !run.SetupLocked);
         }
     }
 
@@ -3250,6 +3555,11 @@ public sealed class StartupMenu : MonoBehaviour
         cautionButton.SetEnabled(trackPreview.CanRequestCaution);
         snapshotButton.SetEnabled(trackPreview.CanSaveSnapshot);
         var run = trackPreview.SessionRun;
+        playerTrackLaps.text = $"Run laps: {trackPreview.PlayerRunLaps} / Session laps: {run.PlayerLaps}";
+        trackWeatherLabel.text = $"Air {run.Weather.AmbientFahrenheit:0}�F � Track {run.Weather.TrackFahrenheit:0}�F";
+        trackWeatherLabel.tooltip = run.Weather.Summary;
+        trackWeatherLock.style.display = run.Weather.CanLock ? DisplayStyle.Flex : DisplayStyle.None;
+        trackWeatherLock.SetValueWithoutNotify(run.Weather.IsLocked);
         UpdatePlayerPitPanel(run);
         var state = trackPreview.TrackState;
         UpdateTrackFlags(state, trackPreview.OneToGoBeforeGreen);
@@ -3302,7 +3612,7 @@ public sealed class StartupMenu : MonoBehaviour
         }
         catch (System.Exception ex) when (ex is IOException || ex is System.UnauthorizedAccessException)
         {
-            raceEventView.ShowSchedule("Could not save the session result. " + ex.Message);
+            raceEventView.ShowEvent("Could not save the session result. " + ex.Message);
             return;
         }
 
@@ -3314,6 +3624,7 @@ public sealed class StartupMenu : MonoBehaviour
         IReadOnlyList<(RaceSession Session, List<SessionCarResult> Results)> results, System.DateTime? skipToDate = null)
     {
         var season = activeCareer.schedule;
+        var previousCondition = race.playerCondition;
         var previousSessions = results.Select(item => (item.Session, item.Session.results,
             item.Session.temporaryResults, item.Session.completed, item.Session.practiceWear, item.Session.qualifyingOrder,
             item.Session.playerContacts, item.Session.playerReport)).ToArray();
@@ -3327,13 +3638,15 @@ public sealed class StartupMenu : MonoBehaviour
         long previousRaceSponsorIncome = race.sponsorIncome;
         var previousSponsorPayments = race.sponsorPayments;
         var previousRaceExpenses = race.expenses;
-        var previousContracts = activeCareer.sponsors;
-        var previousOffers = activeCareer.sponsorOffers;
+        var previousSponsor = activeCareer.PrimarySponsor;
         string previousDate = activeCareer.currentDate;
         bool previouslyCompleted = race.completed;
         var previousArchives = activeCareer.completedSeasons;
         bool archivedSeason = false;
         System.Action undoRepairs = null;
+        System.Action undoMorale = null;
+        System.Action undoDriverProgress = null;
+        System.Action undoEmployeeProgress = null;
         try
         {
             foreach (var item in results)
@@ -3376,7 +3689,10 @@ public sealed class StartupMenu : MonoBehaviour
                 }
                 session.completed = true;
                 if (player != null)
+                {
                     session.playerReport = new PlayerSessionReport(player, item.Results.Count, playerWear);
+                    race.playerCondition = player.trackCondition ?? EventCarCondition.Capture(player.car, player.damageAtFinish);
+                }
                 session.playerContacts = item.Results.FirstOrDefault(result => result.contacts?.Count > 0)?.contacts;
                 if (session.kind != RaceSessionKind.Race)
                 {
@@ -3398,8 +3714,14 @@ public sealed class StartupMenu : MonoBehaviour
 
             if (!previouslyCompleted && race.completed)
             {
+                var staffBefore = CrewChiefMail.CaptureStaffProgress(activeCareer, track);
+                undoMorale = RaceMorale.Apply(activeCareer, race);
+                undoDriverProgress = DriverRaceProgress.Apply(activeCareer, race, track);
+                undoEmployeeProgress = EmployeeRaceProgress.Apply(activeCareer, race, track);
                 CrewChiefMail.SendRecap(activeCareer, race);
+                CrewChiefMail.SendStaffProgress(activeCareer, race, staffBefore);
                 BroadcastCoverage.SendRecaps(activeCareer, race);
+                ScenarioMail.MaybeSendPostRace(activeCareer, race);
                 long annualPayroll = activeCareer.AnnualPayroll;
                 int completedRaces = season.races.Count(item => item.completed);
                 long installment = RaceFinances.PayrollInstallment(annualPayroll, season.races.Count, completedRaces);
@@ -3407,13 +3729,14 @@ public sealed class StartupMenu : MonoBehaviour
                 season.payrollPaid += installment;
                 if (!race.playerSkipped)
                 {
-                    race.expenses = RaceExpenses.Generate(new System.Random());
+                    var enteredCar = EventCar(race);
+                    race.expenses = RaceExpenses.Generate(new System.Random(), activeCareer.EngineSupplierFor(enteredCar));
                     activeCareer.teamBalance -= race.expenses.Total;
                 }
                 int finish = race.playerSkipped ? 0 : race.sessions.Find(session => session.kind == RaceSessionKind.Race)
                     .results.Find(result => result.carNumber == race.carNumber)?.position ?? 0;
-                activeCareer.sponsors = Sponsorships.Settle(previousContracts ?? Enumerable.Empty<SponsorContract>(),
-                    finish, out long income, out var payments);
+                activeCareer.primarySponsor = Sponsorships.Settle(previousSponsor,
+                    finish, season.season, out long income, out var payments);
                 race.sponsorPayments = payments;
                 race.sponsorIncome = income;
                 season.sponsorIncome += income;
@@ -3425,42 +3748,42 @@ public sealed class StartupMenu : MonoBehaviour
                 Career.TryReadDate(race.date, out var raceDate) && raceDate < System.DateTime.MaxValue.Date)
                 postRaceDate = raceDate.AddDays(1);
 
-            if (Career.TryReadDate(activeCareer.currentDate, out var currentDate) &&
-                postRaceDate.HasValue && postRaceDate.Value < currentDate)
-                postRaceDate = currentDate;
+            if (Career.TryReadDate(activeCareer.currentDate, out var currentDate) && postRaceDate.HasValue)
+            {
+                var seasonStart = new System.DateTime(season.season, 1, 1);
+                if (postRaceDate.Value < currentDate)
+                    postRaceDate = currentDate;
+                else if (currentDate < seasonStart && postRaceDate.Value > seasonStart &&
+                    !ScenarioMail.HasSeasonSponsorship(activeCareer))
+                    postRaceDate = seasonStart;
+            }
 
-            if (postRaceDate.HasValue)
+            if (postRaceDate.HasValue && !ScenarioMail.HasPending(activeCareer))
                 activeCareer.SetDate(postRaceDate.Value);
 
             if (!previouslyCompleted && race.completed && season.races.All(item => item.completed))
             {
                 catalog.Refresh();
-                var last = season.races[season.races.Count - 1];
-                System.DateTime? previous = System.DateTime.TryParseExact(last.date, "yyyy-MM-dd",
-                    CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed) ? parsed : (System.DateTime?)null;
-                activeCareer.schedule = careerSetup.GenerateSeason(season.season + 1, previous);
-                activeCareer.SetSeasonStartDate();
-                if (postRaceDate.HasValue && Career.TryReadDate(activeCareer.currentDate, out var seasonStart) &&
-                    seasonStart < postRaceDate.Value)
-                    activeCareer.SetDate(postRaceDate.Value);
+                activeCareer.schedule = careerSetup.GenerateSeason(season.season + 1);
+                var nextSeasonStart = new System.DateTime(activeCareer.schedule.season, 1, 1);
+                if (!ScenarioMail.HasPending(activeCareer) &&
+                    (!Career.TryReadDate(activeCareer.currentDate, out var rolloverDate) || rolloverDate < nextSeasonStart))
+                    activeCareer.SetSeasonStartDate();
+                ScenarioMail.SendSeasonStart(activeCareer);
                 activeCareer.completedSeasons ??= new List<SeasonSchedule>();
                 activeCareer.completedSeasons.Add(season);
                 archivedSeason = true;
             }
 
             if (!previouslyCompleted && race.completed)
-            {
                 undoRepairs = UpdateCareerRepairs();
-                var standings = GetStandings(season);
-                int playerIndex = standings.FindIndex(car => car.Key.IsPlayer);
-                int rank = playerIndex >= 0 && standings[playerIndex].Value > 0
-                    ? standings.FindIndex(car => car.Value == standings[playerIndex].Value) + 1
-                    : standings.Count;
-                var upcomingRaces = activeCareer.schedule.races;
-                activeCareer.sponsorOffers = Sponsorships.CreateOffers(activeCareer.sponsors, rank, standings.Count,
-                    upcomingRaces.Count(item => !item.completed), upcomingRaces.Count, new System.Random());
-            }
 
+            if (Career.TryReadDate(activeCareer.currentDate, out var newDate))
+            {
+                if (Career.TryReadDate(previousDate, out var oldDate))
+                    ScenarioMail.SendNewYear(activeCareer, oldDate, newDate);
+                SendSeasonSponsorshipIfDue(newDate);
+            }
             CrewChiefMail.SendPreview(activeCareer, catalog, RaceCarBlockReason);
             careerSetup.SaveProgress(activeCareer);
         }
@@ -3482,14 +3805,17 @@ public sealed class StartupMenu : MonoBehaviour
             race.sponsorIncome = previousRaceSponsorIncome;
             race.sponsorPayments = previousSponsorPayments;
             race.expenses = previousRaceExpenses;
-            activeCareer.sponsors = previousContracts;
-            activeCareer.sponsorOffers = previousOffers;
+            activeCareer.primarySponsor = previousSponsor;
             undoRepairs?.Invoke();
+            undoMorale?.Invoke();
+            undoDriverProgress?.Invoke();
+            undoEmployeeProgress?.Invoke();
             foreach (var entry in wearBefore)
                 entry.Key.Car.ComponentWear(entry.Key.Component) = entry.Value;
             activeCareer.currentDate = previousDate;
             CrewChiefMail.UndoNewMessages(activeCareer, inboxCount);
             race.completed = previouslyCompleted;
+            race.playerCondition = previousCondition;
             activeCareer.schedule = season;
             if (archivedSeason)
                 activeCareer.completedSeasons.Remove(season);
@@ -3500,22 +3826,26 @@ public sealed class StartupMenu : MonoBehaviour
 
     private void LeaveRaceEvent()
     {
+        if (sessionInGarage)
+            ReturnToGarage();
         activeRace = null;
         raceEventView.Screen.style.display = DisplayStyle.None;
         garageScreen.style.display = DisplayStyle.Flex;
         RefreshCareerDate();
         RefreshSchedule();
-        DisplayGaragePage(0);
-        garageTabs[0].Focus();
+        int shop = System.Array.FindIndex(garagePages, page => page.name == "shopPage");
+        DisplayGaragePage(shop);
+        garageTabs[shop].Focus();
     }
 
     private string[] ActiveSponsorNames()
     {
-        var names = new string[Sponsorships.Slots];
-        foreach (var contract in activeCareer?.sponsors ?? Enumerable.Empty<SponsorContract>())
-            names[contract.slot] = Sponsorships.CompanyName(contract.offer.companyId);
-        return names;
+        string sponsor = ActiveSponsorName();
+        return sponsor == null ? System.Array.Empty<string>() : new[] { sponsor };
     }
+
+    private string ActiveSponsorName() => activeCareer?.PrimarySponsor is SponsorContract contract
+        ? Sponsorships.CompanyName(contract.offer.companyId) : null;
 
     private void OpenTrack(TrackCatalog.Entry track, bool restart, int carNumber, bool night = false)
     {
@@ -3526,6 +3856,8 @@ public sealed class StartupMenu : MonoBehaviour
         {
             if (trackPreview != null)
             {
+                trackPreview.FinishPracticeSetups();
+        trackPreview.FinishGarageRun("Session ended");
                 trackPreview.gameObject.SetActive(false);
                 Destroy(trackPreview.gameObject);
             }
@@ -3537,6 +3869,8 @@ public sealed class StartupMenu : MonoBehaviour
             timingCells.Clear();
             trackTimingRows.Clear();
             trackPreview = preview.AddComponent<TrackPreview>();
+            trackPreview.SetCollisionsEnabled(trackCollisionsToggle.value);
+            trackPreview.TrafficLaneChangesEnabled = trafficLaneChangesToggle.value;
             trackPreview.Initialize(track.Definition, carNumber, ActiveSponsorNames(), EventCar(activeRace), night);
             previewTrack = track;
             previewCarNumber = carNumber;
@@ -3547,6 +3881,7 @@ public sealed class StartupMenu : MonoBehaviour
         trackScreen.Q<Label>("selectedTrackName").text = $"03  /  {track.Definition.name.ToUpperInvariant()}";
         trackScreen.Q<Label>("trackPlayerCarLabel").text = $"NO. {carNumber}";
         trackPreview.gameObject.SetActive(true);
+        visitGarageButton.style.display = DisplayStyle.None;
         garageScreen.style.display = DisplayStyle.None;
         fpsSampleStart = Time.unscaledTimeAsDouble;
         fpsSampleFrames = 0;
@@ -3669,11 +4004,80 @@ public sealed class StartupMenu : MonoBehaviour
         trackPreview?.ResetView();
     }
 
+    private void VisitGarageDuringSession()
+    {
+        if (activeRace == null || activeSession == null || !trackPreview.CanVisitGarage || trackPreview.SessionComplete)
+            return;
+
+        if (sessionInGarage || (garageVisitPending && !trackPreview.PlayerStoppedOnTrack))
+            return;
+        bool stoppedOnTrack = trackPreview.PlayerStoppedOnTrack;
+        trackPreview.SetPlayerGarageVisit(true);
+        garageVisitPending = true;
+        visitGarageButton.text = "Pitting...";
+        visitGarageButton.tooltip = "The garage will open when your car is parked in its pit stall.";
+        visitGarageButton.SetEnabled(false);
+        if (trackPreview.PlayerParkedForGarage || stoppedOnTrack)
+            OpenGarageAfterParking(stoppedOnTrack);
+    }
+
+    private void OpenGarageAfterParking(bool allowStoppedOnTrack = false)
+    {
+        if (!garageVisitPending ||
+            !(trackPreview.PlayerParkedForGarage || allowStoppedOnTrack && trackPreview.PlayerStoppedOnTrack) ||
+            trackPreview.SessionComplete)
+            return;
+        garageVisitPending = false;
+        ReleaseTrackPointer();
+        sessionInGarage = true;
+        trackPreview.SetSessionSpeed(1);
+        garageCarParked = trackPreview.PlayerParkedForGarage;
+        trackPreview.SetTrackRendering(false);
+        trackScreen.style.display = DisplayStyle.None;
+        raceEventView.Screen.style.display = DisplayStyle.Flex;
+        raceEventView.ShowGarage();
+        raceEventView.UpdateSessionLaps(trackPreview.SessionRun.PlayerLaps, playerLapsAtGarageDeparture);
+        raceEventView.UpdateSessionClock(trackPreview.SessionRun.Elapsed);
+    }
+
+    private void ResumeSession()
+    {
+        trackPreview.CancelGarageLapSimulation();
+        if (trackPreview.PlayerParkedForGarage)
+            trackPreview.SessionRun.SetFuel(0, raceEventView.StartingFuelGallons);
+        playerLapsAtGarageDeparture = trackPreview.SessionRun.PlayerLaps;
+        int speedIndex = sessionSpeedSelector.index;
+        trackPreview.SetSessionSpeed(sessionSpeedSelector.value == "Pause" ? 0 : 1 << System.Math.Max(0, speedIndex));
+        trackPreview.SetPlayerSetup(raceEventView.CurrentSetup);
+        trackPreview.SetPlayerGarageVisit(false);
+        sessionInGarage = false;
+        garageVisitPending = false;
+        visitGarageButton.text = "Garage";
+        visitGarageButton.SetEnabled(trackPreview.CanVisitGarage);
+        visitGarageButton.tooltip = "Call your car to its pit stall";
+        raceEventView.Screen.style.display = DisplayStyle.None;
+        trackScreen.style.display = DisplayStyle.Flex;
+        trackPreview.SetTrackRendering(true);
+        fpsSampleStart = Time.unscaledTimeAsDouble;
+        fpsSampleFrames = 0;
+        trackFpsLabel.text = "FPS --";
+        visitGarageButton.Focus();
+    }
+
     private void ReturnToGarage()
     {
         ReleaseTrackPointer();
+        trackPreview.FinishPracticeSetups();
+        trackPreview.FinishGarageRun("Session ended");
         trackPreview.gameObject.SetActive(false);
+        if (activeSession?.kind == RaceSessionKind.Practice && activeCareer != null && !developmentPractice)
+            careerSetup.SaveProgress(activeCareer);
         activeSession = null;
+        sessionInGarage = false;
+        garageVisitPending = false;
+        visitGarageButton.text = "Garage";
+        visitGarageButton.SetEnabled(trackPreview.CanVisitGarage);
+        visitGarageButton.tooltip = "Call your car to its pit stall";
         UpdateTrackFlags(null);
         snapshotStatus.text = string.Empty;
         snapshotStatus.tooltip = null;
@@ -3687,7 +4091,8 @@ public sealed class StartupMenu : MonoBehaviour
         if (activeRace != null)
         {
             raceEventView.Screen.style.display = DisplayStyle.Flex;
-            raceEventView.ShowSchedule();
+            raceEventView.SetRunningSession(null);
+            raceEventView.ShowEvent();
         }
         else
         {

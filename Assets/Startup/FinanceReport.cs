@@ -36,7 +36,7 @@ internal static class FinanceReport
     }
 
     public static void Render(VisualElement grid, Career career, List<ScheduledRace> races,
-        List<RaceExpenses> chargedExpenses, long upcomingPayroll, long winnings)
+        List<RaceExpenses> chargedExpenses, long upcomingPayroll, long winnings, int engineCost)
     {
         var season = career.schedule;
         var completed = races.Where(race => race.completed).ToArray();
@@ -53,7 +53,7 @@ internal static class FinanceReport
             RaceCost("Salaries", upcomingPayroll, season.payrollPaid),
             new Row("Vehicles",
                 new Row("Car Purchases", Average(-season.carPurchases), -season.carPurchases),
-                RaceCost("Engine Lease", RaceExpenses.EngineLeaseBase, chargedExpenses.Sum(item => (long)item.engineLease)),
+                RaceCost("Engine Lease and Maintenance", engineCost, chargedExpenses.Sum(item => (long)item.engineLease)),
                 RaceCost("Tires", RaceExpenses.TiresBase, chargedExpenses.Sum(item => (long)item.tires)),
                 RaceCost("Parts and Maintenance", RaceExpenses.WearAndMaterialsBase,
                     chargedExpenses.Sum(item => (long)item.wearAndMaterials) + season.componentRepairs),
@@ -66,24 +66,24 @@ internal static class FinanceReport
 
         var payments = completed.SelectMany(race => race.sponsorPayments ?? Enumerable.Empty<SponsorRacePayment>()).ToArray();
         var sponsors = new List<Row>();
-        for (int slot = 0; slot < Sponsorships.Slots; slot++)
-        {
-            var historical = payments.Where(payment => payment.slot == slot)
-                .GroupBy(payment => payment.companyId).ToDictionary(group => group.Key, group => group.Sum(payment => payment.amount));
-            var contract = career.sponsors?.Find(item => item.slot == slot);
-            if (contract != null)
-                historical.TryAdd(contract.offer.companyId, 0L);
-            string slotName = $"Sponsor {slot + 1}";
-            var companies = historical.Select(item =>
-                new Row(Sponsorships.CompanyName(item.Key), Average(item.Value), item.Value)).ToArray();
-            if (companies.Length == 0)
-                sponsors.Add(new Row($"{slotName} · Open", Average(0), 0));
-            else if (companies.Length == 1)
-                sponsors.Add(new Row($"{slotName} · {companies[0].Name}", companies[0].PerRace, companies[0].SeasonTotal));
-            else
-                sponsors.Add(new Row(slotName, companies));
-        }
-        long earlierIncome = season.sponsorIncome - payments.Sum(payment => payment.amount);
+        var historical = payments.Where(payment => payment.slot == 0)
+            .GroupBy(payment => payment.companyId).ToDictionary(group => group.Key, group => group.Sum(payment => payment.amount));
+        if (career.PrimarySponsor is SponsorContract contract)
+            historical.TryAdd(contract.offer.companyId, 0L);
+        var companies = historical.Select(item =>
+            new Row(Sponsorships.CompanyName(item.Key), Average(item.Value), item.Value)).ToArray();
+        if (companies.Length == 0)
+            sponsors.Add(new Row("Primary sponsor · Open", Average(0), 0));
+        else if (companies.Length == 1)
+            sponsors.Add(new Row($"Primary sponsor · {companies[0].Name}", companies[0].PerRace, companies[0].SeasonTotal));
+        else
+            sponsors.Add(new Row("Primary sponsor", companies));
+        long legacyIncome = payments.Where(payment => payment.slot != 0).Sum(payment => payment.amount);
+        if (legacyIncome != 0)
+            sponsors.Add(new Row("Historical sponsorship payments", Average(legacyIncome), legacyIncome));
+        if (season.sponsorSigningIncome != 0)
+            sponsors.Add(new Row("Primary sponsor signing payments", null, season.sponsorSigningIncome));
+        long earlierIncome = season.sponsorIncome - season.sponsorSigningIncome - payments.Sum(payment => payment.amount);
         if (earlierIncome != 0)
             sponsors.Add(new Row("Earlier sponsorship payments", Average(earlierIncome), earlierIncome));
 
