@@ -1,0 +1,14 @@
+{
+  "input": "FBX reimport",
+  "frontage_verified_m": 500,
+  "concrete_surface_probes": 48024,
+  "outside_wall_base_probes": 2001,
+  "race_edge_clearance_probes": 2001,
+  "grandstand_foundations": 14,
+  "pedestrian_routes_in_concourse": 8,
+  "max_wall_foot_height_step_m": 0.009231,
+  "concrete_height_over_original_berm_m": [
+    0.008897,
+    0.057378
+  ]
+}

@@ -90,35 +90,188 @@
     white-space: normal;
 }
 
-.track-heading {
-    flex-direction: row;
-    justify-content: space-between;
-    align-items: center;
-    padding: 12px 0;
-}
-.track-heading .action { align-self: center; }
-.track-heading .eyebrow { margin-bottom: 0; }
-.track-title {
-    font-size: 36px;
-    -unity-font-style: bold;
+#trackScreen {
+    padding: 0;
+    overflow: hidden;
 }
 .race-viewport {
-    flex-basis: 0;
-    min-width: 0;
-    flex-grow: 1;
-    margin-bottom: 12px;
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
     background-color: #192b2b;
-    background-size: contain;
+    background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
 }
-
-.tracks-editor .unity-base-field__label,
+.track-header.header {
+    height: auto;
+    min-height: 54px;
+    padding: 6px 12px;
+    background-color: rgba(16, 21, 30, 0.9);
+}
+.track-header-left, .track-header-right {
+    flex-direction: row;
+    align-items: center;
+    flex-grow: 1;
+    flex-basis: 0;
+    min-width: 0;
+}
+.track-header-right {
+    justify-content: flex-end;
+}
+.track-playback {
+    flex-direction: row;
+    align-items: center;
+    flex-shrink: 0;
+    margin: 0 10px;
+}
+.track-playback > .track-header-icon {
+    margin: 0;
+    font-size: 19px;
+}
+.track-playback > .playback-speed-button {
+    width: 48px;
+    font-size: 14px;
+    -unity-text-align: middle-right;
+}
+.track-playback > .playback-play-button {
+    width: 24px;
+    padding-left: 2px;
+    -unity-text-align: middle-left;
+}
+.track-heading-labels {
+    flex-shrink: 1;
+    min-width: 0;
+}
+.track-name {
+    font-size: 24px;
+}
+.track-heading-labels > Label,
+.track-session > Label {
+    white-space: normal;
+}
+.track-session {
+    flex-shrink: 1;
+    min-width: 0;
+    margin-left: 16px;
+    margin-right: auto;
+}
+.track-header-icon {
+    flex-shrink: 0;
+    justify-content: center;
+    align-items: center;
+    width: 32px;
+    height: 32px;
+    margin: 0 0 0 8px;
+    padding: 0;
+    border-width: 0;
+    background-color: transparent;
+    color: #ffbb79;
+    font-size: 23px;
+}
+.track-header-icon:hover, .track-header-icon:focus, .track-header-icon:active {
+    background-color: transparent;
+    color: #fff4e8;
+}
+.track-header-icon:disabled {
+    opacity: 0.5;
+}
+.track-icon-art {
+    width: 22px;
+    height: 22px;
+}
+.track-footer-center {
+    align-items: center;
+}
+.track-readouts {
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+}
+.track-readouts > Label {
+    margin: 0 6px;
+}
+.track-footer.footer {
+    height: 54px;
+    padding: 0 12px;
+    background-color: rgba(16, 21, 30, 0.9);
+}
+.track-footer-driving, .track-footer-pit {
+    flex-direction: row;
+    align-items: center;
+    flex-grow: 1;
+    flex-basis: 0;
+    min-width: 0;
+}
+.driving-meter {
+    align-items: center;
+    flex-shrink: 0;
+    margin-right: 3px;
+}
+.driving-meter-bar {
+    width: 12px;
+    height: 30px;
+    justify-content: flex-end;
+    overflow: hidden;
+    background-color: #253448;
+    border-width: 1px;
+    border-color: #64768b;
+}
+.driving-meter-fill {
+    height: 0;
+}
+.throttle-fill {
+    background-color: #57d568;
+}
+.brake-fill {
+    background-color: #ef694d;
+}
+.fuel-fill {
+    background-color: #ffcf55;
+}
+.track-footer-mph {
+    min-width: 86px;
+    margin-left: 4px;
+    font-size: 16px;
+    -unity-font-style: bold;
+}
+.track-footer-engine {
+    margin-left: 8px;
+    color: #c9d3e0;
+    font-size: 13px;
+}
+.track-footer-pit {
+    justify-content: flex-end;
+}
+.track-footer-pit > Label {
+    margin-right: 8px;
+}
+#trackCameraAngle {
+    margin-right: 0;
+}
+#cycleTrackCameraButton {
+    margin: 0 8px 0 0;
+}
+.track-footer-pit > .pit-settings-button {
+    margin: 0;
+}
+.track-icon-tooltip {
+    display: none;
+    position: absolute;
+    margin: 0;
+    padding: 5px 8px;
+    border-radius: 4px;
+    background-color: #10151e;
+    color: #f5f7fa;
+    font-size: 13px;
+    white-space: normal;
+}
 .setup-preset-name .unity-base-field__label,
 .setup-notes .unity-base-field__label {
     color: #e3e9f2;
 }
-.tracks-editor .unity-base-text-field__input,
 .setup-preset-name .unity-base-text-field__input,
 .setup-notes .unity-base-text-field__input {
     background-color: #202b39;
@@ -127,12 +280,10 @@
     --unity-cursor-color: #ffffff;
     --unity-selection-color: #315b87;
 }
-.tracks-editor .unity-base-text-field__input:focus,
 .setup-preset-name .unity-base-text-field__input:focus,
 .setup-notes .unity-base-text-field__input:focus {
     border-color: #ffaf63;
 }
-.tracks-editor .unity-base-text-field__input .unity-text-element,
 .setup-preset-name .unity-base-text-field__input .unity-text-element,
 .setup-notes .unity-base-text-field__input .unity-text-element {
     color: #f5f7fa;
@@ -140,83 +291,6 @@
     --unity-selection-color: #315b87;
 }
 
-.track-utility #utilityTitle {
-    font-size: 30px;
-    -unity-font-style: bold;
-    margin-right: 20px;
-}
-.track-utility .utility-button {
-    min-width: 0;
-    height: 32px;
-    padding: 0 12px;
-    margin: 3px 8px 3px 0;
-    font-size: 14px;
-}
-.utility-body {
-    flex-grow: 1;
-    flex-wrap: nowrap;
-    min-height: 0;
-    margin-top: 10px;
-}
-.utility-sidebar {
-    width: 32%;
-    min-width: 0;
-    padding-right: 8px;
-    flex-direction: row;
-}
-.utility-form {
-    flex-grow: 1;
-    flex-basis: 0;
-    min-width: 0;
-    padding-right: 8px;
-}
-.utility-tabs {
-    width: 140px;
-    flex-shrink: 0;
-    margin-right: 8px;
-}
-.utility-tab {
-    min-height: 34px;
-    margin: 0 0 4px 0;
-    padding: 5px 8px;
-    white-space: normal;
-    -unity-text-align: middle-left;
-    color: #e3e9f2;
-    background-color: #202b39;
-    border-color: #394350;
-}
-.utility-tab-selected, .utility-tab-selected:hover {
-    color: #141a22;
-    background-color: #ffaf63;
-    border-color: #ffaf63;
-}
-.utility-form .unity-base-field__label { min-width: 0; }
-.utility-map {
-    flex-grow: 1;
-    flex-basis: 0;
-    min-width: 0;
-    background-color: #17212b;
-}
-.utility-section {
-    color: #ffaf63;
-    -unity-font-style: bold;
-    margin-top: 12px;
-    margin-bottom: 4px;
-}
-
-.utility-tab-row {
-    flex-wrap: nowrap;
-    align-items: center;
-}
-.utility-tab-row .utility-tab {
-    flex-grow: 1;
-    flex-basis: 0;
-    min-width: 0;
-}
-.utility-visibility {
-    flex-shrink: 0;
-    margin: 0 3px 4px 0;
-}
 /* Shared neutral palette. Apply game-neutral to a screen to use it. */
 .game-neutral {
     --game-background: #151515;
@@ -667,6 +741,7 @@
     border-top-color: var(--game-divider);
     height: auto;
     padding-top: 10px;
+    padding-bottom: 10px;
 }
 .garage-footer .nav-button {
     flex-grow: 1;
@@ -912,6 +987,130 @@
     border-color: #ffffff;
 }
 
+#titleScreen {
+    overflow: hidden;
+}
+.title-background {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    background-image: url("StartupHoneycomb.png");
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+.title-background-shade {
+    background-image: none;
+    background-color: rgba(0, 0, 0, 0.5);
+}
+.title-card {
+    align-items: center;
+    max-width: 800px;
+    background-color: rgba(16, 21, 30, 0.9);
+}
+.title-logo {
+    background-image: url("../../StockCarManagerLogo.png");
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+    width: 296px;
+    max-width: 100%;
+    height: 266px;
+    margin: 0;
+}
+.title-card .actions {
+    justify-content: center;
+}
+.title-tagline {
+    -unity-text-align: middle-center;
+    -unity-font-definition: url("../Fonts/StoryScript-Regular.ttf");
+    -unity-font-style: normal;
+    font-size: 28px;
+    margin-top: 8px;
+    margin-bottom: 16px;
+}
+.title-career-list {
+    align-self: stretch;
+    max-height: 360px;
+    margin: 0 0 8px;
+    padding: 4px;
+    background-color: #10151e;
+    border-width: 1px;
+    border-color: #009bdd;
+    border-radius: 8px;
+}
+.title-career-row {
+    flex-direction: row;
+    align-items: center;
+    flex-shrink: 0;
+}
+.title-career-load {
+    flex-direction: row;
+    align-items: center;
+    flex-grow: 1;
+    flex-basis: 0;
+    min-width: 0;
+    min-height: 77px;
+    padding: 6px 10px;
+}
+.title-career-car {
+    width: 112px;
+    height: 63px;
+    flex-shrink: 0;
+    margin-right: 12px;
+}
+.title-career-details {
+    flex-grow: 1;
+    min-width: 0;
+}
+.title-career-name, .title-career-detail {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.title-career-name {
+    font-size: 16px;
+    -unity-font-style: bold;
+}
+.title-career-detail {
+    font-size: 13px;
+    color: #d1dce7;
+}
+.title-career-delete {
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    color: #ff8c8c;
+    border-color: #ff8c8c;
+}
+
+.title-icon-row {
+    margin-top: 5px;
+}
+.title-icon-button {
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 46px;
+    height: 42px;
+    padding: 0;
+    margin: 0 8px 4px 0;
+    border-width: 1px;
+    border-radius: 8px;
+    background-color: #182432;
+}
+.title-icon-button:hover, .title-icon-button:focus {
+    background-color: #26384d;
+    border-color: #ffffff;
+}
+.title-practice-icon { color: #85dda0; border-color: #85dda0; }
+.title-settings-icon { color: #c6a5ff; border-color: #c6a5ff; }
+.title-quit-icon { color: #ff8c8c; border-color: #ff8c8c; }
+
 .schedule-race {
     padding: 7px 0;
     border-bottom-width: 1px;
@@ -980,16 +1179,6 @@
     -unity-text-align: middle-left;
 }
 
-.session-speed {
-    align-self: center;
-    min-width: 105px;
-    margin-right: 12px;
-}
-.session-speed .unity-base-field__label {
-    min-width: 0;
-    color: #f5f5f5;
-}
-
 .results-grid {
     min-width: 0;
     margin-top: 12px;
@@ -1015,59 +1204,364 @@
 
 .track-content {
     flex-direction: row;
+    justify-content: space-between;
     flex-grow: 1;
     min-height: 0;
+    padding: 8px 12px 0;
 }
-.track-timing {
-    width: 25%;
-    min-width: 200px;
-    max-width: 310px;
+.track-cockpit {
+    display: none;
+    position: absolute;
+    top: 8px;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    align-items: center;
+    justify-content: space-between;
+    overflow: hidden;
+}
+.cockpit-steering-wheel {
+    position: absolute;
+    left: 54%;
+    bottom: -67px;
+    width: 174px;
+    height: 174px;
+    translate: -50% 0;
+}
+.tour-modified-cockpit .cockpit-steering-wheel {
+    left: 57%;
+}
+.cockpit-mirror {
+    width: 256px;
+    max-width: 40%;
+    height: 72px;
     flex-shrink: 0;
-    margin-left: 12px;
-    margin-bottom: 12px;
-    background-color: #1c2633;
+    overflow: hidden;
+    border-width: 4px;
+    border-radius: 12px;
+    border-color: #13191f;
+    background-color: #18242e;
+}
+.cockpit-mirror-image {
+    flex-grow: 1;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    scale: -1 1;
+}
+.cockpit-dashboard {
+    align-self: flex-start;
+    flex-direction: row;
+    justify-content: space-evenly;
+    align-items: center;
+    width: 53%;
+    height: 142px;
+    flex-shrink: 0;
+    padding: 0 12px 5px;
+    border-top-width: 3px;
+    border-top-color: #555958;
+    border-top-right-radius: 12px;
+    border-bottom-width: 9px;
+    border-bottom-color: #101113;
+    background-color: #27292a;
+}
+.cockpit-switch-panel {
+    width: 94px;
+    height: 72px;
+    margin-right: 8px;
+    background-color: #191b1c;
+    border-width: 1px;
+    border-color: #4e504e;
+    border-radius: 3px;
+}
+.cockpit-gauge {
+    width: 66px;
+    height: 66px;
+    flex-shrink: 1;
+    margin: 0 2px;
+}
+.cockpit-gauge-main {
+    width: 106px;
+    height: 106px;
+}
+.cockpit-gauge-needle {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+}
+.cockpit-gauge-labels {
+    position: absolute;
+    align-items: center;
+    right: 0;
+    bottom: 19%;
+    left: 0;
+}
+.cockpit-gauge-labels > Label {
+    margin: 0;
+    color: #292b28;
+    -unity-font-style: bold;
+    white-space: nowrap;
+}
+.cockpit-gauge-name {
+    font-size: 7px;
+}
+.cockpit-gauge-value {
+    font-size: 9px;
+}
+.cockpit-gauge-main .cockpit-gauge-name {
+    font-size: 9px;
+}
+.cockpit-gauge-main .cockpit-gauge-value {
+    font-size: 15px;
+}
+.cockpit-gauge-dark .cockpit-gauge-labels > Label {
+    color: #f0e8d5;
+}
+.tour-modified-cockpit .cockpit-dashboard {
+    position: absolute;
+    left: 23%;
+    bottom: 1%;
+    width: 34%;
+    max-width: 370px;
+    height: 18%;
+    min-height: 65px;
+    max-height: 102px;
+    padding: 0 8px;
+    border-width: 2px;
+    border-bottom-width: 4px;
+    border-color: #4b4d4c;
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
+    border-bottom-left-radius: 4px;
+    border-bottom-right-radius: 4px;
+    background-color: #1d2022;
+}
+.tour-modified-cockpit .cockpit-switch-panel {
+    width: 65px;
+    height: 29px;
+    margin-right: 4px;
+    background-color: #262a2b;
+    border-color: #555653;
+}
+.tour-modified-cockpit .cockpit-gauge {
+    width: 53px;
+    height: 64%;
+}
+.tour-modified-cockpit .cockpit-gauge-main {
+    width: 88px;
+    height: 94%;
+}
+.tour-modified-cockpit .cockpit-mirror {
+    width: 196px;
+    height: 54px;
+    border-width: 3px;
+    border-radius: 7px;
+}
+.in-car-view .track-standings {
+    margin-bottom: 152px;
+}
+.track-standings {
+    width: 248px;
+    min-height: 0;
+    flex-shrink: 0;
+    margin-bottom: 10px;
+}
+.track-standings.standings-lap-speeds {
+    width: 370px;
+}
+.track-standings.standings-collapsed {
+    width: 31px;
+}
+.standings-collapsed .timing-header {
+    justify-content: center;
+    padding: 0;
+    border-bottom-width: 0;
+    border-radius: 3px;
+    background-color: #10151e;
+}
+.standings-collapsed .timing-header > Label,
+.standings-collapsed .timing-rows,
+.standings-collapsed .standings-laps-toggle {
+    display: none;
+}
+.standings-toggle {
+    flex-shrink: 0;
+    width: 19px;
+    height: 17px;
+    margin: 0;
+    padding: 0;
+    color: #141a22;
+    background-color: #ffaf63;
+    border-color: #ffaf63;
+    font-size: 14px;
+    -unity-font-style: bold;
+}
+.standings-laps-toggle {
+    margin-left: 3px;
+}
+.standings-toggle:hover, .standings-toggle:focus {
+    background-color: #ffd2a7;
+    border-color: #ffffff;
+}
+.track-right-dock {
+    position: absolute;
+    right: 12px;
+    bottom: 60px;
+    width: 26%;
+    min-width: 232px;
+    max-width: 352px;
+    max-height: 76%;
+    justify-content: flex-end;
+}
+.track-map-widget {
+    min-height: 0;
+    flex-shrink: 1;
+}
+.track-map-widget.track-map-collapsed {
+    align-self: flex-end;
+    width: 31px;
+    height: 24px;
+    flex-shrink: 0;
+    border-radius: 3px;
+    background-color: #10151e;
+}
+.track-map-collapsed .track-session-map {
+    display: none;
+}
+.track-map-toggle {
+    position: absolute;
+    top: 3px;
+    right: 6px;
+}
+.track-session-map {
+    height: 194px;
+    min-height: 80px;
+    flex-shrink: 1;
+    overflow: hidden;
+    border-radius: 6px;
+    background-color: rgba(16, 21, 30, 0.88);
+}
+.track-map-car {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    padding: 0;
+    border-width: 1px;
+    border-radius: 8px;
+    border-color: #d4dce3;
+    background-color: #263342;
+    color: #ffffff;
+    font-size: 8px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+}
+.track-map-car.track-map-player {
+    border-color: #fff3df;
+    background-color: #ffaf63;
+    color: #141a22;
+}
+.track-pit-controls {
+    display: none;
+    flex-shrink: 0;
+    margin-top: 6px;
+    background-color: rgba(28, 38, 51, 0.98);
+}
+.track-pit-controls.pit-settings-open {
+    display: flex;
 }
 .timing-rows {
     flex-grow: 1;
     min-height: 0;
+    background-color: rgba(28, 38, 51, 0.94);
 }
 .timing-row {
     flex-direction: row;
-    padding: 5px 6px;
+    align-items: center;
+    height: 20px;
+    flex-shrink: 0;
+    padding: 0 6px;
     border-bottom-width: 1px;
     border-bottom-color: #394350;
 }
+.timing-data-row {
+    padding-right: 47px;
+}
 .timing-header {
+    height: 24px;
+    background-color: #253448;
     -unity-font-style: bold;
 }
-.timing-car {
-    width: 18%;
+.timing-player {
+    background-color: #2c5065;
+    border-left-color: #73d5ff;
+    border-left-width: 3px;
+    padding-left: 3px;
+    -unity-font-style: bold;
+}
+.timing-position, .timing-car {
+    width: 29px;
+    flex-shrink: 0;
 }
 .timing-driver {
+    flex-direction: row;
+    align-items: center;
     flex-grow: 1;
     flex-basis: 0;
+    min-width: 0;
+}
+.timing-driver-name {
+    flex-shrink: 1;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
 }
-.timing-row > Label {
+.timing-row > Label, .timing-driver > Label {
+    margin: 0;
     font-size: 12px;
     white-space: nowrap;
 }
-.timing-speed {
-    width: 43px;
+.timing-lap-mph {
+    display: none;
+    width: 61px;
+    padding-right: 6px;
     flex-shrink: 0;
     -unity-text-align: middle-right;
 }
-.timing-lap {
-    width: 32%;
-    -unity-text-align: middle-right;
+.standings-lap-speeds .timing-lap-mph {
+    display: flex;
 }
-
-.timing-position {
-    width: 15%;
+.timing-status {
+    width: 14px;
+    margin-left: 4px;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
 }
-
+.timing-status-icon {
+    width: 10px;
+    height: 7px;
+    border-width: 2px;
+    border-color: #73d9a2;
+    border-radius: 4px;
+}
+.timing-status-icon.timing-in-pits {
+    width: 8px;
+    height: 8px;
+    border-width: 0;
+    border-radius: 0;
+    rotate: 45deg;
+    background-color: #ffcf75;
+}
+.timing-status-icon.timing-off-track {
+    height: 2px;
+    border-width: 0;
+    background-color: #a3adb9;
+}
 
 .track-ratings {
     flex-direction: row;
@@ -1486,9 +1980,11 @@
     flex-direction: row;
     align-items: center;
     flex-shrink: 0;
-    margin-left: 6px;
+    margin-left: 0;
 }
 .team-date-panel {
+    margin-left: 6px;
+    margin-right: 6px;
     min-width: 88px;
     padding: 3px 6px;
     background-color: #236078;
@@ -1613,16 +2109,6 @@
     color: whitesmoke;
 }
 
-#trackScreen .track-heading {
-    flex-shrink: 0;
-}
-.track-heading-labels {
-    flex-shrink: 1;
-    min-width: 0;
-}
-#trackScreen .track-heading > .actions {
-    flex-shrink: 0;
-}
 .track-player-panel {
     flex-shrink: 0;
     padding: 6px;
@@ -1679,26 +2165,12 @@
 .pit-levels > Label {
     white-space: normal;
 }
-.track-pit-status {
-    min-height: 16px;
-    white-space: normal;
-}
 .track-player-panel .action {
     align-self: stretch;
     min-width: 0;
     height: 28px;
     font-size: 13px;
 }
-#trackScreen .footer > .muted {
-    min-width: 0;
-    flex-shrink: 1;
-    white-space: normal;
-}
-#trackScreen .footer > .brand {
-    flex-shrink: 0;
-    margin-left: 12px;
-}
-
 .practice-run-report {
     background-color: rgba(20, 28, 38, 0.96);
     border-radius: 6px;
@@ -1921,3 +2393,1668 @@
 .event-information-page .rating-label {
     min-height: 20px;
 }
+#titleScreen > .main {
+    min-height: 0;
+    padding-bottom: 16px;
+}
+.title-card {
+    max-height: 100%;
+    flex-shrink: 1;
+}
+.title-logo {
+    min-height: 100px;
+    flex-shrink: 1;
+}
+.title-card > .title-actions {
+    align-self: stretch;
+    justify-content: space-between;
+    flex-shrink: 0;
+}
+.title-card > .title-actions > .action {
+    margin-right: 0;
+}
+#titleScreen > .title-icon-row {
+    justify-content: flex-end;
+    flex-shrink: 0;
+    padding-top: 10px;
+    margin-top: 0;
+}
+.title-career-list {
+    min-height: 110px;
+    flex-shrink: 1;
+}
+.title-career-list .title-career-row {
+    margin: 4px;
+    background-color: #1f2730;
+    border-width: 1px;
+    border-color: #8ca4bb;
+    border-radius: 8px;
+}
+.title-career-list .title-career-load {
+    margin: 0;
+    border-width: 0;
+    border-radius: 7px;
+}
+.title-career-list .title-career-delete {
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+    padding: 0;
+    margin: 0 6px;
+    border-width: 0;
+    background-color: transparent;
+}
+.title-career-list .title-career-delete:hover,
+.title-career-list .title-career-delete:focus {
+    color: #ffffff;
+    background-color: #394a60;
+}
+
+.title-career-confirmation-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    flex-shrink: 0;
+    margin: 4px 0;
+}
+.title-career-confirmation-actions > .settings-button {
+    flex-shrink: 0;
+    min-width: 120px;
+    min-height: 40px;
+    padding: 6px 16px;
+    white-space: nowrap;
+}
+.title-career-confirmation-actions > .title-career-confirm-delete {
+    min-width: 150px;
+    color: #ff8c8c;
+    border-color: #ff8c8c;
+}
+
+.title-career-action {
+    min-width: 170px;
+    min-height: 44px;
+    font-size: 17px;
+}
+.title-career-list .title-career-row {
+    width: auto;
+}
+#careerPickerDialog .title-career-list {
+    max-height: 460px;
+}
+
+#careerPickerDialog .settings-confirmation-dialog,
+#deleteCareerConfirmation .settings-confirmation-dialog {
+    background-color: #10151e;
+    border-color: #009bdd;
+}
+#careerPickerDialog .settings-confirmation-actions,
+#deleteCareerConfirmation .settings-confirmation-actions {
+    padding-top: 8px;
+    border-top-width: 1px;
+    border-top-color: #009bdd;
+}
+#careerPickerDialog .title-career-row .title-career-load {
+    background-color: #1f2730;
+}
+#careerPickerDialog .title-career-row:hover {
+    background-color: #263e50;
+    border-color: #009bdd;
+}
+#careerPickerDialog .title-career-row:hover .title-career-load,
+#careerPickerDialog .title-career-row .title-career-load:focus {
+    background-color: #263e50;
+}
+
+#titleScreen > .title-icon-row {
+    align-self: center;
+    width: 100%;
+    max-width: 800px;
+    min-height: 56px;
+    flex-wrap: nowrap;
+}
+#titleScreen > .title-icon-row > .title-icon-button {
+    margin-left: 4px;
+    margin-right: 4px;
+}
+#titleScreen > .title-icon-row > .title-quit-icon {
+    margin-right: 0;
+}
+
+#newCareerSeriesPicker .title-career-row .title-career-load {
+    background-color: #1f2730;
+}
+#newCareerSeriesPicker .title-career-row:hover {
+    border-color: #009bdd;
+    background-color: #263e50;
+}
+#newCareerSeriesPicker .title-career-row:hover .title-career-load,
+#newCareerSeriesPicker .title-career-load:focus {
+    background-color: #263e50;
+}
+
+.new-career-form .settings-group {
+    margin-top: 3px;
+    margin-bottom: 3px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+}
+.new-career-form .settings-field {
+    margin-top: 3px;
+    margin-bottom: 3px;
+}
+.new-career-form .car-paint-preview {
+    height: 140px;
+    min-height: 100px;
+}
+.new-career-form .settings-error-slot {
+    height: 27px;
+    margin-bottom: 1px;
+}
+.new-career-form .title-career-row .title-career-load {
+    background-color: #1f2730;
+}
+.new-career-form .title-career-row:hover {
+    border-color: #009bdd;
+    background-color: #263e50;
+}
+.new-career-form .title-career-row:hover .title-career-load,
+.new-career-form .title-career-load:focus {
+    background-color: #263e50;
+}
+
+.new-career-form .settings-header {
+    margin-bottom: 6px;
+}
+.new-career-form .settings-field > .unity-base-field__input {
+    min-height: 36px;
+}
+.new-career-form .settings-field .settings-button {
+    min-height: 36px;
+}
+.new-career-form .car-paint-preview {
+    margin-bottom: 2px;
+}
+.new-career-form .settings-row > .settings-field {
+    flex-basis: 0;
+}
+
+.new-career-form .career-car-preview-panel > .car-paint-preview {
+    height: 110px;
+    min-height: 80px;
+}
+.career-inline-paint .career-car-setup-body {
+    flex-direction: row;
+    flex-grow: 1;
+    min-height: 0;
+}
+.career-inline-paint .career-car-preview-panel {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-height: 0;
+    min-width: 0;
+    margin-right: 16px;
+    justify-content: center;
+}
+.career-inline-paint .career-car-preview-panel > .car-paint-preview {
+    flex-grow: 1;
+    flex-basis: 0;
+    height: auto;
+    min-height: 0;
+    max-height: 560px;
+}
+.career-inline-paint .career-car-paint-controls {
+    width: 276px;
+    flex-shrink: 0;
+    align-self: center;
+}
+.career-inline-paint .career-car-paint-controls .settings-field {
+    flex-grow: 0;
+    flex-shrink: 0;
+}
+
+.new-career-form.career-identity-page {
+    justify-content: center;
+}
+.new-career-form.career-identity-page > .settings-frame {
+    height: auto;
+    flex-grow: 0;
+}
+.career-identity-page .career-player-form {
+    flex-grow: 0;
+}
+.career-identity-page .career-player-form > .settings-field {
+    flex-grow: 0;
+    margin-top: 2px;
+    margin-bottom: 2px;
+}
+.career-identity-page .career-player-form .settings-note {
+    margin-top: 0;
+    margin-bottom: 2px;
+}
+
+.track-display-controls {
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+#trackGrandstandsButton, #trackPracticeSkyButton, #requestCautionButton {
+    margin-left: 6px;
+}
+.track-detail-control {
+    align-self: center;
+    flex-shrink: 0;
+    min-height: 28px;
+    margin: 3px 0;
+    padding: 3px 10px;
+    border-width: 1px;
+    border-color: #009bdd;
+    border-radius: 7px;
+    background-color: #10151e;
+    color: #f5f5f5;
+    font-size: 12px;
+}
+.track-detail-control:hover, .track-detail-control:focus {
+    background-color: #263e50;
+    border-color: #55c4ef;
+}
+
+.team-header-icon {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    margin: 0 0 0 8px;
+    border-width: 0;
+    border-radius: 6px;
+    background-color: transparent;
+    color: #f5f5f5;
+}
+.team-header-icon:hover, .team-header-icon:focus {
+    color: #55c4ef;
+    background-color: #263e50;
+}
+.team-header-icon#garageQuitButton:hover,
+.team-header-icon#garageQuitButton:focus {
+    color: #ff8c8c;
+}
+
+/* Shared Teams header, in identity / balance / next race / actions order. */
+.header.team-header-row {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    min-height: 76px;
+}
+.team-logo-placeholder {
+    width: 52px;
+    height: 52px;
+    flex-shrink: 0;
+    justify-content: center;
+    align-items: center;
+    border-width: 1px;
+    border-color: #009bdd;
+    border-radius: 8px;
+    background-color: #182634;
+    margin-right: 12px;
+}
+.team-logo-placeholder Label { font-size: 11px; color: #55c4ef; }
+.team-header-name {
+    font-size: 22px;
+    -unity-font-style: bold;
+    flex-shrink: 1;
+    flex-grow: 1;
+    min-width: 100px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-right: 12px;
+}
+.team-series-logo-slot {
+    width: 88px;
+    height: 48px;
+    flex-shrink: 0;
+    justify-content: center;
+    align-items: center;
+    margin-right: 10px;
+}
+#teamHeaderSeriesLogo { width: 100%; height: 100%; }
+#teamHeaderSeriesPlaceholder { font-size: 11px; color: #55c4ef; }
+.team-header-series-title {
+    font-size: 15px;
+    flex-shrink: 1;
+    flex-grow: 1;
+    min-width: 100px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-right: 12px;
+}
+.team-header-next-race {
+    flex-grow: 0;
+    flex-shrink: 1;
+    min-width: 95px;
+    max-width: 210px;
+    margin-right: 12px;
+}
+.team-header-next-race Label { margin: 0; padding: 0; white-space: normal; }
+.team-header-caption { font-size: 11px; color: #55c4ef; }
+.team-header-track { font-size: 14px; -unity-font-style: bold; }
+.team-header-date { font-size: 12px; }
+.team-header-balance { flex-direction: column; flex-shrink: 0; margin-right: 12px; }
+.team-header-balance Label { margin: 0; padding: 0; white-space: nowrap; }
+.team-header-balance-amount { font-size: 14px; -unity-font-style: bold; }
+.team-header-balance-spacer { visibility: hidden; }
+.team-header-actions { flex-wrap: nowrap; flex-shrink: 0; align-items: center; }
+
+.title-card > .title-actions {
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+}
+.title-card > .title-actions > .title-career-action {
+    align-self: flex-start;
+    margin-top: 0;
+    margin-bottom: 0;
+    margin-left: 0;
+    margin-right: 12px;
+    min-width: 170px;
+    flex-shrink: 0;
+}
+.title-card > .title-actions > #newCareerButton { margin-left: auto; margin-right: 0; }
+
+.title-card > .title-actions { align-items: flex-start; }
+.title-continue-controls {
+    flex-direction: column;
+    width: 170px;
+    min-width: 170px;
+    flex-shrink: 0;
+    margin-right: 8px;
+}
+.title-continue-controls > .title-career-action {
+    align-self: flex-start;
+    margin: 0;
+}
+.title-continue-details {
+    width: 320px;
+    flex-shrink: 0;
+    font-size: 13px;
+    color: #f5f5f5;
+    white-space: nowrap;
+    margin: 6px 0 0 10px;
+    padding: 0;
+}
+
+.team-paint-choice {
+    width: 47%;
+    height: 103px;
+    flex-direction: column;
+    background-color: #182634;
+    border-color: #34495f;
+}
+.team-paint-choice:hover, .team-paint-choice:focus {
+    background-color: #263e50;
+    border-color: #009bdd;
+}
+
+.team-paint-choice.team-paint-choice-selected {
+    border-width: 2px;
+    border-color: #009bdd;
+}
+
+.garage-footer {
+    border-top-color: #009bdd;
+}
+.garage-footer .team-footer-button {
+    flex-grow: 1;
+    flex-shrink: 0;
+    flex-basis: auto;
+    min-height: 40px;
+    margin: 0 3px;
+    padding: 5px 9px;
+    font-size: 13px;
+    white-space: nowrap;
+    color: #f5f5f5;
+    background-color: #182634;
+    border-width: 1px;
+    border-color: #009bdd;
+    border-radius: 8px;
+}
+.garage-footer .team-footer-button:hover,
+.garage-footer .team-footer-button:focus {
+    background-color: #263e50;
+    border-color: #55c4ef;
+}
+.garage-footer .team-footer-button.settings-tab-current {
+    background-color: #155374;
+    border-color: #55c4ef;
+}
+.garage-footer .team-footer-button:disabled { opacity: 0.44; }
+
+.team-home-page { flex-grow: 1; min-height: 0; }
+.team-home-columns { flex-direction: row; flex-grow: 1; min-height: 0; padding-top: 12px; }
+.team-home-column { flex-grow: 1; flex-shrink: 1; flex-basis: 0; min-width: 0; margin: 0 5px; }
+.team-home-panel {
+    background-color: rgba(16, 21, 30, 0.94);
+    border-width: 1px;
+    border-color: #009bdd;
+    border-radius: 10px;
+    padding: 12px;
+    margin-bottom: 10px;
+    min-height: 0;
+}
+.team-home-fill { flex-grow: 1; flex-basis: 0; }
+.team-home-heading { font-size: 16px; -unity-font-style: bold; color: #f5f5f5; white-space: normal; margin: 0 0 8px; }
+.team-home-list { flex-grow: 1; flex-basis: 0; min-height: 90px; }
+.team-home-note { color: #b7c6d5; font-size: 13px; white-space: normal; }
+.team-home-task { white-space: normal; margin: 0 0 6px; padding: 8px; flex-shrink: 0; background-color: #182634; border-color: #009bdd; }
+.team-home-result { flex-direction: row; align-items: center; margin: 0 0 5px; padding: 7px; background-color: #182634; border-color: #34495f; }
+.team-home-result:hover, .team-home-task:hover { background-color: #263e50; border-color: #55c4ef; }
+.team-home-track { flex-grow: 1; flex-shrink: 1; white-space: normal; font-size: 13px; }
+.team-home-finish { flex-shrink: 0; font-size: 14px; color: #55c4ef; -unity-font-style: bold; margin-left: 6px; }
+.team-home-row { flex-direction: row; align-items: center; padding: 3px 4px; min-height: 24px; }
+.team-home-column-headings { background-color: #263e50; -unity-font-style: bold; }
+.team-home-position { width: 32px; flex-shrink: 0; font-size: 13px; }
+.team-home-driver { flex-shrink: 1; white-space: normal; font-size: 13px; }
+.team-home-player { background-color: #155374; }
+
+/* Upright derivative of the licensed racing face for team identity and Home titles. */
+.team-header-name,
+.team-home-heading {
+    -unity-font-definition: url("../Fonts/SCMUprightDisplay-Regular.ttf");
+    -unity-font-style: normal;
+}
+
+.team-home-car-number { width: 36px; flex-shrink: 0; font-size: 13px; }
+
+.team-home-driver { flex-grow: 1; min-width: 0; }
+.team-home-points { width: 48px; flex-shrink: 0; font-size: 13px; -unity-text-align: middle-right; }
+
+.team-home-task { flex-direction: row; align-items: center; }
+.team-home-task > .track-icon-art { flex-shrink: 0; margin-right: 8px; color: #55c4ef; }
+.team-home-task-text { flex-grow: 1; flex-shrink: 1; min-width: 0; white-space: normal; margin: 0; padding: 0; }
+
+.team-home-response-alert {
+    color: #ffaf63;
+    font-size: 22px;
+    -unity-font-style: bold;
+    flex-shrink: 0;
+    width: 18px;
+    margin-left: 8px;
+    margin-right: 0;
+    padding: 0;
+    -unity-text-align: middle-center;
+}
+
+.team-home-task-text { -unity-text-align: middle-left; }
+
+.team-home-track { -unity-text-align: middle-left; }
+
+.team-home-car-preview { height: 85px; flex-shrink: 1; min-height: 50px; }
+.team-home-chassis-name { font-size: 13px; -unity-font-style: bold; margin: 2px 0 5px; }
+.team-home-component-row { flex-direction: row; min-height: 19px; align-items: center; }
+.team-home-component-name { flex-grow: 1; flex-shrink: 1; min-width: 0; font-size: 11px; margin: 0; -unity-text-align: middle-left; }
+.team-home-component-value { width: 48px; flex-shrink: 0; font-size: 11px; margin: 0; -unity-text-align: middle-right; }
+.team-home-track-identity { flex-direction: row; align-items: center; min-height: 34px; }
+.team-home-track-logo { width: 62px; height: 34px; flex-shrink: 0; margin-right: 8px; }
+.team-home-track-logo-placeholder { width: 62px; height: 34px; flex-shrink: 0; margin: 0 8px 0 0; font-size: 10px; color: #55c4ef; background-color: #182634; -unity-text-align: middle-center; border-width: 1px; border-color: #009bdd; border-radius: 5px; }
+.team-home-next-track-name { flex-grow: 1; flex-shrink: 1; font-size: 13px; white-space: normal; -unity-text-align: middle-left; }
+.team-home-track-outline { height: 65px; min-height: 35px; flex-shrink: 1; margin: 4px 0; }
+.team-home-race-detail { font-size: 11px; white-space: normal; margin: 1px 0; padding: 0; }
+
+#homeSuggestedCarPanel .car-card-rating-row { min-height: 22px; font-size: 11px; }
+#homeSuggestedCarPanel .car-card-component { width: 77px; }
+#homeSuggestedCarPanel .car-card-rating-heading { font-size: 11px; }
+#homeSuggestedCarPanel .car-card-value { width: 30px; font-size: 10px; }
+
+.team-home-car-preview { background-color: transparent; }
+.team-home-track-identity { align-items: flex-start; flex-shrink: 0; }
+.team-home-race-text { flex-grow: 1; flex-shrink: 1; min-width: 0; }
+.team-home-race-text > .team-home-next-track-name { flex-grow: 0; margin: 0; }
+#homeNextRacePanel > .team-home-track-outline { margin-top: auto; flex-grow: 1; max-height: 95px; }
+
+.team-home-result-date {
+    width: 42px;
+    flex-shrink: 0;
+    margin: 0 8px 0 0;
+    padding: 0;
+    font-size: 12px;
+    -unity-text-align: middle-left;
+}
+
+.team-home-chassis-mismatch { color: #ffaf63; font-size: 11px; white-space: normal; margin: 0 0 4px; }
+
+.home-component-icon-slot { position: relative; width: 32px; height: 22px; flex-shrink: 0; }
+.home-component-icon-slot > .shop-component-icon {
+    position: absolute;
+    left: -4px;
+    top: -9px;
+    width: 40px;
+    height: 40px;
+    margin: 0;
+    scale: 0.55 0.55;
+}
+
+/* Inset title badges overlap each Home panel's top border. */
+.team-home-panel {
+    overflow: visible;
+    margin-top: 10px;
+    padding-top: 18px;
+}
+.team-home-panel > .team-home-heading {
+    position: absolute;
+    left: 10px;
+    top: -12px;
+    max-width: 94%;
+    margin: 0;
+    padding: 0 6px;
+    background-color: rgba(16, 21, 30, 0.94);
+    color: #009bdd;
+    font-size: 16px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Paint the panel/title surface once to avoid compounded translucency. */
+.team-home-panel { background-color: transparent; border-color: transparent; }
+.team-home-panel > .team-home-heading { background-color: transparent; }
+
+#homeStandingsRows .team-home-row {
+    height: 19px;
+    min-height: 19px;
+    flex-shrink: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+}
+#homeStandingsRows .team-home-row > Label {
+    margin-top: 0;
+    margin-bottom: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.team-header-name { color: #009bdd; }
+.team-header-series-title {
+    -unity-font-definition: url("../Fonts/SCMUprightDisplay-Regular.ttf");
+    -unity-font-style: normal;
+}
+
+.team-header-series-title { color: #009bdd; }
+
+.team-home-next-track-name { -unity-font-style: bold; }
+
+.team-home-race-text > .team-home-race-detail { margin-top: 0; }
+
+/* Mail shares Team panel titles, typography, and rounded control styling. */
+.mail-page { padding-top: 10px; }
+.mail-email.team-home-panel, .mail-social.team-home-panel {
+    padding: 18px 12px 12px;
+    border-width: 1px;
+    border-color: transparent;
+    min-height: 0;
+}
+.mail-social.team-home-panel { margin-left: 14px; }
+.mail-inbox { min-width: 150px; }
+.mail-reader {
+    padding: 10px;
+    background-color: rgba(16, 21, 30, 0.55);
+    border-width: 1px;
+    border-color: #009bdd;
+    border-radius: 8px;
+}
+.mail-inbox-header > .mail-subheading { color: #009bdd; font-size: 14px; }
+.mail-page .settings-button { color: #f5f5f5; border-radius: 8px; }
+.mail-page .mail-message-row {
+    background-color: #182634;
+    border-width: 1px;
+    border-color: #34495f;
+    flex-direction: column;
+    justify-content: center;
+}
+.game-neutral .mail-page .mail-message-row.mail-unread {
+    background-color: #1b3040;
+    border-left-color: #009bdd;
+}
+.mail-page .mail-message-row:hover,
+.mail-page .mail-message-row:focus {
+    background-color: #263e50;
+    border-color: #55c4ef;
+}
+.mail-page .mail-message-row.settings-tab-current {
+    background-color: #155374;
+    border-color: #009bdd;
+}
+.game-neutral .mail-page .mail-message-row.mail-scenario { border-color: #ffaf63; }
+.mail-page .mail-scenario-alert { color: #ffaf63; }
+.mail-page .mail-scenario-choice {
+    background-color: #182634;
+    border-color: #009bdd;
+    white-space: normal;
+    padding: 7px 12px;
+}
+.mail-page .mail-scenario-choice:hover { background-color: #263e50; border-color: #55c4ef; }
+.mail-page .mail-post { background-color: #182634; border-width: 1px; border-color: #34495f; border-radius: 8px; }
+.mail-page .mail-post-delete { background-color: transparent; border-width: 0; color: #55c4ef; }
+.mail-page .mail-post-delete:hover { color: #ff8c8c; background-color: #263e50; }
+.mail-feed-actions { justify-content: flex-end; margin-bottom: 6px; }
+.mail-page .mail-message-title { color: #f5f5f5; font-size: 18px; }
+.mail-page .mail-subject, .mail-page .mail-sender { -unity-text-align: middle-left; }
+
+.garage-team-color-background {
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+.garage-team-color-background > .team-header-row,
+.garage-team-color-background > .garage-footer { background-color: rgba(16, 21, 30, 0.88); }
+
+/* Open Sans is the default face for panel titles; Team header identity stays upright racing. */
+.team-home-heading,
+.panel-title,
+.schedule-heading,
+.car-card-title,
+.mail-inbox-header > .mail-subheading {
+    -unity-font-definition: url("../Fonts/OpenSans/OpenSans-Regular.ttf");
+    -unity-font-style: normal;
+}
+
+.team-home-task-text { -unity-font-style: bold; }
+
+.team-home-heading,
+.panel-title,
+.schedule-heading,
+.car-card-title,
+.mail-inbox-header > .mail-subheading {
+    -unity-font-definition: url("../Fonts/OpenSans/OpenSans-Bold.ttf");
+    -unity-font-style: normal;
+}
+
+#homeSuggestedCarPanel .car-card-rating-heading {
+    -unity-font-definition: url("../Fonts/OpenSans/OpenSans-Bold.ttf");
+    -unity-font-style: normal;
+}
+
+/* Home text uses the actual bold face; shared header identity keeps its racing face. */
+#homePage,
+#homePage Label,
+#homePage Button {
+    -unity-font-definition: url("../Fonts/OpenSans/OpenSans-Bold.ttf");
+    -unity-font-style: normal;
+}
+
+/* Shared Teams header and footer typography; retain racing identity labels. */
+.team-header-row,
+.team-header-row Label,
+.team-header-row Button,
+.garage-footer,
+.garage-footer Label,
+.garage-footer Button {
+    -unity-font-definition: url("../Fonts/OpenSans/OpenSans-Bold.ttf");
+    -unity-font-style: normal;
+}
+.team-header-row .team-header-name,
+.team-header-row .team-header-series-title {
+    -unity-font-definition: url("../Fonts/SCMUprightDisplay-Regular.ttf");
+    -unity-font-style: normal;
+}
+
+/* Mail typography uses the licensed bold face while preserving existing colors. */
+#mailPage,
+#mailPage Label,
+#mailPage Button {
+    -unity-font-definition: url("../Fonts/OpenSans/OpenSans-Bold.ttf");
+    -unity-font-style: normal;
+}
+
+.team-header-row .team-header-series-title { font-size: 22px; }
+
+/* Finance panels share the translucent Team title treatment and typography. */
+#financesPage,
+#financesPage Label,
+#financesPage Button {
+    -unity-font-definition: url("../Fonts/OpenSans/OpenSans-Bold.ttf");
+    -unity-font-style: normal;
+}
+.finance-page { flex-grow: 1; min-height: 0; }
+#financesPage .finance-summary { flex-shrink: 0; margin-bottom: 8px; }
+#financesPage .finance-card {
+    padding: 20px 12px 12px;
+    min-height: 66px;
+    margin: 10px 6px 6px;
+}
+#financesPage .finance-total { font-size: 21px; }
+#financesPage .finance-report-panel { flex-grow: 1; flex-basis: 0; min-height: 0; }
+#financesPage .finance-report-scroll { flex-grow: 1; min-height: 0; }
+#financeBreakdown { border-width: 0; background-color: transparent; }
+#financeBreakdown .results-grid-row { min-height: 27px; border-bottom-color: #263e50; }
+#financeBreakdown .results-grid-header { background-color: #182634; }
+#financeBreakdown .finance-group-toggle {
+    min-height: 29px;
+    border-width: 1px;
+    border-color: #34495f;
+    border-radius: 7px;
+    background-color: #182634;
+    color: #f5f5f5;
+    margin: 2px 0;
+}
+#financeBreakdown .finance-group-toggle:hover,
+#financeBreakdown .finance-group-toggle:focus { background-color: #263e50; border-color: #009bdd; }
+#financeBreakdown .finance-description { white-space: normal; }
+#financeBreakdown .finance-number { -unity-text-align: middle-right; }
+
+#financesPage Label.finance-estimates-note {
+    -unity-font-definition: url("../Fonts/OpenSans/OpenSans-Regular.ttf");
+    -unity-font-style: normal;
+}
+
+#carsPage,
+#carsPage Label,
+#carsPage Button {
+    -unity-font-definition: url("../Fonts/OpenSans/OpenSans-Bold.ttf");
+    -unity-font-style: normal;
+}
+#carsPage .car-panel {
+    background-color: transparent;
+    border-color: transparent;
+    border-radius: 10px;
+    padding: 18px 12px 12px;
+    margin-top: 14px;
+    margin-bottom: 8px;
+}
+#carsPage .car-card-image { background-color: transparent; }
+#carsPage .team-home-heading { color: #009bdd; }
+#carsPage .car-card-specs { font-size: 12px; margin-bottom: 10px; }
+#carsPage .car-card-action {
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: #009bdd;
+    background-color: #182634;
+    color: #55c4ef;
+    margin-bottom: 0;
+}
+#carsPage .car-card-action:hover,
+#carsPage .car-card-action:focus { background-color: #263e50; border-color: #55c4ef; }
+#carsPage .car-card-action:disabled { opacity: 0.44; }
+#carsPage #addTeamCarButton { border-color: #009bdd; background-color: #182634; padding: 7px 13px; }
+#carsPage #addTeamCarButton:hover { background-color: #263e50; border-color: #55c4ef; }
+
+/* Keep full panel strokes inside the Cars scroll viewport. */
+.car-tabs .unity-scroll-view__content-container { padding-left: 2px; padding-right: 2px; }
+#shopPage,
+#shopPage Label,
+#shopPage Button,
+.shop-chassis-dialog Label,
+.shop-chassis-dialog Button {
+    -unity-font-definition: url("../Fonts/OpenSans/OpenSans-Bold.ttf");
+    -unity-font-style: normal;
+}
+#shopPage .shop-car-components { background-color: transparent; padding: 4px 2px; }
+#shopPage .shop-component-row.team-home-panel {
+    background-color: transparent;
+    border-color: transparent;
+    border-width: 1px;
+    min-height: 76px;
+    padding: 14px 10px 7px;
+    margin-top: 10px;
+    margin-bottom: 8px;
+}
+#shopPage .team-home-heading { color: #009bdd; }
+#shopPage .shop-component-action-button {
+    background-color: #182634;
+    border-width: 1px;
+    border-color: #009bdd;
+    border-radius: 8px;
+    color: #55c4ef;
+}
+#shopPage .shop-component-action-button:hover { background-color: #263e50; border-color: #55c4ef; }
+#shopPage .shop-component-action-button:disabled { opacity: 0.44; }
+#shopPage .shop-car-toggle { background-color: #10151e; border-color: #009bdd; border-radius: 8px; color: #f5f5f5; }
+#shopPage .shop-car-toggle:hover { background-color: #263e50; border-color: #55c4ef; }
+.shop-chassis-dialog { background-color: #10151e; border-color: #009bdd; width: 620px; }
+.shop-chassis-dialog .shop-car-choice { background-color: #182634; color: #f5f5f5; border-color: #34495f; border-radius: 8px; }
+.shop-chassis-dialog .shop-car-choice:hover,
+.shop-chassis-dialog .shop-car-choice:focus { background-color: #263e50; border-color: #009bdd; }
+.shop-chassis-dialog .shop-car-choice.settings-tab-current { border-color: #009bdd; }
+.shop-chassis-dialog .shop-car-thumbnail { background-color: transparent; }
+
+#shopPage .shop-components-group {
+    padding: 16px 12px 8px;
+    margin-top: 10px;
+    margin-bottom: 8px;
+}
+#shopPage .shop-components-group > .shop-component-row {
+    background-color: transparent;
+    border-width: 0;
+    border-bottom-width: 1px;
+    border-bottom-color: #263e50;
+    margin: 0;
+    padding: 5px 0;
+    min-height: 72px;
+}
+
+/* Fit all five Shop component rows within the page, including active repair details. */
+#shopPage { flex-grow: 1; min-height: 0; padding-top: 12px; padding-bottom: 8px; }
+#shopPage .shop-car-components { margin-top: 66px; padding-top: 0; padding-bottom: 0; }
+#shopPage .shop-components-group { padding: 14px 10px 6px; margin-top: 8px; margin-bottom: 0; }
+#shopPage .shop-components-group > .shop-component-row { min-height: 50px; padding: 2px 0; }
+#shopPage .shop-component-action-line { min-height: 22px; margin: 0; }
+#shopPage .shop-component-action-button { width: 22px; height: 22px; min-width: 22px; min-height: 22px; }
+#shopPage .shop-component-caption,
+#shopPage .shop-component-mechanic { font-size: 12px; margin-top: 0; margin-bottom: 2px; }
+#shopPage .shop-component-action-cost { font-size: 12px; }
+#shopPage .employee-portrait.shop-repair-portrait { width: 32px; height: 32px; margin-right: 6px; }
+#shopPage .shop-component-icon { margin-right: 10px; }
+
+/* Center Components within the area below the chassis selector. */
+#shopPage .shop-car-components {
+    flex-grow: 1;
+    min-height: 0;
+    justify-content: center;
+    margin-top: 66px;
+}
+#shopPage .shop-components-group {
+    flex-grow: 0;
+    flex-shrink: 0;
+    margin-top: 8px;
+    margin-bottom: 8px;
+}
+
+#shopPage .shop-car-picker {
+    position: relative;
+    top: auto;
+    left: auto;
+    width: auto;
+    max-width: 100%;
+    height: 110px;
+    flex-shrink: 0;
+    flex-direction: row;
+    align-items: center;
+    margin-top: 4px;
+}
+#shopPage .shop-car-components { margin-top: 0; }
+.shop-chassis-strip { flex-grow: 1; flex-shrink: 1; min-width: 0; height: 110px; }
+.shop-chassis-strip .unity-scroll-view__content-container { flex-direction: row; padding: 12px 3px 4px; }
+#shopPage .shop-strip-card {
+    width: 286px;
+    height: 88px;
+    flex-shrink: 0;
+    margin: 0 8px 0 0;
+    padding: 14px 8px 5px;
+    background-color: transparent;
+    border-color: transparent;
+    opacity: 0.78;
+}
+#shopPage .shop-strip-card.shop-strip-selected,
+#shopPage .shop-strip-card:hover,
+#shopPage .shop-strip-card:focus { opacity: 1; }
+.shop-strip-card-content { flex-direction: row; align-items: center; flex-grow: 1; }
+.shop-strip-image { width: 130px; height: 60px; flex-shrink: 0; background-color: transparent; }
+.shop-strip-specs { flex-grow: 1; flex-shrink: 1; min-width: 0; margin-left: 8px; }
+#shopPage .shop-strip-arrow {
+    width: 22px;
+    min-width: 22px;
+    height: 88px;
+    flex-shrink: 0;
+    padding: 0;
+    margin: 6px 4px 0;
+    border-radius: 6px;
+    border-color: #009bdd;
+    color: #55c4ef;
+    background-color: #182634;
+}
+#shopPage .shop-strip-arrow:hover { background-color: #263e50; }
+#shopPage .shop-strip-arrow:disabled { opacity: 0.35; }
+
+/* Center the compact selector + Components stack, rather than centering Components alone. */
+#shopPage {
+    justify-content: center;
+    padding-top: 12px;
+    padding-bottom: 12px;
+}
+#shopPage .shop-car-picker { margin-top: 0; }
+#shopPage .shop-car-components {
+    flex-grow: 0;
+    flex-shrink: 0;
+    justify-content: flex-start;
+    margin-top: 8px;
+}
+#shopPage .shop-components-group { margin-top: 8px; margin-bottom: 8px; }
+
+/* Compact shared Team view margins, with breathing room inside the header/footer. */
+.garage-screen { padding: 12px 16px; }
+.garage-screen .garage-page { padding: 10px 6px; }
+.garage-screen .garage-page.event-setup-page { padding: 4px 6px; }
+.garage-screen > .team-header-row,
+.garage-screen > .garage-footer {
+    padding-left: 12px;
+    padding-right: 12px;
+}
+
+/* Edge-to-edge Team header/footer; keep horizontal margins around tab content only. */
+.garage-screen { padding: 0; }
+.garage-screen > .garage-body,
+.garage-screen > .garage-page { margin-left: 16px; margin-right: 16px; }
+.garage-screen > .team-header-row,
+.garage-screen > .garage-footer { margin: 0; }
+
+#employeesPage,
+#employeesPage Label,
+#employeesPage Button,
+#fireEmployeePrompt Label,
+#fireEmployeePrompt Button {
+    -unity-font-definition: url("../Fonts/OpenSans/OpenSans-Bold.ttf");
+    -unity-font-style: normal;
+}
+#employeesPage .employee-role-actions > .settings-button {
+    background-color: #182634;
+    border-color: #009bdd;
+    color: #f5f5f5;
+    padding: 7px 12px;
+}
+#employeesPage .employee-role-actions > .settings-button:hover,
+#employeesPage .employee-role-actions > .settings-tab-current { background-color: #263e50; border-color: #55c4ef; }
+.employee-card.team-home-panel {
+    background-color: transparent;
+    border-color: transparent;
+    border-width: 1px;
+    border-radius: 10px;
+    padding: 18px 10px 10px;
+    margin: 14px 10px 6px 2px;
+}
+#employeesPage .team-home-heading { color: #009bdd; }
+#employeesPage .employee-portrait { margin-top: 2px; }
+#employeesPage .staff-card-fire-button { background-color: #182634; color: #f5f5f5; border-color: #009bdd; border-radius: 8px; }
+#employeesPage .staff-card-fire-button:hover { background-color: #263e50; border-color: #ff8c8c; }
+#employeesPage .staff-card-fire-button:disabled { opacity: 0.44; }
+#employeesPage .employee-work-row { background-color: rgba(16, 21, 30, 0.94); border-width: 1px; border-color: #009bdd; border-radius: 8px; padding: 8px; }
+#employeesPage .employee-work-open-shop { background-color: #182634; color: #55c4ef; border-color: #009bdd; border-radius: 8px; }
+#employeesPage .employee-work-open-shop:hover { background-color: #263e50; }
+#fireEmployeePrompt { padding: 0; border-width: 0; background-color: rgba(12, 21, 32, 0.76); }
+.employee-dismissal-dialog { background-color: #10151e; border-color: #009bdd; }
+.employee-dismissal-dialog > .actions { justify-content: flex-end; margin-top: 12px; padding-top: 10px; border-top-width: 1px; border-top-color: #009bdd; }
+
+/* Reserve enough width for the assignee and work description before other columns. */
+#employeesPage .employee-work-mechanic {
+    width: auto;
+    min-width: 360px;
+    flex-shrink: 0;
+    padding-right: 20px;
+}
+#employeesPage .employee-work-details { flex-grow: 0; flex-shrink: 0; }
+#employeesPage .employee-work-name { white-space: nowrap; }
+#employeesPage .employee-work-car { width: 88px; flex-shrink: 1; }
+#employeesPage .employee-work-chassis { width: 96px; flex-shrink: 0; }
+#employeesPage .employee-work-row > .shop-component-icon { margin-right: 8px; }
+#employeesPage .employee-work-progress { min-width: 100px; }
+
+#employeesPage .employee-work-chassis { width: 140px; white-space: nowrap; }
+
+#schedulePage,
+#schedulePage Label,
+#schedulePage Button {
+    -unity-font-definition: url("../Fonts/OpenSans/OpenSans-Bold.ttf");
+    -unity-font-style: normal;
+}
+#schedulePage .schedule-layout { padding-top: 4px; }
+#schedulePage .schedule-standings,
+#schedulePage .schedule-events,
+#schedulePage .schedule-details {
+    padding: 18px 10px 10px;
+    background-color: transparent;
+    border-color: transparent;
+    border-width: 1px;
+}
+#schedulePage .schedule-events { margin-left: 10px; margin-right: 10px; }
+#schedulePage .team-home-heading { color: #009bdd; }
+#schedulePage .schedule-choice {
+    border-radius: 8px;
+    min-height: 35px;
+    padding: 6px 8px;
+    margin: 2px 0;
+}
+#schedulePage .schedule-event-actions { padding-top: 6px; }
+#schedulePage .schedule-event-actions .settings-button,
+#schedulePage #eventCarPicker { border-radius: 8px; padding: 6px 10px; }
+#schedulePage .schedule-event-actions .settings-button { margin: 3px 0 0 6px; }
+#teamStandingsRows .standings-row {
+    height: 19px;
+    min-height: 19px;
+    flex-shrink: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+}
+#teamStandingsRows .results-grid-cell {
+    font-size: 12px;
+    margin-top: 0;
+    margin-bottom: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+#teamStandingsRows .standings-position,
+#teamStandingsRows .standings-car-number { flex-basis: 30px; }
+#teamStandingsRows .standings-points { flex-basis: 48px; }
+
+#teamStandingsRows .standings-row { height: 22px; min-height: 22px; }
+
+#scheduleTrackRatings .track-attribute-icon {
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    align-self: center;
+    margin: 4px 0 0;
+}
+
+#carsPage .home-component-icon-slot { width: 32px; }
+
+#resultsPage,
+#resultsPage Label,
+#resultsPage Button {
+    -unity-font-definition: url("../Fonts/OpenSans/OpenSans-Bold.ttf");
+    -unity-font-style: normal;
+}
+#resultsPage { flex-grow: 1; min-height: 0; }
+#resultsPage .team-results-panel { flex-grow: 1; flex-basis: 0; min-height: 0; padding: 18px 12px 10px; }
+#resultsPage .team-home-heading { color: #009bdd; }
+#resultsPage .settings-field { flex-shrink: 0; margin-bottom: 6px; }
+#resultsPage .settings-field > .settings-button { align-self: flex-start; border-radius: 8px; border-color: #009bdd; }
+#resultsPage .team-results-scroll { flex-grow: 1; flex-basis: 0; min-height: 0; }
+#resultsPage .results-grid { margin-top: 0; }
+#resultsPage .results-grid-row { height: 22px; min-height: 22px; flex-shrink: 0; }
+#resultsPage .results-grid-row.results-grid-header { height: 26px; min-height: 26px; }
+#resultsPage .results-grid-cell {
+    font-size: 12px;
+    margin-top: 0;
+    margin-bottom: 0;
+    padding: 1px 5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Event selector stays content-sized; the results list receives the remaining height. */
+#resultsPage .team-results-panel > .settings-field {
+    flex-grow: 0;
+    flex-shrink: 0;
+    flex-basis: auto;
+    margin: 0 0 6px;
+}
+#resultsPage .team-results-panel > .settings-field > .settings-note { margin: 0 0 2px; }
+#resultsPage .team-results-panel > .settings-field > .settings-button { margin: 0; }
+
+#resultsPage .results-selection-row { flex-direction: row; flex-shrink: 0; align-items: flex-start; margin-bottom: 6px; }
+#resultsPage .results-selection-row > .settings-field { flex-grow: 0; flex-shrink: 1; flex-basis: auto; margin: 0 12px 0 0; }
+#resultsPage .results-selection-row > .settings-field > .settings-note { margin: 0 0 2px; }
+#resultsPage .results-selection-row > .settings-field > .settings-button { margin: 0; min-width: 160px; border-color: #009bdd; }
+
+.results-grid-row > .results-position { flex-grow: 0; flex-shrink: 0; flex-basis: 60px; }
+.results-grid-row > .results-car-image {
+    flex-grow: 0;
+    flex-shrink: 0;
+    flex-basis: 62px;
+    width: 62px;
+    height: 28px;
+    padding: 0 3px;
+    background-color: transparent;
+}
+.results-grid-row > .results-car-number { flex-grow: 0; flex-shrink: 0; flex-basis: 70px; }
+#resultsPage .results-grid-row { height: 30px; min-height: 30px; align-items: center; }
+#resultsPage .results-grid-row.results-grid-header { height: 26px; min-height: 26px; }
+
+.results-grid-row > .results-car-image {
+    flex-basis: 106px;
+    width: 106px;
+    height: 56px;
+}
+#resultsPage .results-grid-row { height: 60px; min-height: 60px; }
+#resultsPage .results-grid-row.results-grid-header { height: 26px; min-height: 26px; }
+.results-grid-header > .results-car-image { height: auto; }
+
+/* Reserve narrow identity-number columns and prioritize full driver/team names. */
+.results-grid-row > .results-position { flex-basis: 36px; }
+.results-grid-row > .results-car-number { flex-basis: 44px; }
+#resultsPage .results-grid-row > .results-grid-name {
+    flex-grow: 3;
+    flex-shrink: 1;
+    flex-basis: 0;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+}
+
+.results-grid-row > .results-laps { flex-grow: 0; flex-shrink: 0; flex-basis: 42px; }
+#resultsPage .results-grid-scrollable { flex-grow: 1; flex-basis: 0; min-height: 0; }
+#resultsPage .results-grid-scrollable > .results-grid-header { flex-shrink: 0; }
+#resultsPage .results-body-scroll { flex-grow: 1; flex-basis: 0; min-height: 0; }
+
+#resultsPage .team-results-layout { flex-direction: row; flex-grow: 1; min-height: 0; }
+#resultsPage .team-results-panel { flex-grow: 2; flex-shrink: 1; flex-basis: 0; min-width: 0; margin-right: 12px; }
+#resultsPage .team-results-details { flex-grow: 1; flex-shrink: 1; flex-basis: 0; min-width: 0; min-height: 0; padding: 18px 12px 10px; }
+#resultsPage .results-details-scroll { flex-grow: 1; min-height: 0; }
+#resultsPage .results-player-row { background-color: #155374; border-left-width: 3px; border-left-color: #55c4ef; }
+.results-details-track { height: 74px; flex-shrink: 0; margin: 5px 0 8px; }
+.results-session-summary { padding: 8px; margin-top: 8px; border-width: 1px; border-color: #34495f; border-radius: 8px; flex-shrink: 0; }
+.results-session-current { border-color: #009bdd; }
+.results-session-name { color: #55c4ef; font-size: 13px; white-space: normal; margin: 0 0 4px; }
+.results-weather { flex-direction: row; align-items: center; padding: 6px; margin-top: 6px; border-width: 1px; border-color: #34495f; border-radius: 5px; background-color: #263e50; }
+.results-weather-night { background-color: #0b101b; }
+.results-weather-icon { width: 42px; height: 36px; flex-shrink: 0; margin-right: 8px; }
+.results-weather-title { font-size: 12px; margin: 0; }
+
+.results-fixed-track-info { flex-shrink: 0; }
+#resultsPage .results-details-scroll { flex-basis: 0; }
+.results-session-summary:hover,
+.results-session-summary:focus { border-color: #55c4ef; }
+
+.results-grid-row > .results-fastest-lap {
+    flex-grow: 0;
+    flex-shrink: 0;
+    flex-basis: 100px;
+}
+.results-grid-row > .results-best-lap-mph {
+    flex-grow: 0;
+    flex-shrink: 0;
+    flex-basis: 112px;
+}
+
+.results-session-body { flex-direction: row; align-items: stretch; }
+.results-session-performance { flex-grow: 2; flex-shrink: 1; flex-basis: 0; min-width: 0; padding-right: 8px; }
+.results-session-body > .results-weather {
+    flex-grow: 1;
+    flex-shrink: 1;
+    flex-basis: 0;
+    min-width: 0;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    margin-top: 0;
+    padding: 5px;
+}
+.results-session-body .results-weather-icon { align-self: center; margin: 0 0 4px; }
+.results-session-body .results-weather .team-home-race-detail { white-space: normal; }
+.results-session-leader-car { height: 66px; flex-shrink: 0; background-color: transparent; }
+.results-session-leader-label { font-size: 11px; color: #55c4ef; margin: 2px 0; }
+.results-session-driver { font-size: 12px; white-space: normal; margin: 0; }
+.results-session-player { font-size: 11px; color: #55c4ef; white-space: normal; margin: 5px 0 0; }
+
+.results-session-driver-line { flex-direction: row; align-items: center; }
+.results-session-driver-line > .results-session-driver { flex-grow: 1; flex-shrink: 1; min-width: 0; }
+.results-session-lap-time { flex-shrink: 0; font-size: 11px; margin-left: 6px; -unity-text-align: middle-right; }
+
+/* Content-sized, compact session and weather summaries. */
+.results-session-summary { padding: 6px; margin-top: 6px; }
+.results-session-name { margin: 0 0 3px; }
+.results-session-body { align-items: flex-start; }
+.results-session-performance { padding-right: 6px; }
+.results-session-leader-label { margin: 0 0 2px; }
+.results-session-player { margin-top: 3px; }
+.results-session-body > .results-weather {
+    flex-grow: 1;
+    align-self: flex-start;
+    justify-content: flex-start;
+    padding: 4px;
+    margin-top: 0;
+}
+.results-session-body .results-weather-icon { height: 32px; margin: 0 0 2px; }
+.results-weather-line { flex-direction: row; align-items: center; align-self: stretch; min-width: 0; }
+.results-weather-description { flex-grow: 1; flex-shrink: 1; min-width: 0; font-size: 10px; white-space: normal; margin: 0; padding: 0; }
+.results-weather-temperature { flex-shrink: 0; font-size: 10px; margin: 0 0 0 4px; padding: 0; -unity-text-align: middle-right; }
+
+.results-session-body { align-items: stretch; }
+.results-session-body > .results-weather {
+    align-self: stretch;
+    align-items: center;
+    justify-content: center;
+}
+.results-session-body .results-weather-line { align-self: stretch; }
+
+.results-event-chassis { font-size: 11px; white-space: normal; margin: 2px 0 6px; }
+
+#teamStandingsRows .standings-car-number {
+    flex-basis: 50px;
+    flex-shrink: 0;
+    padding-left: 3px;
+    padding-right: 3px;
+}
+
+.results-session-performance { flex-grow: 3; }
+.results-session-body > .results-weather { flex-grow: 1; }
+.results-session-lap-mph { flex-shrink: 0; font-size: 11px; margin-left: 12px; -unity-text-align: middle-right; }
+
+#carsPage #addTeamCarButton { flex-shrink: 0; margin-top: 0; margin-bottom: 10px; }
+
+#carMarketPage { padding: 0; margin: 0; }
+#carMarketPage, #carMarketPage Label, #carMarketPage Button {
+    -unity-font-definition: url("../Fonts/OpenSans/OpenSans-Bold.ttf");
+    -unity-font-style: normal;
+}
+.car-purchase-dialog { width: 850px; max-width: 94%; max-height: 94%; background-color: #10151e; border-color: #009bdd; }
+#carMarketPage .car-market-new { flex-direction: column; flex-wrap: nowrap; align-items: stretch; min-width: 0; padding: 16px 10px 8px; margin-top: 12px; }
+.car-purchase-selections { flex-direction: row; }
+.car-purchase-selection { flex-grow: 1; flex-basis: 0; min-width: 0; margin-right: 8px; }
+.car-purchase-selection > .settings-note { margin-bottom: 2px; }
+.car-purchase-selection > .settings-button { align-self: stretch; }
+#carMarketPage .car-purchase-used { padding: 16px 10px 6px; margin-top: 10px; flex-shrink: 1; min-height: 100px; }
+#usedCarListings { max-height: 210px; min-height: 80px; flex-shrink: 1; }
+#carMarketPage .results-grid-row { min-height: 32px; flex-shrink: 0; }
+#carMarketPage .results-grid-cell { padding: 3px 6px; font-size: 12px; }
+#carMarketPage .settings-button { border-color: #009bdd; border-radius: 8px; }
+#carMarketPage .settings-button:hover { background-color: #263e50; border-color: #55c4ef; }
+#carMarketPage .settings-footer { justify-content: flex-end; margin-top: 6px; }
+#carMarketPage #buyNewChassisButton { align-self: flex-end; }
+
+.used-chassis-item { flex-direction: row; flex-shrink: 0; padding: 8px; margin: 3px 0 8px; border-width: 1px; border-color: #34495f; border-radius: 8px; background-color: #182634; }
+.used-chassis-identity { width: 230px; flex-shrink: 0; padding-right: 12px; }
+.used-chassis-title { font-size: 13px; color: #55c4ef; margin: 0; }
+.used-chassis-image { height: 78px; background-color: transparent; }
+.used-chassis-specs { font-size: 12px; white-space: normal; margin: 0; }
+.used-chassis-identity > .settings-button { align-self: flex-start; margin: 4px 0 0; }
+.used-chassis-ratings { flex-grow: 1; min-width: 0; justify-content: center; }
+.used-chassis-ratings .car-card-rating-row { min-height: 24px; font-size: 12px; }
+
+#carMarketPage .car-purchase-buy-button {
+    min-height: 32px;
+    padding: 4px 10px;
+    font-size: 12px;
+    color: #f5f5f5;
+    background-color: #182634;
+    border-width: 1px;
+    border-color: #009bdd;
+    border-radius: 8px;
+}
+#carMarketPage .car-purchase-buy-button:hover,
+#carMarketPage .car-purchase-buy-button:focus { background-color: #263e50; border-color: #55c4ef; }
+#carMarketPage .car-purchase-buy-button:disabled { opacity: 0.44; }
+
+/* Purchase Chassis uses nearly the full Team view, with roomy used-car rows. */
+#carMarketPage .car-purchase-dialog {
+    width: 96%;
+    max-width: 1600px;
+    height: 92%;
+    max-height: 96%;
+    padding: 20px 24px 16px;
+}
+#carMarketPage .car-market-new { flex-shrink: 0; }
+#carMarketPage .car-purchase-used {
+    flex-grow: 1;
+    flex-shrink: 1;
+    flex-basis: 0;
+    min-height: 140px;
+    padding: 20px 14px 10px;
+}
+#carMarketPage #usedCarListings {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-height: 0;
+    max-height: none;
+}
+#carMarketPage .used-chassis-item {
+    min-height: 220px;
+    padding: 16px 20px;
+    margin: 4px 0 14px;
+    align-items: center;
+}
+#carMarketPage .used-chassis-identity {
+    width: 34%;
+    min-width: 240px;
+    padding-right: 30px;
+}
+#carMarketPage .used-chassis-title { font-size: 16px; margin-bottom: 4px; }
+#carMarketPage .used-chassis-image { height: 120px; }
+#carMarketPage .used-chassis-specs { font-size: 14px; margin: 4px 0; }
+#carMarketPage .used-chassis-ratings { padding: 8px 16px; }
+#carMarketPage .used-chassis-ratings .car-card-rating-row { min-height: 32px; font-size: 14px; }
+#carMarketPage .used-chassis-ratings .car-card-value { width: 44px; font-size: 13px; }
+#carMarketPage .used-chassis-ratings .car-card-rating-heading { font-size: 14px; }
+#carMarketPage .used-chassis-ratings .home-component-icon-slot { height: 30px; width: 46px; }
+#carMarketPage .home-component-icon-slot > .shop-component-icon { scale: 0.75 0.75; left: 2px; top: -5px; }
+#carMarketPage .car-purchase-buy-button { min-height: 36px; font-size: 13px; padding: 5px 13px; }
+#carMarketPage .car-purchase-dialog > .settings-footer { flex-shrink: 0; }
+
+.car-purchase-tabs { flex-direction: row; flex-shrink: 0; margin-bottom: 6px; }
+#carMarketPage .car-purchase-tabs > .settings-button { min-width: 90px; margin: 0 8px 0 0; }
+#carMarketPage .car-purchase-tabs > .settings-tab-current { background-color: #155374; border-color: #55c4ef; }
+#carMarketPage .car-purchase-dialog > .settings-footer { margin-top: auto; }
+
+#carMarketPage .car-purchase-tabs { margin-bottom: 16px; }
+#carMarketPage .used-chassis-item { min-height: 188px; padding: 10px 20px; margin-bottom: 10px; }
+#carMarketPage .used-chassis-image { height: 90px; }
+#carMarketPage .used-chassis-ratings { padding: 4px 16px; }
+#carMarketPage .used-chassis-ratings .car-card-rating-row { min-height: 27px; }
+.used-chassis-filter-toolbar { flex-direction: row; align-items: center; flex-shrink: 0; margin-bottom: 8px; }
+#carMarketPage .used-car-filter-icon { width: 36px; min-width: 36px; height: 34px; padding: 5px; margin: 0; }
+.used-car-filter-icon .track-icon-art { width: 22px; height: 22px; }
+.used-car-filter-summary { flex-grow: 1; flex-shrink: 1; margin-left: 10px; margin-right: 10px; white-space: normal; }
+.used-car-filter-dialog { background-color: #10151e; border-top-color: #009bdd; border-right-color: #009bdd; border-bottom-color: #009bdd; border-left-color: #009bdd; }
+.used-car-filter-dialog > .settings-note { margin-top: 8px; }
+.used-car-filter-dialog > .settings-button:hover { background-color: #155374; }
+
+#carMarketPage .used-chassis-unaffordable { opacity: 0.5; }
+
+.car-purchase-heading-row { flex-direction: row; align-items: center; flex-shrink: 0; margin-bottom: 8px; }
+.car-purchase-heading-row > .settings-group-heading { flex-grow: 1; margin-bottom: 0; }
+.car-purchase-budget { -unity-text-align: middle-right; flex-shrink: 0; margin-left: 16px; color: whitesmoke; font-size: 16px; }
+#carMarketPage .used-car-sort { flex-shrink: 0; margin: 0 12px 0 0; min-width: 200px; }
+
+#carMarketPage .car-market-new { flex-grow: 1; flex-shrink: 1; min-height: 0; }
+.new-chassis-body { flex-direction: row; flex-grow: 1; flex-shrink: 1; min-width: 0; min-height: 0; }
+.new-chassis-preview-column { flex-basis: 40%; flex-shrink: 1; min-width: 0; padding-right: 24px; }
+.new-chassis-preview { width: 100%; height: 150px; flex-shrink: 1; min-width: 0; min-height: 70px; }
+.new-chassis-components { flex-grow: 1; flex-shrink: 1; flex-basis: 0; }
+.new-chassis-component-row { flex-direction: row; align-items: center; min-height: 42px; flex-shrink: 0; }
+.new-chassis-component-name { flex-grow: 1; min-width: 105px; }
+#carMarketPage .new-chassis-level-button { min-width: 30px; width: 30px; min-height: 30px; padding: 2px; margin: 0 4px; }
+.new-chassis-level { width: 62px; -unity-text-align: middle-center; }
+.new-chassis-upgrade-price { width: 120px; -unity-text-align: middle-right; }
+.new-chassis-total-row { flex-direction: row; align-items: center; flex-shrink: 0; margin-top: 12px; }
+.new-chassis-total { flex-grow: 1; -unity-text-align: middle-right; margin-right: 16px; font-size: 18px; color: whitesmoke; }
+
+.new-chassis-component-row > .home-component-icon-slot { width: 40px; height: 38px; flex-shrink: 0; }
+.new-chassis-component-row .home-component-icon-slot > .shop-component-icon { scale: 0.75 0.75; left: 0; top: -2px; }
+.new-chassis-level-bar { flex-grow: 1; flex-shrink: 1; min-width: 70px; margin-right: 12px; flex-direction: row; align-items: center; }
+.new-chassis-level-bar > .car-card-metric { flex-grow: 1; min-width: 0; }
+
+.new-chassis-total-row { flex-direction: column; align-items: flex-end; }
+.new-chassis-total-row > .new-chassis-total { flex-grow: 0; margin-right: 0; -unity-text-align: middle-right; }
+#carMarketPage .new-chassis-total-row > .car-purchase-buy-button { margin-right: 0; margin-top: 6px; }
+.new-chassis-upgrade-price { flex-shrink: 0; margin-right: 0; padding-right: 0; }
+
+.new-chassis-budget-error { align-self: flex-end; flex-shrink: 0; margin-top: 4px; }
+.new-chassis-budget-error > .settings-inline-error { white-space: normal; }
+
+.new-chassis-component-heading { flex-direction: row; align-items: center; flex-shrink: 0; }
+.new-chassis-component-heading > .settings-group-heading { flex-grow: 1; margin-bottom: 0; }
+#carMarketPage .new-chassis-component-heading > .settings-button { min-height: 30px; margin: 0; padding: 3px 12px; }
+
+.new-chassis-total-line { flex-direction: row; align-self: stretch; justify-content: flex-end; align-items: center; }
+.new-chassis-total-caption { margin-right: 12px; font-size: 18px; color: whitesmoke; }
+.new-chassis-total-value { width: 120px; flex-shrink: 0; margin-right: 0; padding-right: 0; -unity-text-align: middle-right; font-size: 18px; color: whitesmoke; }
+.new-chassis-purchase-actions { flex-direction: row; justify-content: flex-end; margin-top: 6px; flex-shrink: 0; }
+#carMarketPage .new-chassis-purchase-actions > .settings-button { margin: 0 0 0 8px; }
+
+#carMarketPage .new-chassis-total-field { width: 120px; flex-grow: 0; flex-shrink: 0; align-self: flex-end; margin-right: 0; }
+#carMarketPage .new-chassis-total-field .unity-text-field__input { -unity-text-align: middle-right; }
+
+#carMarketPage .new-chassis-upgrade-price { width: 120px; min-width: 120px; max-width: 120px; padding-right: 10px; -unity-text-align: middle-right; }
+#carMarketPage .new-chassis-total-field { min-width: 120px; max-width: 120px; padding-left: 0; padding-right: 0; }
+#carMarketPage .new-chassis-total-field .unity-base-text-field__input { margin-left: 0; margin-right: 0; padding-right: 9px; border-right-width: 1px; -unity-text-align: middle-right; }
+#carMarketPage .new-chassis-total-field .unity-text-element { -unity-text-align: middle-right; }
+
+#carMarketPage .new-chassis-component-row > .new-chassis-upgrade-price { flex-grow: 0; flex-shrink: 0; flex-basis: auto; width: 120px; min-width: 120px; max-width: 120px; margin: 0; padding-left: 0; padding-right: 0; }
+#carMarketPage .new-chassis-upgrade-price .unity-base-text-field__input { margin-left: 0; margin-right: 0; padding-right: 9px; border-right-width: 1px; -unity-text-align: middle-right; }
+#carMarketPage .new-chassis-upgrade-price .unity-text-element { -unity-text-align: middle-right; }
+
+#carMarketPage .new-chassis-components { min-width: 0; align-items: stretch; }
+#carMarketPage .new-chassis-component-row { align-self: stretch; }
+#carMarketPage .new-chassis-components > .new-chassis-total-row { align-self: stretch; margin-left: 0; margin-right: 0; padding-left: 0; padding-right: 0; }
+
+#carMarketPage .new-chassis-upgrade-price .unity-base-text-field__input,
+#carMarketPage .new-chassis-total-field .unity-base-text-field__input {
+    border-width: 0;
+    padding-right: 10px;
+}
+
+#carMarketPage .new-chassis-upgrade-price,
+#carMarketPage .new-chassis-total-field,
+#carMarketPage .new-chassis-upgrade-price .unity-base-text-field__input,
+#carMarketPage .new-chassis-total-field .unity-base-text-field__input,
+#carMarketPage .new-chassis-upgrade-price .unity-text-element,
+#carMarketPage .new-chassis-total-field .unity-text-element {
+    background-color: transparent;
+}
+
+.chassis-purchase-confirmation { height: auto; min-height: 0; padding: 14px 18px; }
+.chassis-purchase-confirmation > .settings-group-heading { margin-bottom: 0; }
+.chassis-purchase-confirmation > .settings-footer { flex-grow: 0; flex-shrink: 0; margin-top: 10px; padding-top: 8px; }
+
+#carsPage .car-panel-selected { border-width: 2px; border-color: #55c4ef; }
+
+#standingsPage { flex-grow: 1; min-height: 0; padding: 10px 6px; -unity-font-definition: url("../Fonts/OpenSans/OpenSans-Bold.ttf"); }
+.championship-season-heading { color: #f5f5f5; font-size: 17px; margin-bottom: 18px; flex-shrink: 0; }
+.championship-columns { flex-direction: row; flex-grow: 1; min-height: 0; }
+.championship-panel { flex-grow: 1; flex-basis: 0; min-width: 0; min-height: 0; margin: 0 5px; padding: 18px 10px 10px; }
+.championship-list { flex-grow: 1; flex-shrink: 1; min-height: 0; }
+.championship-column-headings { flex-shrink: 0; border-bottom-width: 1px; border-bottom-color: #009bdd; margin-bottom: 4px; }
+#standingsPage .standings-row { height: 24px; min-height: 24px; flex-shrink: 0; padding-top: 0; padding-bottom: 0; }
+#standingsPage .results-grid-cell { color: #f5f5f5; font-size: 12px; padding-top: 0; padding-bottom: 0; margin-top: 0; margin-bottom: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#standingsPage .standings-position { flex-basis: 32px; flex-shrink: 0; }
+#standingsPage .standings-car-number { flex-basis: 42px; flex-shrink: 0; }
+#standingsPage .standings-points { flex-basis: 52px; flex-shrink: 0; -unity-text-align: middle-right; }
+#standingsPage .results-grid-name { flex-grow: 1; flex-basis: 0; min-width: 0; }
+#standingsPage .standings-player { background-color: rgba(0, 155, 221, 0.2); }
+#schedulePage .schedule-events { margin-left: 0; }
+.garage-footer .team-footer-button { padding-left: 7px; padding-right: 7px; }
+
+#standingsPage .standings-wins { flex-grow: 0; flex-shrink: 0; flex-basis: 38px; -unity-text-align: middle-center; }
+
+.championship-right-column { flex-direction: column; flex-grow: 1; flex-basis: 0; min-width: 0; min-height: 0; margin: 0 5px; }
+#standingsPage .championship-right-column > .championship-panel { margin-left: 0; margin-right: 0; }
+#standingsPage .championship-manufacturers { flex-grow: 0; flex-basis: auto; height: 190px; min-height: 120px; flex-shrink: 1; margin-bottom: 24px; }
+#standingsPage .championship-owners { flex-grow: 1; flex-basis: 0; min-height: 100px; }
+
+/* Match header/body widths and include space for label padding. */
+#standingsPage .results-grid-cell { margin-left: 0; margin-right: 0; padding-left: 4px; padding-right: 4px; }
+#standingsPage .standings-position { flex-grow: 0; flex-shrink: 0; flex-basis: 42px; min-width: 42px; }
+#standingsPage .standings-car-number { flex-grow: 0; flex-shrink: 0; flex-basis: 54px; min-width: 54px; }
+#standingsPage .standings-wins { flex-grow: 0; flex-shrink: 0; flex-basis: 52px; min-width: 52px; }
+#standingsPage .standings-points { flex-grow: 0; flex-shrink: 0; flex-basis: 64px; min-width: 64px; }
+#standingsPage .championship-column-headings .results-grid-cell { text-overflow: clip; }
+#standingsPage .championship-column-headings .results-grid-name { min-width: 110px; }
+
+#standingsPage .standings-top-five,
+#standingsPage .standings-top-ten { flex-grow: 0; flex-shrink: 0; flex-basis: 58px; min-width: 58px; -unity-text-align: middle-center; }
+
+/* Reserve more width for driver identities and their additional finish-count columns. */
+#standingsPage .championship-columns > .championship-panel {
+    flex-grow: 1.7;
+    flex-basis: 0;
+}
+#standingsPage .championship-columns > .championship-right-column {
+    flex-grow: 1;
+    flex-basis: 0;
+}
+
+#standingsPage .standings-row {
+    align-items: stretch;
+}
+#standingsPage .standings-row > .results-grid-cell {
+    align-self: stretch;
+    -unity-text-align: middle-center;
+}
+#standingsPage .standings-row > .results-grid-name {
+    -unity-text-align: middle-left;
+}
+#standingsPage .standings-row > .standings-points {
+    -unity-text-align: middle-right;
+}
+
+#schedulePage .schedule-event-actions { flex-direction: row; flex-wrap: wrap; justify-content: flex-end; }
+#schedulePage .schedule-event-actions > .schedule-action-button {
+    background-color: #182634; color: #f5f5f5; border-width: 1px; border-color: #009bdd;
+    border-radius: 8px; min-height: 38px; min-width: 0; padding: 5px 10px;
+    margin: 4px 0 0 6px; font-size: 12px; white-space: nowrap;
+}
+#schedulePage .schedule-action-button:hover,
+#schedulePage .schedule-action-button:focus { background-color: #263e50; border-color: #55c4ef; }
+#schedulePage .schedule-action-button:disabled { opacity: 0.45; }
+
+#mailTab > .mail-response-badge {
+    position: absolute; top: 2px; right: 3px;
+    width: 14px; height: 14px; margin: 0; padding: 0;
+    border-radius: 7px; background-color: #ffaf63; color: #10151e;
+    -unity-text-align: middle-center; font-size: 12px;
+    -unity-font-definition: url("../Fonts/OpenSans/OpenSans-Bold.ttf");
+}
+
+/* Keep Balance and Next Race on the same row, including the empty-schedule state. */
+.team-header-row > .team-header-balance,
+.team-header-row > .team-header-next-race {
+    align-self: stretch;
+    justify-content: flex-start;
+}
+.team-header-balance > .team-header-caption,
+.team-header-next-race > .team-header-caption { min-height: 18px; flex-shrink: 0; -unity-text-align: middle-left; }
+.team-header-balance > .team-header-balance-amount,
+.team-header-next-race > .team-header-track { min-height: 22px; flex-shrink: 0; -unity-text-align: upper-left; }
+.team-header-balance > .team-header-date,
+.team-header-next-race > .team-header-date { min-height: 18px; flex-shrink: 0; }
+
+#mailPage > .mail-email { flex-grow: 3; flex-basis: 0; }
+#mailPage > .mail-social { flex-grow: 1; flex-basis: 0; }
+#mailPage .mail-reader { flex-grow: 3; flex-basis: 0; }
+#mailPage .mail-inbox { flex-grow: 1; flex-basis: 0; }
+#mailPage .mail-response-actions { flex-direction: row; flex-wrap: wrap; align-items: center; flex-shrink: 0; margin-top: 8px; }
+#mailPage .mail-response-actions > .mail-scenario-choice { flex-grow: 0; flex-shrink: 0; margin: 0 8px 8px 0; align-self: flex-start; }
+
+/* Hiring views share the current Team/settings control styling. */
+#recruitmentPage { flex-grow: 1; flex-shrink: 1; min-height: 0; padding: 12px 16px; background-color: #10151e; }
+#recruitmentPage, #recruitmentPage Label, #recruitmentPage Button {
+    -unity-font-definition: url("../Fonts/OpenSans/OpenSans-Bold.ttf"); -unity-font-style: normal; color: #f5f5f5;
+}
+#recruitmentPage .recruitment-header { flex-direction: row; align-items: center; justify-content: space-between; flex-shrink: 0; }
+#recruitmentPage .settings-title { margin: 0; font-size: 24px; color: #009bdd; }
+#recruitmentPage .recruitment-filter-control { flex-grow: 0; flex-shrink: 0; width: 260px; }
+#recruitmentPage .recruitment-filter-control > .settings-note { margin: 0 0 3px; }
+#recruitmentPage .recruitment-filter-control > .settings-button { margin: 0; }
+#recruitmentPage .recruitment-status { height: 24px; min-height: 24px; flex-shrink: 0; margin: 2px 0 8px; white-space: normal; }
+#recruitmentPage .recruitment-candidates-panel { flex-grow: 1; flex-basis: 0; min-height: 0; margin: 4px 0 0; padding: 20px 10px 8px; }
+#recruitmentPage .team-home-heading { color: #009bdd; }
+#recruitmentColumnHeadings { flex-shrink: 0; border-bottom-width: 1px; border-bottom-color: #009bdd; }
+#recruitmentPage .recruitment-list { flex-grow: 1; flex-shrink: 1; min-height: 0; }
+#recruitmentPage .recruitment-row { min-height: 88px; flex-shrink: 0; align-items: center; border-bottom-color: #263e50; }
+#recruitmentPage .recruitment-row.results-grid-header { min-height: 30px; height: 30px; }
+#recruitmentPage .recruitment-row:hover { background-color: #1c3444; }
+#recruitmentPage .recruitment-row:hover .recruitment-photo-cell { background-color: #1c3444; }
+#recruitmentPage .results-grid-cell { font-size: 12px; padding: 5px 8px; -unity-text-align: middle-left; white-space: normal; }
+#recruitmentPage .recruitment-photo-cell { width: 72px; flex-shrink: 0; padding: 4px; }
+#recruitmentPage .recruitment-portrait { width: 64px; height: 64px; background-color: transparent; }
+#recruitmentPage .recruitment-candidate { flex-grow: 1.6; min-width: 165px; }
+#recruitmentPage .recruitment-role { flex-grow: 1; min-width: 110px; }
+#recruitmentPage .recruitment-skills { flex-grow: 2.4; min-width: 240px; }
+#recruitmentPage .recruitment-salary { flex-grow: 0; flex-shrink: 0; flex-basis: 130px; -unity-text-align: middle-right; }
+#recruitmentPage .recruitment-action { width: 82px; flex-shrink: 0; padding-left: 8px; }
+#recruitmentPage .settings-button { border-radius: 8px; border-width: 1px; border-color: #009bdd; background-color: #182634; min-height: 34px; padding: 5px 12px; }
+#recruitmentPage .settings-button:hover, #recruitmentPage .settings-button:focus { background-color: #263e50; border-color: #55c4ef; }
+#recruitmentPage .settings-button:disabled { opacity: 0.45; }
+#recruitmentPage .recruitment-actions { flex-grow: 0; flex-shrink: 0; margin-top: 10px; padding-top: 10px; border-top-color: #009bdd; }
+.recruitment-role-choice:hover { background-color: #155374; border-color: #55c4ef; }
+
+#recruitmentPage .recruitment-row { min-height: 112px; }
+#recruitmentPage .recruitment-candidate { flex-grow: 1.8; min-width: 175px; }
+#recruitmentPage .recruitment-role { flex-grow: 1; min-width: 100px; }
+#recruitmentPage .recruitment-skills { flex-grow: 2.6; min-width: 215px; }
+#recruitmentPage .recruitment-skills .employee-skill-row { min-height: 20px; height: 20px; }
+#recruitmentPage .recruitment-skills .employee-skill-name { width: 90px; flex-shrink: 0; }
+#recruitmentPage .recruitment-skills .employee-skill-track { min-width: 60px; height: 8px; }
+#recruitmentPage .recruitment-skills .employee-skill-value { width: 42px; flex-shrink: 0; font-size: 12px; -unity-text-align: middle-right; }
+#recruitmentPage .recruitment-salary { flex-basis: 120px; }
+#recruitmentPage .recruitment-action { width: 78px; }
+
+/* Keep employee hiring rows at a readable content width rather than stretching across wide windows. */
+#recruitmentPage.employee-recruitment-page {
+    width: 100%; max-width: 1080px; align-self: center;
+}
+#recruitmentPage.employee-recruitment-page .recruitment-candidate { flex-grow: 1.3; min-width: 175px; }
+#recruitmentPage.employee-recruitment-page .recruitment-role { flex-grow: 0; flex-shrink: 0; flex-basis: 145px; min-width: 145px; }
+#recruitmentPage.employee-recruitment-page .recruitment-skills { flex-grow: 1.5; min-width: 215px; }
+
+#recruitmentPage .recruitment-header > .settings-title { flex-grow: 1; }
+#recruitmentPage .recruitment-sort-control { flex-grow: 0; flex-shrink: 0; width: 235px; margin-left: 12px; }
+#recruitmentPage .recruitment-sort-control > .settings-note { margin: 0 0 3px; }
+#recruitmentPage .recruitment-sort-control > .settings-button { margin: 0; }
+
+#recruitmentPage.driver-recruitment-page .recruitment-row { min-height: 148px; }
+#recruitmentPage.driver-recruitment-page .recruitment-row.results-grid-header { min-height: 30px; }
+#recruitmentPage.driver-recruitment-page .employee-skill-name { width: 110px; }
+#recruitmentPage.driver-recruitment-page .employee-skill-value { width: 64px; }
+#recruitmentPage.driver-recruitment-page .recruitment-skills { min-width: 290px; }
+#employeesTab > .employee-driver-required-badge {
+    position: absolute; top: 2px; right: 3px; width: 14px; height: 14px;
+    margin: 0; padding: 0; border-radius: 7px; background-color: #c8323c; color: #ffffff;
+    -unity-text-align: middle-center; font-size: 12px;
+    -unity-font-definition: url("../Fonts/OpenSans/OpenSans-Bold.ttf");
+}
+
+#recruitmentPage.driver-recruitment-page { width: 100%; max-width: 1080px; align-self: center; }
+#recruitmentPage.driver-recruitment-page .recruitment-candidate { flex-grow: 1.2; min-width: 220px; white-space: normal; }
+#recruitmentPage.driver-recruitment-page .recruitment-skills { flex-grow: 1.8; min-width: 340px; }
+#recruitmentPage.driver-recruitment-page .recruitment-skills .employee-skill-name { width: 122px; min-width: 122px; margin-left: 0; margin-right: 8px; padding-left: 0; flex-shrink: 0; -unity-text-align: middle-left; }
+#recruitmentPage.driver-recruitment-page .recruitment-skills .employee-skill-value { width: 74px; min-width: 74px; margin-left: 8px; margin-right: 0; padding-right: 0; flex-shrink: 0; white-space: nowrap; -unity-text-align: middle-right; }
+#recruitmentPage.driver-recruitment-page .recruitment-skills .employee-skill-track { min-width: 90px; }
+
+/* Team navigation uses consistent button geometry and room for status badges. */
+#garageFooter { flex-direction: row; flex-wrap: nowrap; align-items: center; padding: 10px 12px; }
+#garageFooter > .team-footer-button {
+    flex-grow: 1; flex-shrink: 1; flex-basis: auto; min-width: 60px;
+    height: 40px; min-height: 40px; max-height: 40px;
+    margin: 0 3px; padding: 0 12px; font-size: 13px;
+    -unity-text-align: middle-center; white-space: nowrap;
+}
+#garageFooter > #employeesTab { min-width: 116px; padding-right: 24px; }
+#garageFooter > #mailTab { min-width: 68px; padding-right: 24px; }
+#garageFooter > #scheduleTab { min-width: 84px; }
+#garageFooter > #resultsTab { min-width: 72px; }
+#garageFooter > #standingsTab { min-width: 92px; }
+#garageFooter > #financesTab { min-width: 82px; }
+#garageFooter > .team-calendar { flex-grow: 0; flex-shrink: 0; margin: 0; align-items: center; }
+#garageFooter .team-date-panel { height: 40px; min-height: 40px; min-width: 96px; margin: 0 6px; padding: 0 6px; justify-content: center; }
+#garageFooter .career-advance-controls {
+    flex-direction: row;
+    flex-shrink: 0;
+    position: relative;
+}
+#garageFooter #toggleNextWeekButton {
+    flex-grow: 0; flex-shrink: 0; min-width: 18px; width: 18px;
+    height: 40px; min-height: 40px; max-height: 40px; margin: 0; padding: 0;
+}
+#garageFooter #nextWeekButton {
+    display: none; position: absolute; bottom: 100%; left: 3px; right: 0;
+    margin: 0 0 4px 0; height: 36px; min-height: 36px; padding: 0 7px;
+    background-color: #10151e; border-color: #009bdd; white-space: nowrap;
+}
+#garageFooter #nextWeekButton:hover, #garageFooter #nextWeekButton:focus {
+    background-color: #24394a;
+}
+#garageFooter .team-calendar.week-option-open .required-email-tooltip { margin-bottom: 46px; }
+#garageFooter #nextDayButton {
+    flex-grow: 0; flex-shrink: 0; min-width: 88px;
+    height: 40px; min-height: 40px; max-height: 40px;
+    margin: 0 3px; padding: 0 12px; -unity-text-align: middle-center;
+}
+
+#carMaintenancePage .component-repair-dialog {
+    width: 480px; max-width: 90%; height: auto; min-height: 0;
+    padding: 14px 18px; background-color: #10151e;
+    border-width: 1px; border-color: #009bdd; border-radius: 12px;
+}
+#carMaintenancePage, #carMaintenancePage Label, #carMaintenancePage Button {
+    -unity-font-definition: url("../Fonts/OpenSans/OpenSans-Bold.ttf"); -unity-font-style: normal; color: #f5f5f5;
+}
+#carMaintenancePage .settings-group-heading { color: #009bdd; margin-bottom: 8px; }
+#carMaintenancePage .component-repair-content { flex-grow: 0; flex-shrink: 0; }
+#carMaintenancePage .component-repair-content > .settings-note { margin: 4px 0; white-space: normal; }
+#carMaintenancePage .settings-button { min-height: 34px; margin: 4px 0; padding: 5px 12px; border-radius: 8px; border-width: 1px; border-color: #009bdd; background-color: #182634; }
+#carMaintenancePage .settings-button:hover { background-color: #263e50; border-color: #55c4ef; }
+#carMaintenancePage .settings-button:disabled { opacity: 0.45; }
+#carMaintenancePage .component-repair-status { min-height: 20px; margin: 4px 0 0; white-space: normal; }
+#carMaintenancePage .settings-footer { flex-grow: 0; flex-shrink: 0; margin-top: 6px; padding-top: 8px; border-top-color: #009bdd; }
+
+#carMaintenancePage .settings-status-error { color: #b94747; }
+#carMaintenancePage .settings-error-icon { color: #ffffff; }
+
+.component-upgrade-confirmation {
+    width: 480px; max-width: 90%; height: auto; min-height: 0; padding: 14px 18px;
+    background-color: #10151e; border-width: 1px; border-color: #009bdd; border-radius: 12px;
+    -unity-font-definition: url("../Fonts/OpenSans/OpenSans-Bold.ttf"); color: #f5f5f5;
+}
+.component-upgrade-confirmation > .settings-group-heading { color: #009bdd; margin-bottom: 6px; }
+.component-upgrade-confirmation > .settings-note { white-space: normal; margin: 4px 0; }
+.component-upgrade-confirmation > .settings-footer { flex-grow: 0; flex-shrink: 0; margin-top: 6px; padding-top: 8px; border-top-color: #009bdd; }

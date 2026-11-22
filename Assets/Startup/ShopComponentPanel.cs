@@ -8,22 +8,36 @@ internal static class ShopComponentPanel
 
     public static void Show(VisualElement panel, TeamCar car, DateTime? date, DateTime? nextRaceDate, Func<ComponentRepair, Image> repairPortrait,
         Func<CarComponent, bool> canUpgrade, long balance, Action<CarComponent> upgrade, Action<CarComponent> openRepair,
-        Action<ComponentRepair> cancelRepair, bool showRepairAvailability = false)
+        Action<ComponentRepair> cancelRepair, RacingSeries series, bool showService = true,
+        bool compactMetrics = false)
     {
         panel.Clear();
         panel.style.display = car == null ? DisplayStyle.None : DisplayStyle.Flex;
         if (car == null)
             return;
 
+        var rows = panel;
+        if (panel.name == "shopCarComponents")
+        {
+            rows = AddElement(panel, "shop-components-group");
+            rows.AddToClassList("team-home-panel");
+            SettingsFormStyle.StylePanel(rows);
+            rows.Add(SettingsFormStyle.Label("Components", "team-home-heading"));
+        }
         foreach (var component in TeamCar.Components)
         {
             var condition = car.GetComponent(component);
-            var row = AddElement(panel, "shop-component-row");
+            var row = AddElement(rows, "shop-component-row");
             row.EnableInClassList("shop-wear-blocked", condition.BlocksRaceEntry);
             row.Add(ComponentIcon(component));
 
-            var level = AddElement(row, "shop-component-metric");
-            AddLabel(level, $"Level {condition.Level}/{TeamCar.MaximumComponentLevel}", "shop-component-caption");
+            var metrics = compactMetrics ? AddElement(row, "shop-component-metrics") : row;
+            var level = AddElement(metrics, "shop-component-metric");
+            string levelText = $"Level {condition.Level}/{TeamCar.MaximumComponentLevel}";
+            if (compactMetrics)
+                level.tooltip = levelText;
+            else
+                AddLabel(level, levelText, "shop-component-caption");
             var segments = AddElement(level, "shop-component-level");
             for (int i = 0; i < TeamCar.MaximumComponentLevel; i++)
             {
@@ -31,9 +45,19 @@ internal static class ShopComponentPanel
                 segment.EnableInClassList("shop-component-segment-filled", i < condition.Level);
             }
 
-            var wear = AddElement(row, "shop-component-metric");
-            AddLabel(wear, $"Wear {condition.Wear:P0}", "shop-component-caption");
+            var wear = AddElement(metrics, "shop-component-metric");
+            string wearText = $"Wear {condition.Wear:P0}";
+            if (compactMetrics)
+            {
+                wear.AddToClassList("event-component-wear-metric");
+                wear.tooltip = wearText;
+            }
+            else
+                AddLabel(wear, wearText, "shop-component-caption");
             AddMeter(wear, condition.Wear, "shop-component-wear");
+
+            if (!showService)
+                continue;
 
             var service = AddElement(row, "shop-component-service");
             var repair = car.repairs?.Find(job => job.component == component);
@@ -43,33 +67,33 @@ internal static class ShopComponentPanel
             {
                 var upgradeButton = AddActionButton(upgradeLine, $"Upgrade {component}", ActionIcon.Upgrade, () => upgrade(component));
                 upgradeButton.SetEnabled(canUpgrade(component));
-                AddLabel(upgradeLine, RaceFinances.Dollars(TeamCar.ComponentUpgradeCost), "shop-component-action-cost");
+                AddLabel(upgradeLine, RaceFinances.Dollars(series.componentUpgradeCost), "shop-component-action-cost");
             }
             var repairLine = AddElement(buttons, "shop-component-action-line");
             if (repair != null && cancelRepair != null)
             {
-                AddActionButton(repairLine, $"Cancel {component} repair", ActionIcon.Cancel, () => cancelRepair(repair))
+                AddActionButton(repairLine, $"Cancel {component} {repair.WorkDescription.ToLowerInvariant()}", ActionIcon.Cancel, () => cancelRepair(repair))
                     .SetEnabled(date.HasValue);
             }
             else if (repair == null && openRepair != null && condition.Wear > 0f)
             {
-                int repairCost = ComponentRepair.CostForWear(condition.Wear);
+                int repairCost = ComponentRepair.CostForWear(condition.Wear, series.maximumComponentRepairCost);
                 bool affordable = balance >= repairCost;
                 AddActionButton(repairLine, $"Repair {component}", ActionIcon.Repair, () => openRepair(component))
                     .SetEnabled(affordable);
                 AddLabel(repairLine, RaceFinances.Dollars(repairCost), "shop-component-action-cost");
-                if (showRepairAvailability && !affordable)
-                    AddLabel(service, "Insufficient funds", "shop-component-caption");
             }
             if (repair == null)
+            {
+                AddLabel(service, "No Work In Progress", "shop-component-caption");
                 continue;
+            }
 
             var portrait = repairPortrait?.Invoke(repair);
             if (portrait != null)
                 service.Add(portrait);
             var details = AddElement(service, "shop-component-repair-details");
-            AddLabel(details, string.IsNullOrWhiteSpace(repair.employeeName) ? "Assigned mechanic" : repair.employeeName,
-                "shop-component-mechanic");
+            AddLabel(details, repair.AssigneeDisplay, "shop-component-mechanic");
             AddRepairProgress(details, repair, date, nextRaceDate);
         }
     }
@@ -93,7 +117,7 @@ internal static class ShopComponentPanel
         bool late = nextRaceDate.HasValue && completionDate > nextRaceDate.Value;
         if (date.HasValue)
         {
-            string remaining = ComponentRepair.FormatDuration(repair.RemainingHours(date.Value));
+            string remaining = ComponentRepair.FormatDuration(repair.RemainingMinutes(date.Value));
             AddLabel(parent, $"{remaining} remaining", "shop-component-caption");
             var meter = AddMeter(parent, 1f - repair.RemainingFraction(date.Value), "shop-component-progress");
             if (late)
@@ -110,7 +134,7 @@ internal static class ShopComponentPanel
     private static Button AddActionButton(VisualElement row, string tooltip, ActionIcon actionIcon, Action action)
     {
         var button = new Button(action) { tooltip = tooltip };
-        button.AddToClassList("nav-button");
+        button.AddToClassList("settings-button");
         button.AddToClassList("shop-component-action-button");
         row.Add(button);
         var icon = AddElement(button, "shop-component-action-icon");
@@ -160,6 +184,7 @@ internal static class ShopComponentPanel
         var track = AddElement(parent, "shop-component-meter");
         var fill = AddElement(track, fillStyle);
         fill.style.width = Length.Percent(Mathf.Clamp01(fraction) * 100f);
+        if (fillStyle == "shop-component-wear") ComponentWearGradient.Apply(fill, fraction);
         return track;
     }
 
@@ -249,5 +274,49 @@ internal static class ShopComponentPanel
             painter.MoveTo(new Vector2(x + radius, y));
             painter.Arc(new Vector2(x, y), radius, Angle.Degrees(0), Angle.Degrees(360));
         }
+    }
+}
+
+// Shared by Home, Cars, and Shop component wear meters.
+internal static class ComponentWearGradient
+{
+    public static Color ColorAt(float wear) => wear <= 0.5f
+        ? Color.Lerp(new Color32(73, 200, 115, 255), new Color32(255, 211, 73, 255), Mathf.Clamp01(wear * 2f))
+        : Color.Lerp(new Color32(255, 211, 73, 255), new Color32(239, 79, 79, 255), Mathf.Clamp01((wear - 0.5f) * 2f));
+
+    public static void Apply(VisualElement fill, float wear, bool vertical = false, bool reverse = false)
+    {
+        float amount = Mathf.Clamp01(wear);
+        fill.style.backgroundColor = Color.clear;
+        fill.generateVisualContent += context =>
+        {
+            var rect = fill.contentRect;
+            if (rect.width <= 0 || rect.height <= 0 || amount <= 0) return;
+            const int segments = 24;
+            var mesh = context.Allocate((segments + 1) * 2, segments * 6);
+            for (int i = 0; i <= segments; i++)
+            {
+                float t = i / (float)segments;
+                Color32 tint = ColorAt(reverse ? 1f - t * amount : t * amount);
+                if (vertical)
+                {
+                    float y = rect.yMax - rect.height * t;
+                    mesh.SetNextVertex(new Vertex { position = new Vector3(rect.xMin, y, Vertex.nearZ), tint = tint });
+                    mesh.SetNextVertex(new Vertex { position = new Vector3(rect.xMax, y, Vertex.nearZ), tint = tint });
+                }
+                else
+                {
+                    float x = rect.x + rect.width * t;
+                    mesh.SetNextVertex(new Vertex { position = new Vector3(x, rect.yMin, Vertex.nearZ), tint = tint });
+                    mesh.SetNextVertex(new Vertex { position = new Vector3(x, rect.yMax, Vertex.nearZ), tint = tint });
+                }
+            }
+            for (int i = 0; i < segments; i++)
+            {
+                ushort a = (ushort)(i * 2);
+                mesh.SetNextIndex(a); mesh.SetNextIndex((ushort)(a + 2)); mesh.SetNextIndex((ushort)(a + 1));
+                mesh.SetNextIndex((ushort)(a + 1)); mesh.SetNextIndex((ushort)(a + 2)); mesh.SetNextIndex((ushort)(a + 3));
+            }
+        };
     }
 }

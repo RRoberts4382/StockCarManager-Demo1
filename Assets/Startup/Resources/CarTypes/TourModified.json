@@ -1,0 +1,70 @@
+{
+  "displayName": "Tour Modified",
+  "inCarCamera": {
+    "anchor": "",
+    "position": {
+      "x": -0.179976,
+      "y": 0.5758,
+      "z": -0.070016
+    }
+  },
+  "rearviewCamera": {
+    "x": 0,
+    "y": 0.78,
+    "z": -1.58
+  },
+  "rearviewMirrorOffset": {
+    "x": 70,
+    "y": 8
+  },
+  "dashboardImage": "",
+  "gauges": [
+    {
+      "source": "Rpm",
+      "label": "RPM",
+      "large": true
+    },
+    {
+      "source": "Fuel",
+      "label": "FUEL"
+    }
+  ],
+  "roofNumberPitch": 4.3,
+  "sideNumberScale": 0.74,
+  "leftNumberYaw": 7,
+  "rightNumberYaw": -5,
+  "roofNumber": {
+    "anchor": "",
+    "position": {
+      "x": -0.046,
+      "y": 0.741,
+      "z": -0.25
+    }
+  },
+  "leftNumber": {
+    "anchor": "",
+    "position": {
+      "x": -0.44309,
+      "y": 0.300,
+      "z": -0.095
+    }
+  },
+  "rightNumber": {
+    "anchor": "",
+    "position": {
+      "x": 0.33687,
+      "y": 0.300,
+      "z": -0.095
+    }
+  },
+  "cockpitStyle": "tour-modified-cockpit",
+  "darkDashboardDials": true,
+  "dashboardSwitchRows": 1,
+  "lodModels": [
+    "TourModified",
+    "TourModifiedDetail75k",
+    "TourModifiedDetail150k",
+    "TourModifiedDetail300k",
+    "TourModifiedDetailed"
+  ]
+}

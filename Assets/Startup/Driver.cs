@@ -19,8 +19,39 @@ internal sealed class Driver
     public bool experienceInitialized;
     [Range(0f, 1f)] public float morale;
     public bool moraleInitialized;
+    public StaffArrest arrest;
+
+    // Zero offsets give new drivers and older saves the same neutral rating.
+    [SerializeField] private float socialMediaXpOffset;
+    [SerializeField] private float charismaOffset;
+    public float SocialMediaXp
+    {
+        get => .5f + socialMediaXpOffset;
+        set => socialMediaXpOffset = Mathf.Clamp01(value) - .5f;
+    }
+    public float Charisma
+    {
+        get => .5f + charismaOffset;
+        set => charismaOffset = Mathf.Clamp01(value) - .5f;
+    }
     public const int MaximumTrackXp = 1000;
     public int shortTrackXp, intermediateXp, superspeedwayXp, roadCourseXp;
+    public bool trackExperienceInitialized;
+
+    internal bool EnsureCandidateTrackExperience(System.Random random)
+    {
+        if (trackExperienceInitialized) return false;
+        if (shortTrackXp == 0 && intermediateXp == 0 && superspeedwayXp == 0 && roadCourseXp == 0)
+        {
+            float ageProgress = Mathf.Clamp01((age - 16) / 28f);
+            float experienceProgress = Mathf.Clamp01(Math.Min(yearsExperience, Math.Max(0, age - 16)) / 20f);
+            float baseline = 0.05f + 0.65f * ageProgress + 0.15f * experienceProgress + (float)(random.NextDouble() - 0.5) * 0.1f;
+            foreach (ChassisType type in Enum.GetValues(typeof(ChassisType)))
+                TrackXp(type) = Mathf.RoundToInt(Mathf.Clamp01(baseline + (float)(random.NextDouble() - 0.5) * 0.36f) * MaximumTrackXp);
+        }
+        trackExperienceInitialized = true;
+        return true;
+    }
     public string gender;
     public DriverEthnicity ethnicity;
     public string hometownCity;
@@ -43,8 +74,8 @@ internal sealed class Driver
         return true;
     }
 
-    public static Driver Create(System.Random random, string name, string city = null, string state = null) =>
-        FromEmployee(Employee.Create(EmployeeRole.Driver, random, name, city, state), random);
+    public static Driver Create(System.Random random, string name, string city = null, string state = null, RacingSeries series = null) =>
+        FromEmployee(Employee.Create(EmployeeRole.Driver, random, name, city, state, series), random);
 
     public ref int TrackXp(ChassisType category)
     {
@@ -76,6 +107,7 @@ internal sealed class Driver
             annualSalary = employee.annualSalary,
             personalityTraits = new PersonalityTraits { aggression = (float)random.NextDouble() }
         };
+        driver.EnsureCandidateTrackExperience(random);
         return driver;
     }
 }

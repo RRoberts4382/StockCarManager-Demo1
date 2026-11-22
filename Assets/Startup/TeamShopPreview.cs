@@ -163,7 +163,7 @@ internal sealed class TeamShopPreview : IDisposable
                 var model = Child($"Car {car.number}");
                 model.transform.position = stalls[i].position + Vector3.up * 0.022f;
                 TrackPreview.BuildCar(model.transform, car.number, Paint(livery.Primary),
-                    Paint(livery.Secondary), glass, rubber, sponsorNames, livery, paintTextures.Add);
+                    Paint(livery.Secondary), glass, rubber, sponsorNames, livery, paintTextures.Add, car.modelResource);
                 model.transform.localScale = Vector3.one * ParkedCarScale;
                 model.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
             }

@@ -10,7 +10,6 @@ internal static class FinanceReport
     private const long HospitalityPerEntry = 3_000;
     private const long FacilityMaintenancePerSeason = 60_000;
     private const long ManufacturerSupportPerSeason = 100_000;
-    private const long MerchandisingPerSeason = 40_000;
 
     private sealed class Row
     {
@@ -36,7 +35,7 @@ internal static class FinanceReport
     }
 
     public static void Render(VisualElement grid, Career career, List<ScheduledRace> races,
-        List<RaceExpenses> chargedExpenses, long upcomingPayroll, long winnings, int engineCost)
+        List<RaceExpenses> chargedExpenses, long upcomingPayroll, long winnings, RaceExpenses forecast)
     {
         var season = career.schedule;
         var completed = races.Where(race => race.completed).ToArray();
@@ -49,20 +48,30 @@ internal static class FinanceReport
         Row RaceCost(string name, long baseCost, long charged) =>
             new Row(name, Average(-charged) ?? -baseCost, -charged);
 
-        var expenses = new Row("Operating Expenses",
+        var chargedItems = chargedExpenses.SelectMany(expense => expense.Items).ToArray();
+        var perEvent = forecast.Items.Concat(chargedItems).GroupBy(item => item.id).Select(group => group.First())
+            .Select(item => RaceCost(item.name, forecast.Items.FirstOrDefault(cost => cost.id == item.id)?.amount ?? 0,
+                chargedItems.Where(cost => cost.id == item.id).Sum(cost => (long)cost.amount))).ToArray();
+
+        var merchandise = Merchandising.Totals(career, season.season);
+        bool showMerchandise = merchandise.Inventory > 0 || merchandise.Sales > 0;
+        var expenseRows = new List<Row>
+        {
             RaceCost("Salaries", upcomingPayroll, season.payrollPaid),
+            new Row("Race Entry Expenses", perEvent),
             new Row("Vehicles",
                 new Row("Car Purchases", Average(-season.carPurchases), -season.carPurchases),
-                RaceCost("Engine Lease and Maintenance", engineCost, chargedExpenses.Sum(item => (long)item.engineLease)),
-                RaceCost("Tires", RaceExpenses.TiresBase, chargedExpenses.Sum(item => (long)item.tires)),
-                RaceCost("Parts and Maintenance", RaceExpenses.WearAndMaterialsBase,
-                    chargedExpenses.Sum(item => (long)item.wearAndMaterials) + season.componentRepairs),
+                new Row("Component Repairs", Average(-season.componentRepairs), -season.componentRepairs),
                 new Row("Consumables (est.)", 0, 0),
                 RaceCost("Crash Damage (est.)", CrashDamagePerEntry, CrashDamagePerEntry * entered),
                 new Row("R&D", null, -season.componentUpgrades)),
-            RaceCost("Travel and Logistics", RaceExpenses.TravelAndLogisticsBase, chargedExpenses.Sum(item => (long)item.travelAndLogistics)),
+            new Row("Mystery Pallet Purchases", null, -season.mysteryPalletPurchases),
             RaceCost("Hospitality (est.)", HospitalityPerEntry, HospitalityPerEntry * entered),
-            new Row("Facility Maintenance (est.)", null, -FacilityMaintenancePerSeason));
+            new Row("Facility Maintenance (est.)", null, -FacilityMaintenancePerSeason)
+        };
+        if (showMerchandise)
+            expenseRows.Add(new Row("Merchandise Inventory Purchases", null, -merchandise.Inventory));
+        var expenses = new Row("Operating Expenses", expenseRows.ToArray());
 
         var payments = completed.SelectMany(race => race.sponsorPayments ?? Enumerable.Empty<SponsorRacePayment>()).ToArray();
         var sponsors = new List<Row>();
@@ -87,12 +96,18 @@ internal static class FinanceReport
         if (earlierIncome != 0)
             sponsors.Add(new Row("Earlier sponsorship payments", Average(earlierIncome), earlierIncome));
 
-        var revenue = new Row("Revenue",
+        var revenueRows = new List<Row>
+        {
             new Row("Sponsorship", sponsors.ToArray()),
             new Row("Event Prize Money", Average(winnings), winnings),
+            new Row("Season Points Fund Prizes", null, SeasonPrizes.Income(career)),
             new Row("Manufacturer Support (est.)", null, ManufacturerSupportPerSeason),
-            new Row("Merchandising (est.)", null, MerchandisingPerSeason),
-            new Row("Vehicle Sales", null, season.carSales));
+            new Row("Vehicle Sales", null, season.carSales),
+            new Row("Mystery Pallet Sale Proceeds", null, season.mysteryPalletSaleProceeds)
+        };
+        if (showMerchandise)
+            revenueRows.Add(new Row("Merchandise Sales", null, merchandise.Sales));
+        var revenue = new Row("Revenue", revenueRows.ToArray());
 
         grid.Clear();
         var header = new VisualElement();
@@ -111,6 +126,7 @@ internal static class FinanceReport
             style = { whiteSpace = WhiteSpace.Normal }
         };
         note.AddToClassList("garage-detail");
+        note.AddToClassList("finance-estimates-note");
         grid.Add(note);
     }
 
@@ -128,7 +144,7 @@ internal static class FinanceReport
         if (row is not Button toggle)
             return;
 
-        toggle.AddToClassList("nav-button");
+        toggle.AddToClassList("settings-button");
         toggle.AddToClassList("finance-group-toggle");
         var children = new VisualElement();
         container.Add(children);

@@ -9,28 +9,42 @@ internal sealed class RaceExpenses
     public const int EngineLeaseBase = 50_000;
     public const int TravelAndLogisticsBase = 25_000;
     public const int TiresBase = 15_000;
-    public const int BaseTotal = WearAndMaterialsBase + EngineLeaseBase + TravelAndLogisticsBase + TiresBase;
 
     public int wearAndMaterials;
     public int engineLease;
     public int travelAndLogistics;
     public int tires;
 
-    public int Total => wearAndMaterials + engineLease + travelAndLogistics + tires;
+    public SeriesEventCost[] items;
 
-    public static RaceExpenses Generate(Random random, EngineSupplier supplier) => new RaceExpenses
+    public SeriesEventCost[] Items => items ?? new[]
     {
-        wearAndMaterials = Vary(WearAndMaterialsBase, random),
-        engineLease = supplier?.maintenancePerRace ?? Vary(EngineLeaseBase, random),
-        travelAndLogistics = Vary(TravelAndLogisticsBase, random),
-        tires = Vary(TiresBase, random)
+        Cost("parts", "Parts and Maintenance", wearAndMaterials),
+        Cost("engine", "Engine Lease and Maintenance", engineLease),
+        Cost("travel", "Travel and Logistics", travelAndLogistics),
+        Cost("tires", "Tires", tires)
     };
 
-    private static int Vary(int amount, Random random)
+    private static readonly SeriesEventCost[] DefaultCosts =
     {
-        int variation = amount / 10;
-        return amount + random.Next(-variation, variation + 1);
-    }
+        Cost("parts", "Parts and Maintenance", WearAndMaterialsBase),
+        Cost("engine", "Engine Lease and Maintenance", EngineLeaseBase),
+        Cost("travel", "Travel and Logistics", TravelAndLogisticsBase),
+        Cost("tires", "Tires", TiresBase)
+    };
+
+    public int Total => items != null ? items.Sum(item => item.amount) :
+        wearAndMaterials + engineLease + travelAndLogistics + tires;
+
+    public static RaceExpenses Generate(RacingSeries series, EngineSupplier supplier) => new RaceExpenses
+    {
+        items = (series.eventCosts ?? DefaultCosts).Select(item =>
+            Cost(item.id, item.name, item.id == "engine" && supplier != null ? supplier.maintenancePerRace : item.amount))
+            .ToArray()
+    };
+
+    private static SeriesEventCost Cost(string id, string name, int amount) =>
+        new SeriesEventCost { id = id, name = name, amount = amount };
 }
 
 internal static class RaceFinances

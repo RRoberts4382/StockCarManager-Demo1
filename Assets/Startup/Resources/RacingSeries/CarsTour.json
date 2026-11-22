@@ -1,0 +1,131 @@
+{
+  "id": "cars-tour",
+  "name": "Cars Tour",
+  "order": 40,
+  "carModel": "LateModelStockCar",
+  "maximumTrackLengthMiles": 0.7,
+  "manufacturers": [
+    {
+      "manufacturer": 0,
+      "engineSuppliers": [
+        {
+          "name": "GM 604 Crate Engine",
+          "power": 0.9,
+          "reliability": 0.97,
+          "maintenancePerRace": 44500
+        },
+        {
+          "name": "HMS Enforcer",
+          "power": 0.96,
+          "reliability": 0.94,
+          "maintenancePerRace": 50000
+        },
+        {
+          "name": "GM Upgrade Spec Engine",
+          "power": 0.98,
+          "reliability": 0.92,
+          "maintenancePerRace": 53500
+        }
+      ]
+    },
+    {
+      "manufacturer": 1,
+      "engineSuppliers": [
+        {
+          "name": "Ford D347SR7 Crate Engine",
+          "power": 0.94,
+          "reliability": 0.96,
+          "maintenancePerRace": 44500
+        }
+      ]
+    }
+  ],
+  "newChassisCost": 100000,
+  "employeeRoles": [
+    {
+      "role": 0,
+      "minimumSalary": 85000,
+      "maximumSalary": 115000
+    },
+    {
+      "role": 1,
+      "minimumSalary": 212500,
+      "maximumSalary": 287500
+    },
+    {
+      "role": 2,
+      "minimumSalary": 148750,
+      "maximumSalary": 201250
+    },
+    {
+      "role": 3,
+      "minimumSalary": 140250,
+      "maximumSalary": 189750
+    },
+    {
+      "role": 4,
+      "minimumSalary": 127500,
+      "maximumSalary": 172500
+    },
+    {
+      "role": 5,
+      "minimumSalary": 127500,
+      "maximumSalary": 172500
+    },
+    {
+      "role": 6,
+      "minimumSalary": 106250,
+      "maximumSalary": 143750
+    },
+    {
+      "role": 7,
+      "minimumSalary": 106250,
+      "maximumSalary": 143750
+    },
+    {
+      "role": 8,
+      "minimumSalary": 106250,
+      "maximumSalary": 143750
+    },
+    {
+      "role": 9,
+      "minimumSalary": 85000,
+      "maximumSalary": 115000
+    },
+    {
+      "role": 10,
+      "minimumSalary": 85000,
+      "maximumSalary": 115000
+    }
+  ],
+  "maximumEmployees": 30,
+  "componentUpgradeCost": 25000,
+  "maximumComponentRepairCost": 20000,
+  "minimumSponsorshipSigning": 300000,
+  "maximumSponsorshipSigning": 2000000,
+  "minimumSponsorshipPerRace": 12500,
+  "maximumSponsorshipPerRace": 60000,
+  "usesStages": false,
+  "eventCosts": [
+    {
+      "id": "parts",
+      "name": "Parts and Maintenance",
+      "amount": 50000
+    },
+    {
+      "id": "engine",
+      "name": "Engine Lease and Maintenance",
+      "amount": 50000
+    },
+    {
+      "id": "travel",
+      "name": "Travel and Logistics",
+      "amount": 25000
+    },
+    {
+      "id": "tires",
+      "name": "Tires",
+      "amount": 15000
+    }
+  ]
+}

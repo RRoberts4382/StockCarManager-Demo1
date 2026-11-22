@@ -1,11 +1,11 @@
-using System;
+﻿using System;
 using System.IO;
 using UnityEngine;
 
 internal sealed class TrackSnapshot
 {
     private const int SamplesPerSecond = 10;
-    private const int Capacity = 30 * SamplesPerSecond + 1;
+    private const int Capacity = 60 * SamplesPerSecond + 1;
     private readonly Frame[] frames = new Frame[Capacity];
     private int next;
     private int count;
@@ -15,6 +15,12 @@ internal sealed class TrackSnapshot
     internal sealed class Frame
     {
         public double simulationSeconds;
+        public int renderFrameNumber, renderFramesSinceSample;
+        public int connectorBuildCount;
+        public double connectorBuildMilliseconds;
+        public double averageFrameMilliseconds, maxFrameMilliseconds;
+        public int mergeCheckCount, mergeChecksDeferred, mergePredictionSamples;
+        public double mergeCheckMilliseconds, maxMergeCheckMilliseconds;
         public float sessionSeconds;
         public int playbackSpeed;
         public string flag;
@@ -30,15 +36,42 @@ internal sealed class TrackSnapshot
         public bool thermalOnTrack;
         public bool visible, inPit, retired, spinning, servicing, pitRequested, collisionFlash;
         public float trackMeters, pitMeters, laneMeters, mph, damage;
+        public float throttle, brake;
+        public float preferredLaneMeters, preferredLineSpeedFactor;
         public double fuelGallons;
         public float nextPitEntryMeters;
+        // All poses use TrackPreview local space, in meters. Rotation includes banking.
         public Vector3 position;
+        public Quaternion rotation;
+        public Vector3 rearAxlePosition;
+        public float headingDegrees;
+        public bool pitManeuver, pitArrivalManeuver;
+        public bool pitFrontEntry, pitBackExit, waitingForStallDeparture;
+        public float pitConnectorMeters;
+        public int stallDepartureBlockedByIndex;
+        public string stallDepartureBlockReason;
+        public bool waitingForPitExit, pitExitCleared;
+        public float pitExitHoldMeters;
+        public int pitExitBlockedByIndex;
+        public float pitExitConflictSeconds;
+        // Last rejected movement persists across 10 Hz samples; count/time identify new events.
+        public bool pitMovementBlockedThisStep;
+        public int pitMovementBlockedByIndex, pitMovementBlockedByCarNumber, pitMovementBlockCount;
+        public string pitMovementBlockReason;
+        public float pitMovementBlockSessionSeconds, pitMovementBlockClearanceMeters, pitMovementBlockPredictionSeconds;
+        public int stallEntryReservationOwner;
+        public float stallEntryHoldMeters;
+        public bool apronExitActive, apronMergeGranted, apronEntryActive;
+        public float apronMergeStartMeters, apronMergeEndMeters;
+        public float pitYawDegrees, pitManeuverStartMeters, pitManeuverLengthMeters, pitManeuverTargetLaneMeters;
     }
 
     [Serializable]
     private sealed class FileData
     {
-        public int formatVersion = 6;
+        public int formatVersion = 18;
+        public string poseSpace = "TrackPreview local space (meters)";
+        public float centerToRearAxleMeters = RearAxleHeading.CenterToRearAxle;
         public string savedUtc;
         public string trackModel, speedModel, behaviorModel, session;
         public TrackDefinition track;

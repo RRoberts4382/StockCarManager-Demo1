@@ -10,6 +10,7 @@
   "minorStyle": "Oval",
   "surface": "Asphalt",
   "restrictorPlate": false,
+  "qualifyingReferenceMph": 101.49994361114243,
   "banking": {
     "turns12": 20,
     "turns34": 20,

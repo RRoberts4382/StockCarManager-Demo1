@@ -20,11 +20,10 @@ internal static class EventSetupPanel
         var left = Column("setup-side");
         var center = Column("setup-center");
         var right = Column("setup-side");
-        var sway = new SetupSlider(PartRow(center, PartIcon.SwayBar, "Front sway bar (lb/in)"), "", 275f, 5000f, 0);
+        var sway = new SetupSlider(PartRow(center, PartIcon.SwayBar, "Front sway bar (lb/in)"), "Sway bar", 275f, 5000f, 0);
         sway.Control.tooltip = "Front sway bar stiffness (lb/in)";
         var image = new Image { image = overheadImage, scaleMode = ScaleMode.ScaleToFit, pickingMode = PickingMode.Ignore };
         image.AddToClassList("setup-overhead-car");
-        image.style.minHeight = 144f;
         center.Add(image);
 
         var weights = new VisualElement();
@@ -41,9 +40,10 @@ internal static class EventSetupPanel
         var leftWeight = new SetupSlider(weights, "Left side %", WeightDistributionSetup.MinLeft, WeightDistributionSetup.MaxLeft, 1);
 
         leftWeight.Control.tooltip = "Left-side percentage of dry car weight. Rear fuel is split equally left and right.";
-        var trackBar = new SetupSlider(PartRow(center, PartIcon.TrackBar, "Rear track bar (in)"), "", 5f, 14f, 1);
+        var trackBar = new SetupSlider(PartRow(center, PartIcon.TrackBar, "Rear track bar (in)"), "Track bar", 5f, 14f, 1);
         trackBar.Control.tooltip = "Right mount height above the ground. The left mount remains fixed to the axle.";
         var cornerWeights = new Label[4];
+        string[] cornerNames = { "Left front", "Right front", "Left rear", "Right rear" };
         var fields = Enumerable.Range(0, 4).Select(index =>
         {
             var corner = new VisualElement();
@@ -57,7 +57,7 @@ internal static class EventSetupPanel
             corner.Add(weight);
             (index % 2 == 0 ? left : right).Add(corner);
             var (minimum, maximum) = SpringRange(track.TrackCategory, index);
-            var spring = new SetupSlider(PartRow(corner, PartIcon.Spring, "Spring rate (lb/in)"), "", minimum, maximum, 0);
+            var spring = new SetupSlider(PartRow(corner, PartIcon.Spring, "Spring rate (lb/in)"), "Spring", minimum, maximum, 0);
             spring.Control.tooltip = $"Spring rate ({minimum}–{maximum} lb/in)";
             var shock = PartRow(corner, PartIcon.Shock, "Shock absorber");
             var compression = new SetupSlider(shock, "Compression", 0f, 1f, 2);
@@ -190,7 +190,7 @@ internal static class EventSetupPanel
             for (int corner = 0; corner < cornerWeights.Length; corner++)
             {
                 float pounds = VehicleSpeed003.CornerWeightPounds(draft, fuel, corner);
-                cornerWeights[corner].text = $"{pounds:N1} lb";
+                cornerWeights[corner].text = $"{cornerNames[corner]}  ·  {pounds:N1} lb";
                 cornerWeights[corner].tooltip = $"Static corner weight, including the {fuel:0.0} gallons selected for the next run.";
             }
         }

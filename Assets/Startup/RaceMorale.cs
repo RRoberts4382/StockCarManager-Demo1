@@ -7,6 +7,7 @@ internal static class RaceMorale
 {
     private const float ChangePerRace = 0.05f;
     private const float ComplaintThreshold = 0.10f;
+    private const double ResignationChance = 0.20;
 
     public static Action Apply(Career career, ScheduledRace race)
     {
@@ -53,9 +54,10 @@ internal static class RaceMorale
             foreach (var employee in employees)
             {
                 float old = employee.morale;
+                float oldEffective = employee.EffectiveMorale(career.currentDate);
                 previous.Add(() => employee.morale = old);
                 employee.morale = Mathf.Clamp01(old + change);
-                if (sendComplaint && CrossedThreshold(old, employee.morale))
+                if (sendComplaint && CrossedThreshold(oldEffective, employee.EffectiveMorale(career.currentDate)))
                     SendComplaint(career, race, employee.FullName, employee.RoleName, isDriver: false);
             }
         }
@@ -69,6 +71,59 @@ internal static class RaceMorale
             driver.morale = Mathf.Clamp01(old + change);
             if (sendComplaint && CrossedThreshold(old, driver.morale))
                 SendComplaint(career, race, driver.FullName, "Driver", isDriver: true);
+        }
+    }
+
+    internal static Action ApplyResignations(Career career, ScheduledRace race, System.Random random)
+    {
+        if (career.inbox == null || !Career.TryReadDate(race.date, out var raceDay))
+            return null;
+
+        var undo = new List<Action>();
+        int inboxCount = career.inbox.Count;
+        CheckRoster(career.drivers, driver => driver.morale, driver => driver.FullName, _ => "Driver");
+        CheckRoster(career.employees, employee => employee.EffectiveMorale(career.currentDate), employee => employee.FullName, employee => employee.RoleName);
+        if (undo.Count == 0)
+            return null;
+
+        return () =>
+        {
+            for (int i = undo.Count - 1; i >= 0; i--)
+                undo[i]();
+            CrewChiefMail.UndoNewMessages(career, inboxCount);
+        };
+
+        void CheckRoster<T>(List<T> roster, Func<T, float> morale, Func<T, string> name, Func<T, string> role)
+        {
+            if (roster == null)
+                return;
+
+            for (int index = roster.Count - 1; index >= 0; index--)
+            {
+                var person = roster[index];
+                if (morale(person) >= ComplaintThreshold)
+                    continue;
+
+                string sender = $"{name(person)} \u00b7 {role(person)}";
+                var complaint = career.inbox.LastOrDefault(message => message != null && message.sender == sender &&
+                    message.eventId?.StartsWith("morale-complaint/", StringComparison.Ordinal) == true);
+                if (complaint == null || !Career.TryReadDate(complaint.date, out var complaintDay) ||
+                    complaintDay >= raceDay || random.NextDouble() >= ResignationChance)
+                    continue;
+
+                int originalIndex = index;
+                roster.RemoveAt(index);
+                undo.Add(() => roster.Insert(originalIndex, person));
+                career.inbox.Add(new TeamMailMessage
+                {
+                    eventId = $"morale-resignation/{race.date}/{race.trackId}/{role(person)}/{name(person)}",
+                    sender = sender,
+                    date = race.date,
+                    subject = $"{name(person)} has resigned",
+                    body = $"Hi team,\n\nI raised my concerns with the team and still feel it's time to leave {career.teamName}. My resignation is effective immediately.\n\n{name(person)}",
+                    requiresRead = true
+                });
+            }
         }
     }
 
@@ -87,7 +142,7 @@ internal static class RaceMorale
             sender = $"{name} · {role}",
             date = race.date,
             subject = isDriver ? "We need to talk about our results" : "I’m frustrated with how things are going",
-            body = $"Hi {career.playerName},\n\n{complaint}\n\n{name}"
+            body = $"Hi team,\n\n{complaint}\n\n{name}"
         });
     }
 

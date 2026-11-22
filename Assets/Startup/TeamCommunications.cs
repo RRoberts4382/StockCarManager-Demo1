@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
+internal enum TeamMailOffer { None, MascotSearch, PartsPallet, Infomercial, ChiliCookOff, Merchandising, PublicAppearance, PodcastAppearance, StaffArrest }
+
 [Serializable]
 internal sealed class TeamMailMessage
 {
@@ -12,11 +14,18 @@ internal sealed class TeamMailMessage
     public string subject;
     public string body;
     public bool isRead;
+    public bool requiresRead;
+    public int seriesChangeYear;
     public string[] scenarioOptions;
     public string scenarioResponse;
     public SponsorOffer[] scenarioSponsorOffers;
+    public int scenarioPurchaseCost;
+    public TeamMailOffer scenarioOffer;
+    public string scenarioGiftRecipient;
+    public string scenarioInvitedDriver;
 
     public bool IsScenario => scenarioOptions?.Length > 0;
+    public bool BlocksAdvancement => (NeedsResponse && scenarioPurchaseCost <= 0 && scenarioOffer == TeamMailOffer.None) || (requiresRead && !isRead);
     public bool NeedsResponse => IsScenario && string.IsNullOrEmpty(scenarioResponse);
 }
 
@@ -114,7 +123,7 @@ internal static class TeamCommunications
             sender = sender,
             date = career.currentDate,
             subject = "Glad to be on board",
-            body = $"Hi {career.playerName},\n\nI'm thrilled to join {career.teamName}. I've been looking forward to meeting the crew and getting my first laps in the car. Thanks for giving me the chance to race with you.\n\nSee you at the shop,\n{sender}"
+            body = $"Hi team,\n\nI'm thrilled to join {career.teamName}. I've been looking forward to meeting the crew and getting my first laps in the car. Thanks for giving me the chance to race with you.\n\nSee you at the shop,\n{sender}"
         });
         return true;
     }
@@ -172,8 +181,7 @@ internal static class TeamCommunications
             if (!race.completed || race.playerSkipped)
                 continue;
             var results = race.sessions?.Find(session => session.kind == RaceSessionKind.Race)?.results;
-            var result = results?.Find(row => race.carNumber > 0 ? row.carNumber == race.carNumber
-                : row.teamName == career.teamName && row.driverName == career.playerName);
+            var result = results?.Find(race.IsPlayerResult);
             if (result == null || result.position < 1 || result.position > results.Count)
                 continue;
 
@@ -187,6 +195,7 @@ internal static class TeamCommunications
         if (race.sessions == null)
             yield break;
 
+        var usedMessages = new HashSet<string>(StringComparer.Ordinal);
         for (int sessionIndex = race.sessions.Count - 1; sessionIndex >= 0; sessionIndex--)
         {
             var session = race.sessions[sessionIndex];
@@ -198,10 +207,29 @@ internal static class TeamCommunications
                 var random = new Random(SeedForDate(race.date, unchecked(race.trackId * 31 + contact.carNumber + sessionIndex)));
                 string author = string.IsNullOrWhiteSpace(contact.driverName)
                     ? $"Driver of #{contact.carNumber}" : $"{contact.driverName} · #{contact.carNumber}";
-                string text = string.Format(lines[random.Next(lines.Length)], team, race.trackName);
+                int firstLine = random.Next(lines.Length);
+                string text = UniqueContactMessage(lines, firstLine, session, contact);
                 yield return new TeamSocialPost($"{race.date}/{race.trackId}/contact/{sessionIndex}/{contact.carNumber}",
                     Sources[random.Next(Sources.Length)], author, race.date, race.trackName, 0, 0, SocialSentiment.Negative, text, contact);
             }
+        }
+
+        string UniqueContactMessage(string[] lines, int firstLine, RaceSession session, DriverContact contact)
+        {
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string candidate = string.Format(lines[(firstLine + i) % lines.Length], team, race.trackName);
+                if (usedMessages.Add(candidate))
+                    return candidate;
+            }
+
+            string sessionName = string.IsNullOrWhiteSpace(session.name) ? session.kind.ToString() : session.name;
+            string baseText = string.Format(lines[firstLine], team, race.trackName);
+            string detail = $"My No. {contact.carNumber} still has the marks from {sessionName}.";
+            string text = $"{baseText} {detail}";
+            for (int occurrence = 2; !usedMessages.Add(text); occurrence++)
+                text = $"{baseText} That's hit number {occurrence} my No. {contact.carNumber} has to deal with after {sessionName}.";
+            return text;
         }
     }
 

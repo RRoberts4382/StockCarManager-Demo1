@@ -21,6 +21,8 @@ internal sealed class SessionWeatherForecast
     private static bool InRange(float value, float minimum, float maximum) =>
         !float.IsNaN(value) && !float.IsInfinity(value) && value >= minimum && value <= maximum;
 
+    internal static bool IsNightAt(float hour) => hour < 6f || hour >= 18f;
+
     internal static SessionWeatherForecast Ensure(RaceSession session, TrackDefinition track, ScheduledRace race)
     {
         // Unity may materialize an empty inline object for fields absent in an
@@ -46,7 +48,7 @@ internal sealed class SessionWeatherForecast
         };
     }
 
-    internal string Summary => $"Forecast: {ambientFahrenheit:0}°F air · Clouds {cloudCover:P0} · Wind {windMph:0} mph · Start {startHour:00}:00";
+    internal string Summary => $"Forecast: {ambientFahrenheit:0}\u00B0F air \u00B7 Clouds {cloudCover:P0} \u00B7 Wind {windMph:0} mph \u00B7 Start {startHour:00}:00";
 }
 
 internal sealed class SessionWeatherState
@@ -63,8 +65,9 @@ internal sealed class SessionWeatherState
     public float CloudCover { get; private set; }
     public float WindMph { get; private set; }
     public float Sunlight { get; private set; }
+    internal bool IsNight { get; private set; }
     public float GripFactor => GripAt(TrackFahrenheit);
-    public string Summary => $"Air {AmbientFahrenheit:0}°F · Track {TrackFahrenheit:0}°F · Clouds {CloudCover:P0} · Wind {WindMph:0} mph";
+    public string Summary => $"Air {AmbientFahrenheit:0}\u00B0F \u00B7 Track {TrackFahrenheit:0}\u00B0F \u00B7 Clouds {CloudCover:P0} \u00B7 Wind {WindMph:0} mph";
 
     internal SessionWeatherState(SessionWeatherForecast forecast, string surface, bool practice = false)
     {
@@ -79,6 +82,7 @@ internal sealed class SessionWeatherState
     private void UpdateConditions(double elapsed)
     {
         float hour = (float)((forecast.startHour + elapsed / 3600d) % 24d);
+        IsNight = SessionWeatherForecast.IsNightAt(hour);
         // Broad daylight envelope: 6 AM sunrise, 6 PM sunset. No solar heating at night.
         Sunlight = Mathf.Max(0f, Mathf.Sin((hour - 6f) / 12f * Mathf.PI));
         float daily = Mathf.Cos((hour - 15f) / 12f * Mathf.PI);

@@ -89,7 +89,7 @@ internal sealed class RaceSession
     public List<SessionCarResult> DisplayResults => temporaryResults ?? results;
     public bool Completed => completed || (results?.Count ?? 0) > 0;
 
-    public const int PracticeMinutes = 999; // Temporary development duration.
+    public const int PracticeMinutes = 10;
 
     public const int TestOpeningStageLaps = 15;
     public const int TestFinalStageLaps = 30;
@@ -112,15 +112,23 @@ internal sealed class SessionCarResult
 {
     [NonSerialized] public TeamCar car;
     [NonSerialized] public Driver driver;
+    [NonSerialized] public (UnityEngine.Color32 HoodAndTrunk, UnityEngine.Color32 RoofAndSides)? teamPaint;
+    [NonSerialized] public float? enginePowerRating;
+    [NonSerialized] public float? engineReliabilityRating;
     public double Fuel = SessionFuel.TankCapacity;
     [NonSerialized] public double InstantSpeed;
     public string carName = string.Empty;
     public int carNumber;
     public string driverName;
     public string teamName;
+    public string ownerEntryId;
+    public bool playerEntry;
+    public bool manufacturerRecorded;
+    public CarManufacturer manufacturer;
     public List<float> lapTimes = new List<float>();
     public int position;
     public bool wrecked;
+    public string mechanicalFailure;
     [NonSerialized] public List<DriverContact> contacts;
     [NonSerialized] public float damageSustained;
     [NonSerialized] public float damageAtFinish;
@@ -144,9 +152,22 @@ internal sealed class RaceSessionRun
     private readonly double tireWearPerMeter;
     private readonly TireTemperatureModel tireTemperatures;
     private readonly CarSimulationContext simulationContext;
+    private readonly Random failureRandom;
     private readonly bool usesSpringPerformance;
     private readonly DynamicTireLoads[] dynamicLoads;
     private readonly float[] thermalSpeeds;
+    private readonly float[] throttleInputs, brakeInputs;
+    private readonly LapSpeedProfile inputSpeedProfile;
+    internal const float CoastingDeceleration = 1.0f; // About 2.2 mph per second.
+    internal float ThrottleInput(int index) => throttleInputs[index];
+    internal float BrakeInput(int index) => brakeInputs[index];
+    internal void TrafficBrakeInput(int index, float speed, float seconds, float brakingLimit)
+    {
+        throttleInputs[index]=0f; // Called only when traffic reduced the free-running request.
+        float deceleration=(CurrentSpeed(index)-speed)/Math.Max(.0001f,seconds);
+        if(deceleration>CoastingDeceleration+.01f)
+        { throttleInputs[index]=0f; brakeInputs[index]=UnityEngine.Mathf.Clamp01(deceleration/Math.Max(.01f,brakingLimit)); }
+    }
     private readonly bool[] thermalRacing;
     private readonly float[] previousThermalSpeeds;
     private readonly float[] thermalDistances;
@@ -158,7 +179,13 @@ internal sealed class RaceSessionRun
     private int[] frozenOrder;
     private float checkeredTime = float.PositiveInfinity;
     private float stageCrossingTime = float.PositiveInfinity;
+    private readonly int scheduledRaceLaps;
+    internal float RaceProgressAggression => VehicleBehavior003.RaceAggression(IsRace,
+        Math.Max(0f, (leaderProgress - startLine) / lapLength), scheduledRaceLaps,
+        CurrentStage, StageStartLap, StageEnd, BonusStageCount);
     public int CurrentStage => scoredStages + 1;
+    private readonly int[] stageEndLaps;
+    public int BonusStageCount => Math.Max(0, stageEndLaps.Length - 1);
     public int StageStartLap { get; private set; }
     internal bool SetupLocked => simulationContext.Event?.SetupLocked == true;
     public bool IsRace => session.kind == RaceSessionKind.Race;
@@ -170,8 +197,10 @@ internal sealed class RaceSessionRun
     public float PlayerBestLap => cars[0].Result.FastestLap;
     public int TargetLaps { get; private set; }
     public bool FinishSuspended { get; private set; }
-    public int StageEnd => stageEndOverride ?? (CurrentStage <= RaceSession.TestBonusStages
-        ? CurrentStage * RaceSession.TestOpeningStageLaps : TargetLaps);
+    public int StageEnd => stageEndOverride ?? StageEndAt(scoredStages);
+
+    internal int StageEndAt(int stageIndex) =>
+        stageIndex < BonusStageCount ? stageEndLaps[stageIndex] : TargetLaps;
 
     public void EndStageAt(int lap) => stageEndOverride = lap;
 
@@ -207,6 +236,7 @@ internal sealed class RaceSessionRun
     private sealed class CarTiming
     {
         public SessionCarResult Result;
+        public FourSpeedTransmission Transmission;
         public double NextCrossing;
         public double LastCrossing = -1d;
         public float FinishTime;
@@ -229,6 +259,10 @@ internal sealed class RaceSessionRun
         this.session = session;
         recordContacts = simulation.Event != null;
         TargetLaps = session.laps;
+        stageEndLaps = IsRace && simulation.Event?.noStages != true
+            ? ScheduledRace.AllocateStageLaps(TargetLaps, simulation.Event?.stageLaps) : Array.Empty<int>();
+        for (int i = 1; i < stageEndLaps.Length; i++)
+            stageEndLaps[i] += stageEndLaps[i - 1];
         this.finishOnCheckered = finishOnCheckered;
         this.lapLength = lapLength;
         this.startLine = startLine;
@@ -248,11 +282,16 @@ internal sealed class RaceSessionRun
         thermalDistances = new float[simulation.Cars.Count];
         thermalOnTrack = new bool[simulation.Cars.Count];
         var entries = simulation.Cars;
+        scheduledRaceLaps = session.laps; // Keep urgency at maximum through overtime.
         cars = new CarTiming[entries.Count];
+        throttleInputs = new float[entries.Count]; brakeInputs = new float[entries.Count];
+        inputSpeedProfile = new LapSpeedProfile(simulation.Track, usesSpringPerformance);
+        double rearGearRatio = ReferenceRearGearRatio(simulation.Track, session, speedModel, inputSpeedProfile);
         for (int i = 0; i < cars.Length; i++)
         {
             var timing = new CarTiming
             {
+                Transmission = new FourSpeedTransmission(rearGearRatio),
                 NextCrossing = i == 0 ? startLine + lapLength : startLine,
                 LastCrossing = i == 0 ? 0f : -1f,
                 SpeedFactor = speedModel.LapSpeedFactor(simulation, i, random)
@@ -272,10 +311,25 @@ internal sealed class RaceSessionRun
                 timing.History.Add((timing.Progress, 0f));
             timing.StepStartProgress = timing.Progress;
             timing.Result = entries[i];
+            timing.Result.mechanicalFailure = null;
             if (IsRace)
-                timing.Result.stagePoints = new int[RaceSession.TestBonusStages];
+                timing.Result.stagePoints = new int[BonusStageCount];
             cars[i] = timing;
         }
+        failureRandom = new Random(random.Next());
+    }
+
+    internal static double ReferenceRearGearRatio(TrackDefinition track, RaceSession session,
+        IVehicleSpeedModel speedModel, LapSpeedProfile profile)
+    {
+        var reference = new CarSimulationContext(track, null, session, Array.Empty<SessionCarResult>());
+        float baseSpeed = speedModel.BaseSpeed(reference, 0, new Random(0));
+        float forceFactor = speedModel is VehicleSpeed003 ? VehicleSpeed003.WeightForceFactor(SessionFuel.TankCapacity) : 1f;
+        float peakSpeed = speedModel.UsesLapSpeedProfile ? profile.EstimatePeakSpeed(baseSpeed, forceFactor) : baseSpeed;
+        double peakMph = peakSpeed * 3600.0 / TrackDefinition.MetersPerMile;
+        if (track.restrictorPlate)
+            peakMph += RestrictorPlateDraft.MaximumDraftBoostMph;
+        return FourSpeedTransmission.RearGearRatioForTopSpeed(peakMph);
     }
 
     internal static void ResetVehiclesForSession(IReadOnlyList<SessionCarResult> entries, bool preservePlayerCondition)
@@ -290,6 +344,17 @@ internal sealed class RaceSessionRun
 
     public static List<SessionCarResult> Simulate(CarSimulationContext simulation, IVehicleSpeedModel speedModel,
         Random random, int[] qualifyingOrder, bool includesPlayer)
+    {
+        List<SessionCarResult> results = null;
+        var steps = SimulateIncremental(simulation, speedModel, random, qualifyingOrder, includesPlayer,
+            value => results = value);
+        while (steps.MoveNext()) { }
+        return results;
+    }
+
+    public static System.Collections.IEnumerator SimulateIncremental(CarSimulationContext simulation,
+        IVehicleSpeedModel speedModel, Random random, int[] qualifyingOrder, bool includesPlayer,
+        Action<List<SessionCarResult>> completed, Func<bool> cancelled = null, Action<float> progress = null)
     {
         var session = simulation.Session;
         var entries = simulation.Cars;
@@ -310,10 +375,12 @@ internal sealed class RaceSessionRun
             baseSpeeds[i] = speedModel.BaseSpeed(simulation, i, random);
 
         var run = new RaceSessionRun(session, lapLength, 0f, simulation, speedModel, random, initialDistances: distances);
-        var profile = speedModel.UsesLapSpeedProfile ? new LapSpeedProfile(simulation.Track) : null;
+        var profile = speedModel.UsesLapSpeedProfile ? new LapSpeedProfile(simulation.Track, speedModel is VehicleSpeed003) : null;
         float profileStart = simulation.Track.StartFinishFraction * lapLength;
+        var batch = System.Diagnostics.Stopwatch.StartNew();
         while (!run.Complete)
         {
+            if (cancelled?.Invoke() == true) yield break;
             float seconds = run.StepDuration(profile == null ? 1f : 0.25f);
             if (includesPlayer && run.IsRace && entries.Count > 1)
                 run.TrySimulateContact(distances, seconds, random);
@@ -339,8 +406,20 @@ internal sealed class RaceSessionRun
                 run.Record(i, previous, preciseDistances[i], seconds);
             }
             run.AdvanceClock(seconds);
+            if (batch.ElapsedMilliseconds >= 8)
+            {
+                float fraction = session.minutes > 0 ? run.Elapsed / (session.minutes * 60f) :
+                    (float)(preciseDistances.Max() / Math.Max(1d, session.laps * (double)lapLength));
+                progress?.Invoke(UnityEngine.Mathf.Clamp01(fraction));
+                yield return null;
+                batch.Restart();
+            }
         }
-        return run.Results();
+        if (cancelled?.Invoke() != true)
+        {
+            progress?.Invoke(1f);
+            completed(run.Results());
+        }
     }
 
     private void TrySimulateContact(float[] distances, float seconds, Random random)
@@ -514,19 +593,92 @@ internal sealed class RaceSessionRun
             VehicleSpeed003.DistributionBrakingFactor(SetupForCar(index), Fuel(index))) * Weather.GripFactor;
 
     public float CurrentSpeed(int index) => (float)cars[index].Result.InstantSpeed;
+    internal int TransmissionGear(int index) => cars[index].Transmission.Gear;
+    internal double EngineRpm(int index) => cars[index].Retired ? 0.0 : cars[index].Transmission.EngineRpm;
 
     public bool Retired(int index) => cars[index].Retired;
 
-    public float ConditionLimitedSpeed(int index, float speed, float seconds, float brakingLimit = 0f)
+    // Available drive force balances speed-squared drag at the performance ceiling.
+    // This is full throttle even when net acceleration is zero or slightly negative.
+    internal static float ReferenceAcceleration(float speed)
+    {
+        const float metersPerSecondToMph = 3600f / TrackDefinition.MetersPerMile;
+        float rollingSpeed = UnityEngine.Mathf.InverseLerp(60f, 180f, speed * metersPerSecondToMph);
+        return UnityEngine.Mathf.Lerp(7.89f, 3.5f, rollingSpeed);
+    }
+
+    internal static float FullThrottleSpeed(float current, float terminal, float acceleration, float seconds)
+    {
+        if (seconds <= 0f) return current;
+        if (terminal <= .001f) return Math.Max(0f,current-CoastingDeceleration*seconds);
+        float ratio=current/terminal;
+        float net=UnityEngine.Mathf.Clamp(acceleration*(1f-ratio*ratio),-CoastingDeceleration,acceleration);
+        float next=current+net*seconds;
+        return current<=terminal ? Math.Min(terminal,next) : Math.Max(terminal,next);
+    }
+
+    public string MechanicalFailure(int index) => cars[index].Result.mechanicalFailure;
+    private const string FlatTireFailure = "Flat Tire";
+
+    public bool HasTerminalFailure(int index) =>
+        MechanicalFailure(index) is string failure && !string.IsNullOrEmpty(failure) && failure != FlatTireFailure;
+
+    public bool HasRandomFlatTire(int index) =>
+        MechanicalFailure(index) == FlatTireFailure && FlatTireMask(index) != 0;
+
+    public float DisplayDamage(int index) => HasTerminalFailure(index) || HasRandomFlatTire(index)
+        ? 100f : Vehicle(index)?.Damage ?? 0f;
+
+    internal static double MechanicalFailureProbability(double seconds, float? reliability)
+    {
+        // Five failures over 36 weekends with three hours of active driving each.
+        const double failuresPerSecond = 5.0 / (36 * 3 * 3600);
+        double totalWeight = 3.0 + 2.0 * EngineFailureWeight(reliability);
+        return 1.0 - Math.Exp(-failuresPerSecond * totalWeight / 5.0 * Math.Max(0.0, seconds));
+    }
+
+    private static double EngineFailureWeight(float? reliability)
+    {
+        const float referenceReliability = .95f;
+        float rating = reliability is float value && !float.IsNaN(value)
+            ? UnityEngine.Mathf.Clamp01(value) : referenceReliability;
+        return 1.0 + 4.0 * (referenceReliability - rating);
+    }
+
+    private string ChooseMechanicalFailure(float? reliability)
+    {
+        double engineWeight = EngineFailureWeight(reliability);
+        double draw = failureRandom.NextDouble() * (3.0 + 2.0 * engineWeight);
+        if (draw < engineWeight) return "Blown Engine";
+        if (draw < 2.0 * engineWeight) return "Overheating Engine";
+        if (draw < 2.0 * engineWeight + 1.0) return FlatTireFailure;
+        return draw < 2.0 * engineWeight + 2.0 ? "Transmission Failure" : "Rear Gear Failure";
+    }
+
+    public float ConditionLimitedSpeed(int index, float speed, float seconds, float brakingLimit = 0f,
+        bool allowMechanicalFailure = false, float? paceSpeedCeiling = null)
     {
         var car = cars[index];
+        throttleInputs[index]=brakeInputs[index]=0f;
         float damage = (car.Result.car?.Damage ?? 0f) + car.SimulatedContactDamage;
-        if (car.Result.Fuel > 0 && damage < 100f)
+        bool canRun = car.Result.Fuel > 0 && damage < 100f;
+        if (allowMechanicalFailure && canRun && car.Result.car != null && !car.Finished &&
+            !HasTerminalFailure(index) && FlatTireMask(index) == 0 && car.Result.InstantSpeed > 0.45 && seconds > 0f)
         {
-            const float metersPerSecondToMph = 3600f / TrackDefinition.MetersPerMile;
+            var engine = cars[simulationContext.EqualConditionTesting ? 0 : index].Result;
+            if (failureRandom.NextDouble() < MechanicalFailureProbability(seconds, engine.engineReliabilityRating))
+            {
+                car.Result.mechanicalFailure = ChooseMechanicalFailure(engine.engineReliabilityRating);
+                if (HasTerminalFailure(index))
+                    ApplyDamage(index, 100f);
+                else
+                    car.Result.car.GetTire(failureRandom.Next(4)).wear = 1f;
+            }
+        }
+        if (canRun && !HasTerminalFailure(index))
+        {
             float currentSpeed = (float)car.Result.InstantSpeed;
-            float rollingSpeed = UnityEngine.Mathf.InverseLerp(60f, 180f, currentSpeed * metersPerSecondToMph);
-            float acceleration = UnityEngine.Mathf.Lerp(7.89f, 3.5f, rollingSpeed);
+            float acceleration = ReferenceAcceleration(currentSpeed);
             if (usesSpringPerformance)
             {
                 float weightFactor = VehicleSpeed003.WeightForceFactor(car.Result.Fuel);
@@ -534,9 +686,27 @@ internal sealed class RaceSessionRun
                 acceleration *= UnityEngine.Mathf.Min(1f, weightFactor * VehicleSpeed003.DistributionAccelerationFactor(setup, car.Result.Fuel));
                 brakingLimit *= UnityEngine.Mathf.Min(1f, weightFactor * VehicleSpeed003.DistributionBrakingFactor(setup, car.Result.Fuel)) * Weather.GripFactor;
             }
-            float target = speed * (1f - damage / 100f);
-            if (brakingLimit > 0f && target < currentSpeed)
-                return Math.Max(target, currentSpeed - brakingLimit * seconds);
+            float damageFactor = 1f - damage / 100f;
+            // A paced car should be able to hold the commanded speed if it is
+            // below what the car can still achieve with its current damage.
+            float target = paceSpeedCeiling.HasValue
+                ? Math.Min(speed, paceSpeedCeiling.Value * damageFactor)
+                : speed * damageFactor;
+            if (thermalOnTrack[index] && brakingLimit <= 0f && inputSpeedProfile.FullThrottleAt(thermalDistances[index]))
+            {
+                throttleInputs[index]=1f;
+                return FullThrottleSpeed(currentSpeed,target,acceleration,seconds);
+            }
+            if (target < currentSpeed)
+            {
+                float deceleration=brakingLimit>0f ? brakingLimit : CoastingDeceleration;
+                if(brakingLimit>0f) brakeInputs[index]=UnityEngine.Mathf.Clamp01((currentSpeed-target)/Math.Max(.0001f,seconds*brakingLimit));
+                return Math.Max(target,currentSpeed-deceleration*seconds);
+            }
+            // Racing-speed ceiling represents available performance, not a partial-throttle command.
+            // Traffic avoidance may override this request after the speed profile is evaluated.
+            throttleInputs[index]=inputSpeedProfile.FullThrottleAt(thermalDistances[index]) ? 1f :
+                UnityEngine.Mathf.Clamp01(.25f+(target-currentSpeed)/Math.Max(.0001f,acceleration*seconds));
             return Math.Min(target, currentSpeed + acceleration * seconds);
         }
 
@@ -552,6 +722,7 @@ internal sealed class RaceSessionRun
     {
         var car = cars[index];
         car.Result.InstantSpeed = 0;
+        car.Transmission.Update(0.0);
         car.Retired = true;
         car.Finished = true;
         car.FinishTime = float.PositiveInfinity;
@@ -581,8 +752,11 @@ internal sealed class RaceSessionRun
     public void RecordTravel(int index, double meters, double speedMetersPerSecond, double trackPosition,
         bool reducedBurn = false, bool onTrack = true)
     {
-        var result = cars[index].Result;
+        var car = cars[index];
+        var result = car.Result;
         result.InstantSpeed = meters > 0 ? speedMetersPerSecond : 0;
+        car.Transmission.Update(result.InstantSpeed * 3600.0 / TrackDefinition.MetersPerMile);
+        if (meters <= 0) throttleInputs[index]=brakeInputs[index]=0f;
         thermalSpeeds[index] = (float)result.InstantSpeed;
         thermalRacing[index] = onTrack && !reducedBurn && meters > 0;
         thermalOnTrack[index] = onTrack;
@@ -621,7 +795,7 @@ internal sealed class RaceSessionRun
     public void Record(int index, double before, double after, float seconds)
     {
         var car = cars[index];
-        if (car.Finished || after <= before)
+        if (car.Finished || HasTerminalFailure(index) || after <= before)
             return;
 
         if (IsRace)
@@ -637,7 +811,7 @@ internal sealed class RaceSessionRun
             if (car.LastCrossing >= 0f)
             {
                 car.Result.lapTimes.Add((float)(preciseCrossing - car.LastCrossing));
-                if (IsRace && scoredStages < RaceSession.TestBonusStages &&
+                if (IsRace && scoredStages < BonusStageCount &&
                     car.Result.lapTimes.Count == StageEnd)
                     stageCrossingTime = Math.Min(stageCrossingTime, crossing);
                 TimingRevision++;
@@ -694,6 +868,11 @@ internal sealed class RaceSessionRun
     {
         if (!usesSpringPerformance)
             return speed;
+        if (simulationContext.Track.restrictorPlate)
+            return speed * VehicleSpeed003.RestrictorPlatePaceFactor(simulationContext.Track,
+                SetupForCar(index), cars[index].Result.car, Fuel(index), Weather.GripFactor);
+        if (inputSpeedProfile.FlatOutKinkAt(distance))
+            return speed * VehicleSpeed003.PressureStraightSpeed(SetupForCar(index), cars[index].Result.car);
         float cornerLoad = UnityEngine.Mathf.SmoothStep(0f, 1f,
             UnityEngine.Mathf.InverseLerp(0.05f, 1.5f,
                 speed * speed * UnityEngine.Mathf.Abs(tireTemperatures.CurvatureAt(distance)) / 9.80665f));
@@ -704,6 +883,8 @@ internal sealed class RaceSessionRun
             tireTemperatures.ShockMotionAt(distance, speed));
         factor *= dynamicLoads[index].CornerSpeedFactor(setup, Fuel(index));
         factor *= VehicleSpeed003.WeightCornerSpeedFactor(Fuel(index)) * UnityEngine.Mathf.Sqrt(Weather.GripFactor);
+        // Unwind the cornering demand as the driver applies power in the final third.
+        cornerLoad *= 1f-inputSpeedProfile.CornerExitAt(distance);
         return speed * UnityEngine.Mathf.Lerp(VehicleSpeed003.PressureStraightSpeed(setup, cars[index].Result.car), factor, cornerLoad);
     }
 

@@ -1,0 +1,36 @@
+.game-color-picker-dialog {
+    width: 740px; max-width: 96%; max-height: 96%; height: auto; min-height: 0;
+    padding: 14px 18px; background-color: #10151e; border-width: 1px; border-color: #009bdd; border-radius: 12px;
+    color: #f5f5f5; -unity-font-definition: url("../Fonts/OpenSans/OpenSans-Bold.ttf");
+}
+.game-color-picker-dialog > .settings-group-heading { color: #009bdd; margin-bottom: 8px; }
+.color-picker-body { flex-direction: row; flex-shrink: 1; min-height: 0; }
+.color-picker-visuals { flex-grow: 1; flex-basis: 0; min-width: 0; margin-right: 18px; }
+.color-picker-palettes { width: 264px; flex-shrink: 0; }
+.game-color-picker-dialog .settings-note { margin: 2px 0 4px; }
+.color-picker-graphs { flex-direction: row; flex-grow: 0; flex-shrink: 1; height: 170px; min-height: 110px; }
+.color-picker-spectrum { flex-grow: 1; min-width: 0; border-width: 1px; border-color: #62788c; }
+.color-picker-lightness { width: 24px; margin-left: 10px; border-width: 1px; border-color: #62788c; }
+.color-picker-spectrum:focus, .color-picker-lightness:focus { border-color: #009bdd; }
+.color-picker-previews { flex-direction: row; flex-shrink: 0; margin-top: 6px; }
+.color-picker-preview-column { flex-grow: 1; flex-basis: 0; min-width: 0; margin-right: 6px; }
+.color-picker-preview { height: 26px; border-radius: 6px; border-width: 1px; border-color: #62788c; }
+.color-picker-swatches { flex-direction: row; flex-wrap: wrap; flex-shrink: 0; margin: 0 0 6px; }
+.color-picker-swatch { width: 28px; height: 22px; min-width: 28px; min-height: 22px; margin: 2px; padding: 0; border-radius: 4px; border-width: 1px; border-color: #62788c; flex-shrink: 0; }
+.color-picker-swatch:hover, .color-picker-swatch:focus { border-width: 2px; border-color: #f5f5f5; }
+.color-picker-custom-target, .color-picker-current-swatch { border-width: 3px; border-color: #009bdd; }
+.color-picker-numbers { flex-direction: row; flex-grow: 0; flex-shrink: 0; margin-top: 6px; }
+.game-color-picker-dialog .color-picker-field { flex-grow: 1; flex-basis: 0; min-width: 0; margin: 2px 4px; }
+.game-color-picker-dialog .color-picker-field > .unity-base-field__input { min-height: 32px; padding: 4px 8px; border-color: #009bdd; }
+.game-color-picker-dialog .color-picker-field > .unity-base-field__label { margin-left: 6px; font-size: 11px; }
+.game-color-picker-dialog .settings-error-slot { height: 18px; min-height: 18px; margin-bottom: 2px; }
+.game-color-picker-dialog .settings-inline-error { font-size: 10px; left: 3px; }
+.game-color-picker-dialog > .settings-validation-summary { height: 24px; margin: 2px 0; font-size: 12px; white-space: normal; }
+.game-color-picker-dialog > .settings-footer { flex-grow: 0; flex-shrink: 0; margin-top: 4px; padding-top: 8px; border-top-color: #009bdd; }
+.game-color-picker-dialog .settings-button { min-height: 32px; padding: 4px 12px; border-radius: 8px; border-color: #009bdd; background-color: #182634; }
+.game-color-picker-dialog .settings-button:hover, .game-color-picker-dialog .settings-button:focus { background-color: #263e50; border-color: #55c4ef; }
+
+.game-color-picker-dialog .color-picker-visuals > .color-picker-field { flex-grow: 0; flex-shrink: 0; flex-basis: auto; min-height: 72px; margin-top: 6px; }
+.game-color-picker-dialog .color-picker-graphs { height: 160px; }
+.game-color-picker-dialog .settings-button { color: #f5f5f5; }
+.game-color-picker-dialog .settings-button-primary { color: #f5f5f5; background-color: #155374; border-color: #55c4ef; }

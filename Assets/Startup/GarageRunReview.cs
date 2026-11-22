@@ -114,6 +114,7 @@ internal sealed class GarageRunRecorder
     private bool previousInPit = true;
     private double lastCrossing = -1f;
     private bool validLap;
+    private double highestCrossing = double.NegativeInfinity;
     private HandlingPhaseReview[] lapHandling;
     private static HandlingPhaseReview[] EmptyHandling() => new[] { new HandlingPhaseReview(), new HandlingPhaseReview(), new HandlingPhaseReview() };
     internal int CompletedLaps => current?.lapTimes.Count ?? 0;
@@ -150,6 +151,7 @@ internal sealed class GarageRunRecorder
             lapHandling = EmptyHandling();
             lastCrossing = -1f;
             validLap = false;
+            highestCrossing = double.NegativeInfinity;
             previousDistance = distance;
             previousTime = time;
             previousInPit = inPit;
@@ -166,6 +168,9 @@ internal sealed class GarageRunRecorder
                 double crossingDistance = line + (Math.Floor((previousDistance - line) / length) + 1d) * length;
                 while (crossingDistance <= distance)
                 {
+                    if (crossingDistance <= highestCrossing)
+                    { crossingDistance += length; continue; }
+                    highestCrossing = crossingDistance;
                     double fraction = (crossingDistance - previousDistance) / (distance - previousDistance);
                     double crossingTime = previousTime + (time - previousTime) * (float)fraction;
                     if (validLap && lastCrossing >= 0f && crossingTime > lastCrossing)

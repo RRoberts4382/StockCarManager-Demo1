@@ -8,10 +8,12 @@ internal sealed class SessionPitStops
     private readonly float[] stalls;
     private readonly Stop[] stops;
     private bool holdPlayerInGarage;
+    private float garageVisitTarget;
 
     private struct Stop
     {
         public bool Requested;
+        public bool PlayerEditable;
         public bool Refuel;
         public float FuelGallons;
         public int TireMask;
@@ -37,11 +39,23 @@ internal sealed class SessionPitStops
         !holdPlayerInGarage && (run.IsRace ? run.RemainingRaceMeters > 0 : run.Remaining > 0) &&
         !run.Finished(0) && !run.Retired(0) && !stops[0].Requested && !stops[0].Servicing && run.Fuel(0) > 0;
 
-    public void SetGarageVisit(bool visiting)
+    public void SetGarageVisit(bool visiting, float? alternateTarget = null)
     {
         holdPlayerInGarage = visiting;
+        garageVisitTarget = alternateTarget ?? stalls[0];
         if (!visiting && !stops[0].Requested)
             cars[0].NextEntry = float.PositiveInfinity;
+    }
+
+    internal float StopTarget(int index)
+    {
+        if (stops[index].Requested)
+            return stalls[index];
+        if (index != 0 || !holdPlayerInGarage)
+            return float.PositiveInfinity;
+        var player = cars[0];
+        return garageVisitTarget != stalls[0] && player.InPit && player.PitDistance > garageVisitTarget
+            ? float.PositiveInfinity : garageVisitTarget;
     }
 
     public string PlayerStatus { get; private set; } = string.Empty;
@@ -52,17 +66,34 @@ internal sealed class SessionPitStops
 
     public bool IsServicing(int index) => stops[index].Servicing;
 
-    public void RequestPlayer(RaceSessionRun run, float fuelGallons, int tireMask, float repairPoints, float[] pressures = null)
+    public bool CanEditPlayerRequest(RaceSessionRun run) =>
+        !holdPlayerInGarage && !run.Finished(0) && !run.Retired(0) &&
+        stops[0].Requested && stops[0].PlayerEditable && !stops[0].Duration.HasValue;
+
+    public void RequestPlayer(RaceSessionRun run, float fuelGallons, int tireMask, float repairPoints,
+        float[] pressures = null, bool playerEditable = false)
     {
         if (!CanRequest(run))
             return;
 
         stops[0].Requested = true;
+        stops[0].PlayerEditable = playerEditable;
+        SetPlayerService(run, fuelGallons, tireMask, repairPoints, pressures);
+        PlayerStatus = "Pit stop queued";
+    }
+
+    public void EditPlayerRequest(RaceSessionRun run, float fuelGallons, int tireMask, float repairPoints, float[] pressures)
+    {
+        if (CanEditPlayerRequest(run))
+            SetPlayerService(run, fuelGallons, tireMask | run.FlatTireMask(0), repairPoints, pressures);
+    }
+
+    private void SetPlayerService(RaceSessionRun run, float fuelGallons, int tireMask, float repairPoints, float[] pressures)
+    {
         stops[0].FuelGallons = fuelGallons;
         stops[0].TireMask = tireMask;
         stops[0].Pressures = !run.SetupLocked && pressures?.Length == 4 ? (float[])pressures.Clone() : null;
         stops[0].RepairPoints = repairPoints;
-        PlayerStatus = "Pit stop queued";
     }
 
     internal bool RequestRivalSetupStop(RaceSessionRun run, int index, SetupServicePlan work, Action complete)
@@ -90,11 +121,24 @@ internal sealed class SessionPitStops
         return Math.Max(tireSeconds, fuelSeconds) + repairPoints * RepairSecondsPerPoint;
     }
 
+    internal bool ArmQueuedEntry(int index, bool pitOpen, bool allowEmergencyEntry)
+    {
+        var car = cars[index];
+        ref var stop = ref stops[index];
+        if (car.InPit || (!stop.Requested && (index != 0 || !holdPlayerInGarage)))
+            return false;
+
+        if (pitOpen || (stop.FlatTireStop && allowEmergencyEntry))
+            pit.CallToStall(car, StopTarget(index));
+        else
+            car.NextEntry = float.PositiveInfinity;
+        return true;
+    }
+
     public void Advance(int index, RaceSessionRun run, float seconds, float speed, bool pitOpen, bool allowEmergencyEntry = true)
     {
         var car = cars[index];
         ref var stop = ref stops[index];
-        bool garageVisit = index == 0 && holdPlayerInGarage;
         int flatTires = run.FlatTireMask(index);
         if (flatTires != 0 && !stop.Duration.HasValue)
         {
@@ -117,21 +161,13 @@ internal sealed class SessionPitStops
             stop.Refuel = true;
         }
 
-        if ((stop.Requested || garageVisit) && !car.InPit)
-        {
-            if (pitOpen || (stop.FlatTireStop && allowEmergencyEntry))
-                pit.CallToStall(car, stalls[index]);
-            else
-                car.NextEntry = float.PositiveInfinity;
-
-            if (index == 0)
-                PlayerStatus = stop.FlatTireStop && (pitOpen || allowEmergencyEntry) ? "Flat tire · pitting" :
-                    pitOpen ? "Pit stop queued" : "Queued · pits closed";
-        }
+        if (ArmQueuedEntry(index, pitOpen, allowEmergencyEntry) && index == 0)
+            PlayerStatus = stop.FlatTireStop && (pitOpen || allowEmergencyEntry) ? "Flat tire · pitting" :
+                pitOpen ? "Pit stop queued" : "Queued · pits closed";
 
         double before = car.Odometer;
         if (!car.InGarage)
-            pit.Advance(car, seconds, speed, stop.Requested || garageVisit ? stalls[index] : float.PositiveInfinity);
+            pit.Advance(car, seconds, speed, StopTarget(index));
         run.RecordFlatTireDamage(index, flatTires, car.Odometer - before);
         if (stop.Requested && car.InPit)
         {

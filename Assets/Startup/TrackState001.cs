@@ -17,7 +17,8 @@ internal sealed class TrackState001 : ICarSimulationModel
     public TrackState001Stages StartStages(TrackPitTraffic pit, int count, TrackDefinition track, Random random)
     {
         var zone = RestartZone(track);
-        return new TrackState001Stages(pit, zone.Length, zone.Finish, zone.Start, zone.End, count, random);
+        return new TrackState001Stages(pit, zone.Length, zone.Finish, zone.Start, zone.End, count, random,
+            widenRestartFormationFirst: track.id is TrackPreview.RichmondTrackId or TrackPreview.NorthWilkesboroTrackId);
     }
 
     private static (float Length, float Finish, float Start, float End) RestartZone(TrackDefinition track)

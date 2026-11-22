@@ -89,7 +89,7 @@ internal static class CarSimulationModels
     public static IReadOnlyList<ICarSimulationModel> Available { get; } =
         Array.AsReadOnly(new ICarSimulationModel[] { new BasicSimulation(), new TrackState001() });
 
-    public static ICarSimulationModel Default => Available[0];
+    public static ICarSimulationModel Default => Available[1];
 
     public static int IndexForId(string id)
     {
@@ -99,6 +99,6 @@ internal static class CarSimulationModels
                 return i;
         }
 
-        return 0;
+        return 1;
     }
 }

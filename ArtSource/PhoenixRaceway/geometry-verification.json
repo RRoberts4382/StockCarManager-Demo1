@@ -1,0 +1,174 @@
+{
+  "lap_m": 1609.3440000000178,
+  "pit_segments_m": [
+    170.55376289449845,
+    461.32301279683963,
+    192.64830890449318
+  ],
+  "width_range_m": [
+    15.8496,
+    18.8976
+  ],
+  "apron_width_range_m": [
+    6.1,
+    48.9990649277275
+  ],
+  "turn_heading_delta_on_1_5_15m_windows_deg": [
+    [
+      -0.1487,
+      0.8089
+    ],
+    [
+      -0.1843,
+      3.8901
+    ],
+    [
+      -0.1953,
+      11.3322
+    ]
+  ],
+  "pit_heading_delta_deg": {
+    "entry": [
+      [
+        -0.0068,
+        0.0341
+      ],
+      [
+        -0.0332,
+        0.1677
+      ],
+      [
+        -0.0926,
+        0.4805
+      ]
+    ],
+    "road": [
+      [
+        -0.2762,
+        0.8809
+      ],
+      [
+        -1.125,
+        4.2258
+      ],
+      [
+        -2.2088,
+        12.1252
+      ]
+    ],
+    "exit": [
+      [
+        0.0048,
+        0.4904
+      ],
+      [
+        0.0453,
+        2.3563
+      ],
+      [
+        0.3101,
+        6.836
+      ]
+    ]
+  },
+  "pit_endpoint_heading_error_deg": {
+    "apron_to_entry": -0.00013903091068772028,
+    "entry_to_road": 0.0005565312333477933,
+    "road_to_exit": 0.009363450684174863,
+    "exit_to_apron": 0.0002569526388715703
+  },
+  "pit_footprint": {
+    "entry": {
+      "samples_beyond_outer_wall": 0,
+      "racing_surface_overlap_m": null
+    },
+    "road": {
+      "samples_beyond_outer_wall": 0,
+      "racing_surface_overlap_m": null
+    },
+    "exit": {
+      "samples_beyond_outer_wall": 0,
+      "racing_surface_overlap_m": null
+    }
+  },
+  "profile_checks": {
+    "-2": {
+      "height_range_m": [
+        0.0,
+        0.0
+      ],
+      "grade_range_percent": [
+        0.0,
+        0.0
+      ],
+      "max_half_meter_grade_change_percentage_points": 0.0,
+      "seam_grade_change_percentage_points": 0.0
+    },
+    "-1": {
+      "height_range_m": [
+        0.0,
+        0.0
+      ],
+      "grade_range_percent": [
+        0.0,
+        0.0
+      ],
+      "max_half_meter_grade_change_percentage_points": 0.0,
+      "seam_grade_change_percentage_points": 0.0
+    },
+    "-0.5": {
+      "height_range_m": [
+        0.20737599301704066,
+        0.8609535166351016
+      ],
+      "grade_range_percent": [
+        -0.3052479032576544,
+        0.935357177921788
+      ],
+      "max_half_meter_grade_change_percentage_points": 0.02866499385040061,
+      "seam_grade_change_percentage_points": -0.0007784235566079105
+    },
+    "0": {
+      "height_range_m": [
+        0.4147519860340813,
+        1.7219070332702031
+      ],
+      "grade_range_percent": [
+        -0.5930339707373898,
+        1.834351816292609
+      ],
+      "max_half_meter_grade_change_percentage_points": 0.05565396909865017,
+      "seam_grade_change_percentage_points": -0.0015568471150971856
+    },
+    "0.5": {
+      "height_range_m": [
+        0.6221279790511219,
+        2.5828605499053046
+      ],
+      "grade_range_percent": [
+        -0.8648142525371393,
+        2.7016518428910454
+      ],
+      "max_half_meter_grade_change_percentage_points": 0.08110967748246722,
+      "seam_grade_change_percentage_points": -0.0023352706698269803
+    },
+    "1": {
+      "height_range_m": [
+        0.8295039720681626,
+        3.4438140665404062
+      ],
+      "grade_range_percent": [
+        -1.121887360326042,
+        3.5383120330389706
+      ],
+      "max_half_meter_grade_change_percentage_points": 0.10515911372257047,
+      "seam_grade_change_percentage_points": -0.0031136942151566726
+    }
+  },
+  "restart_stations_m": [
+    1527.267456,
+    1581.985152
+  ],
+  "stall_count": 40,
+  "stall_spacing_m": 10.033775528331262
+}

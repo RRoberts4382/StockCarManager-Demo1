@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.UIElements;
 using Object = UnityEngine.Object;
 
 internal enum CarPaintScheme
@@ -12,21 +13,61 @@ internal enum CarPaintScheme
     Horizon, SplitRail, TailFin, Overdrive, Afterburn
 }
 
+internal static class CarNumberFonts
+{
+    public static readonly string[] Names = { "Google Sans", "Racing Sans One", "Story Script", "Open Sans" };
+    private static readonly string[] Paths =
+        { "Fonts/GoogleSans/GoogleSans-Regular", "Fonts/RacingSansOne-Regular", "Fonts/StoryScript-Regular", "Fonts/OpenSans/OpenSans-Regular" };
+    public static string Canonical(string name) => System.Array.IndexOf(Names, name) >= 0 ? name : Names[0];
+    public static Font Load(string name, bool bold = false, bool italic = false)
+    {
+        if (Canonical(name) == "Open Sans")
+        {
+            string face = bold ? (italic ? "BoldItalic" : "Bold") : (italic ? "Italic" : "Regular");
+            return Resources.Load<Font>("Fonts/OpenSans/OpenSans-" + face);
+        }
+        return Resources.Load<Font>(Paths[System.Array.IndexOf(Names, Canonical(name))]);
+    }
+}
+
 internal readonly struct CarPaintStyle
 {
+    internal static IReadOnlyList<CarPaintScheme> Schemes { get; } =
+        Array.AsReadOnly((CarPaintScheme[])Enum.GetValues(typeof(CarPaintScheme)));
+
     public readonly CarPaintScheme Scheme;
     public readonly Color32 Primary;
     public readonly Color32 Secondary;
     public readonly Color32 Trim;
     public readonly bool HasTrim;
+    public readonly Color32? NumberColor;
+    public readonly string NumberFont;
+    public readonly bool NumberBold;
+    public readonly bool NumberItalic;
 
-    public CarPaintStyle(CarPaintScheme scheme, Color32 primary, Color32 secondary, Color32 trim, bool hasTrim)
+    public CarPaintStyle(CarPaintScheme scheme, Color32 primary, Color32 secondary, Color32 trim, bool hasTrim, Color32? numberColor = null, string numberFont = null, bool numberBold = true, bool numberItalic = false)
     {
         Scheme = scheme;
         Primary = primary;
         Secondary = secondary;
         Trim = trim;
         HasTrim = hasTrim;
+        NumberColor = numberColor;
+        NumberFont = CarNumberFonts.Canonical(numberFont);
+        NumberBold = numberBold;
+        NumberItalic = numberItalic;
+    }
+
+    public void ApplyTo(TeamCar car)
+    {
+        car.paintScheme = Scheme;
+        car.primaryPaint = GameColorPicker.Hex(Primary);
+        car.secondaryPaint = GameColorPicker.Hex(Secondary);
+        car.trimPaint = HasTrim ? GameColorPicker.Hex(Trim) : null;
+        car.numberPaint = NumberColor is Color32 numberColor ? GameColorPicker.Hex(numberColor) : null;
+        car.numberFont = NumberFont;
+        car.numberBold = NumberBold;
+        car.numberItalic = NumberItalic;
     }
 
     public bool HasWrap => Scheme != CarPaintScheme.Classic || HasTrim;
@@ -228,5 +269,334 @@ internal readonly struct CarPaintStyle
             if (mesh != null)
                 Object.Destroy(mesh);
         ProjectedMeshes.Clear();
+    }
+}
+
+internal static class CarPaintEditor
+{
+    public static void Open(VisualElement parent, TeamCar car, string[] sponsors,
+        System.Func<TeamCar, string> savePaint, System.Action saved = null, bool careerDraft = false)
+    {
+        var paintPreviewThumbnails = CarThumbnails.CreateLargePreview();
+        var original = car.PaintStyle;
+        var overlay = new VisualElement();
+        SettingsFormStyle.Apply(overlay);
+        var paintStyles = Resources.Load<StyleSheet>("Startup/Startup");
+        if (paintStyles != null) overlay.styleSheets.Add(paintStyles);
+        overlay.AddToClassList("settings-confirmation-overlay");
+        var dialog = MakeDialog(careerDraft ? "Car Paint Scheme" : $"Paint Scheme · Chassis # {car.chassisNumber}");
+        overlay.Add(dialog);
+        dialog.style.width = 620;
+        var content = new VisualElement();
+        content.AddToClassList("settings-row");
+        var preview = paintPreviewThumbnails.CreateOrbitPreview();
+        preview.style.width = 300;
+        preview.style.height = 230;
+        preview.style.flexShrink = 0;
+        preview.style.alignSelf = Align.Center;
+        content.Add(preview);
+        var controls = new VisualElement();
+        controls.style.flexGrow = 1;
+        controls.style.minWidth = 220;
+        content.Add(controls);
+        dialog.Add(content);
+        var error = SettingsFormStyle.Label("", "settings-validation-summary");
+        var draft = car.PaintStyle;
+        var schemeButton = BuildControls(controls, overlay, dialog, () => car, sponsors, draft, style =>
+        {
+            draft = style;
+            UpdatePreview();
+        }, error);
+        dialog.Add(error);
+        var footer = new VisualElement();
+        footer.AddToClassList("settings-footer");
+        footer.Add(SettingsFormStyle.Button("Cancel", RequestClose));
+        footer.Add(SettingsFormStyle.Button(careerDraft ? "Apply Paint Scheme" : "Save Paint Scheme", Save, primary: true));
+        dialog.Add(footer);
+        parent.Add(overlay);
+        overlay.RegisterCallback<KeyDownEvent>(evt =>
+        {
+            if (evt.keyCode != KeyCode.Escape || !dialog.enabledSelf) return;
+            RequestClose();
+            evt.StopPropagation();
+        });
+        schemeButton.Focus();
+        UpdatePreview();
+
+        void UpdatePreview()
+        {
+            preview.image = paintPreviewThumbnails.Get(car, sponsors, draft);
+            SettingsFormStyle.SetValidationMessage(error, null, false);
+        }
+        void Close()
+        {
+            overlay.RemoveFromHierarchy();
+            paintPreviewThumbnails.Dispose();
+        }
+        void RequestClose()
+        {
+            bool changed = !draft.Equals(original);
+            if (!changed) { Close(); return; }
+            var warning = new VisualElement();
+            warning.AddToClassList("settings-confirmation-overlay");
+            var box = MakeDialog("Unsaved changes");
+            box.Add(SettingsFormStyle.Label("Save or discard changes to this car's paint scheme.", "settings-note"));
+            var actions = new VisualElement();
+            actions.AddToClassList("settings-footer");
+            actions.Add(SettingsFormStyle.Button("Keep Editing", () => { warning.RemoveFromHierarchy(); dialog.SetEnabled(true); }));
+            actions.Add(SettingsFormStyle.Button("Discard and Go Back", Close));
+            actions.Add(SettingsFormStyle.Button("Save and Go Back", () =>
+            {
+                warning.RemoveFromHierarchy(); dialog.SetEnabled(true); Save();
+            }, primary: true));
+            box.Add(actions);
+            warning.Add(box);
+            dialog.SetEnabled(false);
+            overlay.Add(warning);
+            warning.RegisterCallback<KeyDownEvent>(evt =>
+            {
+                if (evt.keyCode != KeyCode.Escape) return;
+                warning.RemoveFromHierarchy(); dialog.SetEnabled(true); evt.StopPropagation();
+            });
+            actions.Q<Button>()?.Focus();
+        }
+        void Save()
+        {
+            var previous = (car.primaryPaint, car.secondaryPaint, car.trimPaint, car.paintScheme, car.numberPaint, car.numberFont, car.numberBold, car.numberItalic);
+            draft.ApplyTo(car);
+            string saveError = savePaint(car);
+            if (saveError != null)
+            {
+                (car.primaryPaint, car.secondaryPaint, car.trimPaint, car.paintScheme, car.numberPaint, car.numberFont, car.numberBold, car.numberItalic) = previous;
+                SettingsFormStyle.SetValidationMessage(error, saveError, true);
+                return;
+            }
+            Close(); saved?.Invoke();
+        }
+    }
+
+    internal static Button BuildControls(VisualElement controls, VisualElement popupHost, VisualElement underlay,
+        Func<TeamCar> currentCar, string[] sponsors, CarPaintStyle original, Action<CarPaintStyle> changed, Label error)
+    {
+        var schemes = CarPaintStyle.Schemes;
+        int schemeIndex = 0;
+        for (int i = 0; i < schemes.Count; i++)
+            if (schemes[i] == original.Scheme) { schemeIndex = i; break; }
+        var colors = new[] { original.Primary, original.Secondary, original.Trim, original.NumberColor ?? new Color32(255, 255, 255, 255) };
+        bool hasNumberColor = original.NumberColor.HasValue;
+        string numberFont = original.NumberFont;
+        bool numberBold = original.NumberBold;
+        bool numberItalic = original.NumberItalic;
+        bool hasTrim = original.HasTrim;
+        var schemeField = new VisualElement();
+        schemeField.AddToClassList("settings-field");
+        schemeField.Add(SettingsFormStyle.Label("Paint scheme", "settings-note"));
+        var schemeButton = SettingsFormStyle.Button(CarPaintStyle.SchemeName(schemes[schemeIndex]), null);
+        schemeButton.tooltip = "Preview and choose a paint scheme on this car.";
+        schemeField.Add(schemeButton);
+        controls.Add(schemeField);
+        AddColor("Primary color", 0);
+        AddColor("Secondary color", 1);
+        AddColor("Trim color", 2);
+        AddColor("Car number color", 3);
+        var fontField = new VisualElement();
+        fontField.AddToClassList("settings-field");
+        fontField.Add(SettingsFormStyle.Label("Car number font", "settings-note"));
+        var fontButton = SettingsFormStyle.Button(numberFont, null);
+        fontButton.tooltip = "Choose a bundled, licensed font for the car numbers.";
+        fontField.Add(fontButton);
+        controls.Add(fontField);
+        var styles = new VisualElement();
+        styles.AddToClassList("settings-row");
+        var bold = SettingsFormStyle.Button("Bold", null);
+        var italic = SettingsFormStyle.Button("Italic", null);
+        bold.tooltip = "Toggle bold lettering for the car numbers.";
+        italic.tooltip = "Toggle italic lettering for the car numbers.";
+        bold.style.unityFontStyleAndWeight = FontStyle.Bold;
+        italic.style.unityFontStyleAndWeight = FontStyle.Italic;
+        bold.EnableInClassList("settings-tab-current", numberBold);
+        italic.EnableInClassList("settings-tab-current", numberItalic);
+        bold.clicked += () =>
+        {
+            numberBold = !numberBold;
+            bold.EnableInClassList("settings-tab-current", numberBold);
+            UpdatePreview();
+        };
+        italic.clicked += () =>
+        {
+            numberItalic = !numberItalic;
+            italic.EnableInClassList("settings-tab-current", numberItalic);
+            UpdatePreview();
+        };
+        styles.Add(bold);
+        styles.Add(italic);
+        controls.Add(styles);
+        fontButton.clicked += ChooseNumberFont;
+        schemeButton.clicked += ChooseScheme;
+        return schemeButton;
+
+        void UpdatePreview()
+        {
+            SettingsFormStyle.SetValidationMessage(error, null, false);
+            changed(new CarPaintStyle(schemes[schemeIndex], colors[0], colors[1], colors[2], hasTrim,
+                hasNumberColor ? colors[3] : (Color32?)null, numberFont, numberBold, numberItalic));
+        }
+
+        void AddColor(string label, int index)
+        {
+            var button = SettingsFormStyle.Button(label, null);
+            button.tooltip = "Choose the car's " + label.ToLowerInvariant() + ".";
+            var swatch = new VisualElement { pickingMode = PickingMode.Ignore };
+            swatch.AddToClassList("car-paint-swatch");
+            swatch.style.backgroundColor = (Color)colors[index];
+            button.Insert(0, swatch);
+            button.style.flexDirection = FlexDirection.Row;
+            button.style.alignItems = Align.Center;
+            swatch.style.alignSelf = Align.Center;
+            button.clicked += () =>
+            {
+                try
+                {
+                    GameColorPicker.Open(popupHost, colors[index], chosen =>
+                    {
+                        colors[index] = chosen;
+                        hasTrim |= index == 2;
+                        hasNumberColor |= index == 3;
+                        swatch.style.backgroundColor = (Color)chosen;
+                        UpdatePreview();
+                    });
+                }
+                catch (System.InvalidOperationException ex)
+                {
+                    SettingsFormStyle.SetValidationMessage(error, ex.Message, true);
+                }
+            };
+            controls.Add(button);
+        }
+        void ChooseNumberFont()
+        {
+            var picker = new VisualElement();
+            picker.AddToClassList("settings-confirmation-overlay");
+            var box = MakeDialog("Choose car number font");
+            foreach (string name in CarNumberFonts.Names)
+            {
+                var button = SettingsFormStyle.Button(name, () =>
+                {
+                    numberFont = name;
+                    fontButton.text = name;
+                    UpdatePreview();
+                    ClosePicker();
+                });
+                button.style.unityFontDefinition = FontDefinition.FromFont(CarNumberFonts.Load(name, numberBold, numberItalic));
+                button.style.unityFontStyleAndWeight = name == "Open Sans" ? FontStyle.Normal : numberBold ?
+                    (numberItalic ? FontStyle.BoldAndItalic : FontStyle.Bold) :
+                    (numberItalic ? FontStyle.Italic : FontStyle.Normal);
+                button.tooltip = "Use " + name + " for car numbers.";
+                box.Add(button);
+            }
+            box.Add(SettingsFormStyle.Button("Cancel", ClosePicker));
+            picker.Add(box);
+            underlay.SetEnabled(false);
+            popupHost.Add(picker);
+            box.Q<Button>()?.Focus();
+            picker.RegisterCallback<KeyDownEvent>(evt =>
+            {
+                if (evt.keyCode != KeyCode.Escape) return;
+                ClosePicker(); evt.StopPropagation();
+            });
+            void ClosePicker()
+            {
+                picker.RemoveFromHierarchy(); underlay.SetEnabled(true); fontButton.Focus();
+            }
+        }
+        void ChooseScheme()
+        {
+            var car = currentCar();
+            if (car == null) return;
+            var thumbnails = new CarThumbnails();
+            var picker = new VisualElement();
+            picker.AddToClassList("settings-confirmation-overlay");
+            var box = MakeDialog("Choose paint scheme");
+            box.style.width = 700;
+            box.style.maxHeight = new Length(90, LengthUnit.Percent);
+            var list = new ScrollView(ScrollViewMode.Vertical);
+            list.verticalScrollerVisibility = ScrollerVisibility.Hidden;
+            list.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
+            list.style.height = 350;
+            list.style.flexShrink = 1;
+            list.contentContainer.style.flexDirection = FlexDirection.Row;
+            list.contentContainer.style.flexWrap = Wrap.Wrap;
+            box.Add(list);
+            var actions = new VisualElement();
+            actions.AddToClassList("settings-footer");
+            actions.Add(SettingsFormStyle.Button("Cancel", ClosePicker));
+            box.Add(actions);
+            picker.Add(box);
+            underlay.SetEnabled(false);
+            popupHost.Add(picker);
+            // Static picker previews own their textures; they must not replace the orbit preview.
+            picker.RegisterCallback<DetachFromPanelEvent>(_ => thumbnails.Dispose());
+            picker.RegisterCallback<KeyDownEvent>(evt =>
+            {
+                if (evt.keyCode != KeyCode.Escape) return;
+                ClosePicker(); evt.StopPropagation();
+            });
+            Button selectedRow = null;
+            for (int i = 0; i < schemes.Count; i++)
+            {
+                int selected = i;
+                var row = SettingsFormStyle.Button("", () =>
+                {
+                    schemeIndex = selected;
+                    schemeButton.text = CarPaintStyle.SchemeName(schemes[selected]);
+                    UpdatePreview(); ClosePicker();
+                });
+                row.AddToClassList("team-paint-choice");
+                if (i == schemeIndex)
+                {
+                    row.AddToClassList("team-paint-choice-selected");
+                    selectedRow = row;
+                }
+                row.tooltip = "Use " + CarPaintStyle.SchemeName(schemes[i]) + ".";
+                var image = new Image
+                {
+                    image = thumbnails.Get(car, sponsors,
+                        new CarPaintStyle(schemes[i], colors[0], colors[1], colors[2], hasTrim, hasNumberColor ? colors[3] : (Color32?)null, numberFont, numberBold, numberItalic),
+                        cacheScope: "paint-scheme-" + schemes[i], transparentBackground: true, retainOrbitScene: false),
+                    scaleMode = ScaleMode.ScaleToFit, pickingMode = PickingMode.Ignore
+                };
+                image.style.height = 72;
+                image.style.alignSelf = Align.Stretch;
+                row.Add(image);
+                row.Add(SettingsFormStyle.Label(CarPaintStyle.SchemeName(schemes[i]), "settings-note"));
+                list.Add(row);
+            }
+            if (selectedRow != null)
+            {
+                selectedRow.Focus();
+                list.RegisterCallback<GeometryChangedEvent>(RevealSelection);
+                void RevealSelection(GeometryChangedEvent evt)
+                {
+                    list.UnregisterCallback<GeometryChangedEvent>(RevealSelection);
+                    list.schedule.Execute(() => list.ScrollTo(selectedRow));
+                }
+            }
+            void ClosePicker()
+            {
+                picker.RemoveFromHierarchy(); underlay.SetEnabled(true); schemeButton.Focus();
+            }
+        }
+    }
+
+    private static VisualElement MakeDialog(string title)
+    {
+        var box = new VisualElement();
+        box.AddToClassList("settings-confirmation-dialog");
+        box.style.backgroundColor = (Color)new Color32(16, 21, 30, 255);
+        var trim = new StyleColor(new Color32(0, 155, 221, 255));
+        box.style.borderTopColor = box.style.borderBottomColor =
+            box.style.borderLeftColor = box.style.borderRightColor = trim;
+        box.Add(SettingsFormStyle.Label(title, "settings-group-heading"));
+        return box;
     }
 }

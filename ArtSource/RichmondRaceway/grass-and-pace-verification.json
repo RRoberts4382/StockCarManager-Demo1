@@ -1,0 +1,31 @@
+{
+  "changed_width_controls": 80,
+  "unity_offset_checks": 18108,
+  "max_existing_runtime_offset_change_m": 1.7763568394002505e-15,
+  "max_width_sampler_difference_m": 4.96717541764724e-07,
+  "running_apron_tow_pavement_probes": 9153,
+  "entrance_stock_car_pavement_probes": 1395,
+  "pit_road_stock_car_pavement_probes": 8694,
+  "exit_stock_car_pavement_probes": 1008,
+  "pace_paths": {
+    "return": {
+      "length_m": 67.35540323608676,
+      "markers": 58,
+      "car_pavement_probes": 1530
+    },
+    "departure": {
+      "length_m": 52.12728979720864,
+      "markers": 45,
+      "car_pavement_probes": 1188
+    }
+  },
+  "visible_grass_probes": 1102,
+  "grass_region_probes": 1350,
+  "asphalt_shoulder_width_at_start_finish_m": 5.700000000000003,
+  "pace_bay_position_xy_m": [
+    196.0,
+    20.8
+  ],
+  "pace_return_station_m": 316.19639414069053,
+  "pace_departure_station_m": 353.19639414069053
+}

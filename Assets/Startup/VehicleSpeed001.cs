@@ -14,13 +14,13 @@ internal sealed class VehicleSpeed001 : IVehicleSpeedModel
     {
         float reference = (context.Track.id == TrackPreview.DarlingtonTrackId || context.Track.id == TrackPreview.OrangeCountyTrackId || context.Track.id == TrackPreview.SouthBostonTrackId || context.Track.id == TrackPreview.DaytonaTrackId ||
             context.Track.id == TrackPreview.TexasTrackId || context.Track.id == TrackPreview.KansasTrackId ||
-            context.Track.id == TrackPreview.CotaTrackId) &&
+            context.Track.id == TrackPreview.CotaTrackId || context.Track.id == TrackPreview.IowaTrackId) &&
             context.Track.qualifyingReferenceMph > 0f
             ? context.Track.qualifyingReferenceMph * TrackDefinition.MetersPerMile / 3600f : ReferenceSpeed;
         var weights = context.Track.weights;
         var car = carIndex < context.Cars.Count ? context.Cars[carIndex].car : null;
         if (car == null || weights == null)
-            return reference;
+            return VehicleSpeedModels.ApplyEngineAndDriverPerformance(context, carIndex, reference);
 
         float weightedPerformance =
             weights.aerodynamics * (car.GetComponent(CarComponent.Aerodynamics).EffectiveValue - ReferenceEffectiveValue) +
@@ -28,7 +28,8 @@ internal sealed class VehicleSpeed001 : IVehicleSpeedModel
             weights.brakes * (car.GetComponent(CarComponent.Brakes).EffectiveValue - ReferenceEffectiveValue) +
             weights.suspension * (car.GetComponent(CarComponent.Suspension).EffectiveValue - ReferenceEffectiveValue);
 
-        return reference + SpeedPerEffectiveValuePoint * weightedPerformance;
+        return VehicleSpeedModels.ApplyEngineAndDriverPerformance(context, carIndex,
+            reference + SpeedPerEffectiveValuePoint * weightedPerformance);
     }
 
     public float LapSpeedFactor(CarSimulationContext context, int carIndex, Random random) =>

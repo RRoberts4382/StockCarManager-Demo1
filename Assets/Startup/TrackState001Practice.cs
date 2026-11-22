@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using UnityEngine;
 
 internal enum SessionTrackState
@@ -60,13 +60,13 @@ internal sealed class TrackState001Practice
         }
     }
 
-    public void AdvanceCaution(float seconds)
+    public void AdvanceCaution(float seconds, bool hazardRemains = false)
     {
         if (State != SessionTrackState.Caution)
             return;
 
         cautionRemaining -= seconds;
-        if (cautionRemaining <= 0f)
+        if (cautionRemaining <= 0f && !hazardRemains)
             State = SessionTrackState.TrackOpen;
     }
 
@@ -74,7 +74,18 @@ internal sealed class TrackState001Practice
     {
         State = SessionTrackState.ReturnToPits;
         for (int i = 0; i < cars.Length; i++)
-            traffic.CallToStall(cars[i], stalls[i]);
+        {
+            if (!cars[i].Retired && !cars[i].InPit)
+                traffic.CallToStall(cars[i], stalls[i]);
+        }
+    }
+
+    internal float ParkingTarget(int index)
+    {
+        var car = cars[index];
+        // A car past its stall must clear pit road and come back on the next lap.
+        return car.InPit && (car.BackExit || car.PitDistance > stalls[index])
+            ? float.PositiveInfinity : stalls[index];
     }
 
     public void Advance(int index, float seconds, float speed)
@@ -82,7 +93,10 @@ internal sealed class TrackState001Practice
         var car = cars[index];
         if (State == SessionTrackState.ReturnToPits)
         {
-            traffic.Advance(car, seconds, speed, stalls[index]);
+            bool leavingPits = car.InPit && float.IsPositiveInfinity(ParkingTarget(index));
+            traffic.Advance(car, seconds, speed, leavingPits ? float.PositiveInfinity : stalls[index]);
+            if (leavingPits && !car.InPit)
+                traffic.CallToStall(car, stalls[index]);
             return;
         }
 
@@ -98,11 +112,13 @@ internal sealed class TrackState001Practice
         traffic.Advance(car, seconds, speed);
     }
 
-    public void CheckParking()
+    public void CheckParking(bool playerParkedElsewhere = false)
     {
         for (int i = 0; i < cars.Length; i++)
         {
-            if (!cars[i].Retired && (!cars[i].InPit || cars[i].PitDistance != stalls[i]))
+            if (i == PlayerIndex && playerParkedElsewhere)
+                continue;
+            if (!cars[i].Retired && (!cars[i].InPit || cars[i].BackExit || cars[i].PitDistance != stalls[i]))
                 return;
         }
         State = SessionTrackState.Complete;
@@ -111,5 +127,27 @@ internal sealed class TrackState001Practice
     public float StallBlend(int index)
     {
         return 1f - Mathf.Clamp01(Math.Abs(cars[index].PitDistance - stalls[index]) / StallManeuverDistance);
+    }
+}
+
+// A normal pit stop is not a hazard; a disabled car anywhere on pit road is.
+internal struct PracticeStoppedCar
+{
+    private float stoppedSeconds;
+    private bool announced;
+    internal bool IsHazard, RequestYellow, Remove;
+    internal void Update(bool active, bool inPit, bool retired, float speed, float seconds)
+    {
+        RequestYellow = false;
+        if (!active || !retired && (inPit || speed > .44704f))
+        {
+            this = default;
+            return;
+        }
+        stoppedSeconds += seconds;
+        IsHazard = retired || stoppedSeconds >= 2f;
+        RequestYellow = IsHazard && !announced;
+        announced |= IsHazard;
+        Remove = stoppedSeconds >= 10f;
     }
 }

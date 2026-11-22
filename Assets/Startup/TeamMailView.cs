@@ -11,16 +11,19 @@ internal sealed class TeamMailView
     public void Show(VisualElement page, Career career, Action repaint, Func<IEnumerable<string>, string> deletePosts,
         Func<TeamMailMessage, string> markMailRead, Func<TeamMailMessage[], string> deleteMail,
         Func<TeamMailMessage, string, string> respond,
-        Func<DriverContact, Texture2D> driverPortrait)
+        Func<DriverContact, Texture2D> driverPortrait, TeamMailMessage openMessage = null)
     {
         page.Clear();
+        page.AddToClassList("google-sans");
         var email = Column(page, "mail-email");
-        AddLabel(email, "Mail", "mail-title");
+        email.AddToClassList("team-home-panel");
+        SettingsFormStyle.StylePanel(email);
+        AddLabel(email, "Mail", "team-home-heading");
         var layout = Column(email, "mail-email-layout");
         var inbox = Column(layout, "mail-inbox");
         var inboxHeader = Column(inbox, "mail-inbox-header");
         AddLabel(inboxHeader, "Inbox", "mail-subheading");
-        var scenarioAlert = new Label("!") { tooltip = "A scenario needs a response before you can advance the date." };
+        var scenarioAlert = new Label("!") { tooltip = "Read required emails and respond to pending scenarios before advancing the date." };
         scenarioAlert.AddToClassList("mail-scenario-alert");
         inboxHeader.Add(scenarioAlert);
         var clearInbox = TrashButton("Delete all emails");
@@ -32,14 +35,22 @@ internal sealed class TeamMailView
         var reader = Column(layout, "mail-reader");
         var message = AddScroll(reader);
 
-        clearInbox.clicked += () => DeleteMail(career.inbox?.Where(item => !item.IsScenario).ToArray()
+        clearInbox.clicked += () => DeleteMail(career.inbox?.Where(item => !item.BlocksAdvancement && (!item.IsScenario || item.NeedsResponse)).ToArray()
             ?? Array.Empty<TeamMailMessage>());
+        if (openMessage != null && career.inbox?.Contains(openMessage) == true)
+        {
+            selected = openMessage;
+            ShowMailStatus(markMailRead(openMessage));
+        }
         DrawInbox();
         Read();
 
         var social = Column(page, "mail-social");
+        social.AddToClassList("team-home-panel");
+        SettingsFormStyle.StylePanel(social);
+        AddLabel(social, "Social feed", "team-home-heading");
         var feedHeader = Column(social, "mail-post-header");
-        AddLabel(feedHeader, "Social feed", "mail-title");
+        feedHeader.AddToClassList("mail-feed-actions");
         var status = new Label { style = { display = DisplayStyle.None } };
         status.AddToClassList("mail-copy");
         social.Add(status);
@@ -108,10 +119,10 @@ internal sealed class TeamMailView
             rows.Clear();
             var messages = career.inbox?.Where(item => !item.IsScenario || item.NeedsResponse).Reverse().ToArray()
                 ?? Array.Empty<TeamMailMessage>();
-            bool hasPending = messages.Any(item => item.NeedsResponse);
+            bool hasPending = messages.Any(item => item.BlocksAdvancement);
             scenarioAlert.style.display = hasPending ? DisplayStyle.Flex : DisplayStyle.None;
-            clearInbox.tooltip = hasPending ? "Delete all emails that don't require a response" : "Delete all emails";
-            clearInbox.SetEnabled(messages.Any(item => !item.NeedsResponse));
+            clearInbox.tooltip = hasPending ? "Delete emails that do not require reading or a response" : "Delete all emails";
+            clearInbox.SetEnabled(messages.Any(item => !item.BlocksAdvancement));
             if (!messages.Contains(selected))
                 selected = null;
 
@@ -126,21 +137,23 @@ internal sealed class TeamMailView
                     {
                         var open = entry.Q<Button>(className: "mail-message-row");
                         var mail = (TeamMailMessage)open.userData;
-                        open.EnableInClassList("nav-button-selected", ReferenceEquals(mail, selected));
+                        open.EnableInClassList("settings-tab-current", ReferenceEquals(mail, selected));
                         open.EnableInClassList("mail-unread", !mail.isRead);
                     }
                     Read();
+                    scenarioAlert.style.display = career.inbox.Any(mail => mail.BlocksAdvancement) ? DisplayStyle.Flex : DisplayStyle.None;
                     repaint();
                 }) { userData = item };
-                button.AddToClassList("nav-button");
+                button.AddToClassList("settings-button");
                 button.AddToClassList("mail-message-row");
-                button.EnableInClassList("nav-button-selected", ReferenceEquals(item, selected));
+                button.tooltip = "Open email: " + item.subject;
+                button.EnableInClassList("settings-tab-current", ReferenceEquals(item, selected));
                 button.EnableInClassList("mail-unread", !item.isRead);
-                button.EnableInClassList("mail-scenario", item.IsScenario);
+                button.EnableInClassList("mail-scenario", item.IsScenario || item.requiresRead);
                 AddLabel(button, item.subject, "mail-subject", PickingMode.Ignore);
                 AddLabel(button, item.sender, "mail-sender", PickingMode.Ignore);
                 row.Add(button);
-                if (!item.NeedsResponse)
+                if (!item.BlocksAdvancement)
                 {
                     var trash = TrashButton("Delete email", () => DeleteMail(new[] { item }));
                     trash.AddToClassList("mail-inbox-delete");
@@ -184,6 +197,9 @@ internal sealed class TeamMailView
             if (selected.NeedsResponse)
             {
                 var scenario = selected;
+                var responseActions = new VisualElement();
+                responseActions.AddToClassList("mail-response-actions");
+                message.Add(responseActions);
                 foreach (string option in scenario.scenarioOptions)
                 {
                     var choice = new Button(() =>
@@ -196,9 +212,10 @@ internal sealed class TeamMailView
                         Read();
                         repaint();
                     }) { text = option };
-                    choice.AddToClassList("nav-button");
+                    choice.AddToClassList("settings-button");
                     choice.AddToClassList("mail-scenario-choice");
-                    message.Add(choice);
+                    choice.tooltip = "Respond to this scenario: " + option;
+                    responseActions.Add(choice);
                 }
             }
         }
@@ -228,7 +245,7 @@ internal sealed class TeamMailView
     private static Button TrashButton(string tooltip, Action action = null)
     {
         var button = new Button(action) { tooltip = tooltip };
-        button.AddToClassList("nav-button");
+        button.AddToClassList("settings-button");
         button.AddToClassList("mail-post-delete");
         var icon = new VisualElement { pickingMode = PickingMode.Ignore };
         icon.AddToClassList("mail-trash-icon");
@@ -260,7 +277,11 @@ internal sealed class TeamMailView
 
     private static ScrollView AddScroll(VisualElement parent)
     {
-        var scroll = new ScrollView();
+        var scroll = new ScrollView(ScrollViewMode.Vertical)
+        {
+            verticalScrollerVisibility = ScrollerVisibility.Hidden,
+            horizontalScrollerVisibility = ScrollerVisibility.Hidden
+        };
         scroll.AddToClassList("mail-scroll");
         parent.Add(scroll);
         return scroll;

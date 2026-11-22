@@ -1,0 +1,15 @@
+.google-sans {
+    -unity-font-definition: url("GoogleSans-Regular.ttf");
+}
+.google-sans-semibold {
+    -unity-font-definition: url("GoogleSans-SemiBold.ttf");
+}
+.google-sans-bold {
+    -unity-font-definition: url("GoogleSans-Bold.ttf");
+}
+
+/* Default typography for newly built shared forms. */
+.ui-default-font {
+    -unity-font-definition: url("../OpenSans/OpenSans-Bold.ttf");
+    -unity-font-style: normal;
+}

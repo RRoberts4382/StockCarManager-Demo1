@@ -10,29 +10,41 @@ internal static class SetupPresetDialog
         Action<TrackSetup> load, Func<string, string> save, string overwriteName = null)
     {
         bool saving = save != null;
+        if (host.Q(className: "setup-preset-overlay") != null) return;
+        var previouslyFocused = host.focusController?.focusedElement as VisualElement;
+        var enabledChildren = host.Children().Where(child => child.enabledSelf).ToArray();
         var overlay = new VisualElement();
-        overlay.AddToClassList("skip-race-overlay");
+        overlay.AddToClassList("settings-confirmation-overlay");
         overlay.AddToClassList("setup-preset-overlay");
-        overlay.style.display = DisplayStyle.Flex;
+        overlay.AddToClassList("ui-default-font");
         var dialog = new VisualElement();
-        dialog.AddToClassList("garage-entry");
-        dialog.AddToClassList("skip-race-dialog");
+        dialog.AddToClassList("settings-confirmation-dialog");
+        dialog.AddToClassList("setup-preset-dialog");
         overlay.Add(dialog);
+        foreach (var child in enabledChildren) child.SetEnabled(false);
         host.Add(overlay);
+
+        void Close() => overlay.RemoveFromHierarchy();
+        overlay.RegisterCallback<DetachFromPanelEvent>(evt =>
+        {
+            if (evt.target != overlay) return;
+            foreach (var child in enabledChildren) child.SetEnabled(true);
+            previouslyFocused?.Focus();
+        });
         overlay.RegisterCallback<KeyDownEvent>(evt =>
         {
-            if (evt.keyCode != KeyCode.Escape)
-                return;
-            overlay.RemoveFromHierarchy();
-            evt.StopPropagation();
-        });
+            if (evt.keyCode != KeyCode.Escape) return;
+            Close();
+            evt.StopImmediatePropagation();
+        }, TrickleDown.TrickleDown);
 
-        var heading = new Label();
-        heading.AddToClassList("schedule-heading");
+        var heading = SettingsFormStyle.Label("", "settings-group-heading");
         heading.style.whiteSpace = WhiteSpace.Normal;
-        var status = new Label { style = { whiteSpace = WhiteSpace.Normal } };
-        var nameField = new TextField("Setup name") { value = currentName ?? string.Empty, maxLength = 80 };
-        nameField.AddToClassList("setup-preset-name");
+        var status = SettingsFormStyle.Label("", "settings-note");
+        var nameField = SettingsFormStyle.StyleField(new TextField("Setup name")
+        {
+            value = currentName ?? string.Empty, maxLength = 80, tooltip = "Enter a name for this setup preset."
+        });
 
         if (overwriteName == null)
             ShowList();
@@ -48,10 +60,14 @@ internal static class SetupPresetDialog
                 dialog.Add(nameField);
 
             if (presets.Count == 0)
-                dialog.Add(new Label("No setups saved for this track."));
+                dialog.Add(SettingsFormStyle.Label("No setups saved for this track.", "settings-note"));
             else
             {
-                var list = new ScrollView();
+                var list = new ScrollView
+                {
+                    verticalScrollerVisibility = ScrollerVisibility.Hidden,
+                    horizontalScrollerVisibility = ScrollerVisibility.Hidden
+                };
                 list.AddToClassList("setup-preset-list");
                 foreach (var preset in presets.OrderBy(item => item.DisplayName, StringComparer.OrdinalIgnoreCase))
                 {
@@ -64,18 +80,19 @@ internal static class SetupPresetDialog
                             return;
                         }
                         load(preset);
-                        overlay.RemoveFromHierarchy();
+                        Close();
                     });
+                    entry.tooltip = saving ? $"Use the name {preset.DisplayName}." : $"Load the {preset.DisplayName} setup.";
                     entry.SetEnabled(!saving || !preset.IsDefault);
                     list.Add(entry);
                 }
                 dialog.Add(list);
             }
 
-            status.text = string.Empty;
+            SetStatus("");
             dialog.Add(status);
-            var cancel = Button("Cancel", () => overlay.RemoveFromHierarchy());
-            AddActions(cancel, saving ? Button("Save", RequestSave) : null);
+            var cancel = Button("Cancel", Close);
+            AddActions(cancel, saving ? Button("Save", RequestSave, primary: true) : null);
             if (saving)
                 nameField.Focus();
             else
@@ -87,12 +104,12 @@ internal static class SetupPresetDialog
             string name = nameField.value.Trim();
             if (name.Length == 0)
             {
-                status.text = "Enter a setup name.";
+                SetStatus("Enter a setup name.", error: true);
                 return;
             }
             if (TrackSetup.IsDefaultName(name))
             {
-                status.text = "Default is read-only. Enter a new setup name.";
+                SetStatus("Default is read-only. Enter a new setup name.", error: true);
                 return;
             }
 
@@ -111,10 +128,10 @@ internal static class SetupPresetDialog
             dialog.Clear();
             heading.text = $"Overwrite “{name}”?";
             dialog.Add(heading);
-            status.text = "The saved settings and notes will be replaced.";
+            SetStatus("The saved settings and notes will be replaced.");
             dialog.Add(status);
-            var cancel = Button(back == null ? "Cancel" : "Back", back ?? (() => overlay.RemoveFromHierarchy()));
-            AddActions(cancel, Button("Overwrite", () => Commit(name)));
+            var cancel = Button(back == null ? "Cancel" : "Back", back ?? Close);
+            AddActions(cancel, Button("Overwrite", () => Commit(name), primary: true));
             cancel.Focus();
         }
 
@@ -122,15 +139,22 @@ internal static class SetupPresetDialog
         {
             string error = save(name);
             if (error == null)
-                overlay.RemoveFromHierarchy();
+                Close();
             else
-                status.text = error;
+                SetStatus(error, error: true);
+        }
+
+        void SetStatus(string message, bool error = false)
+        {
+            status.text = message;
+            status.style.color = (Color)(error ? new Color32(255, 133, 133, 255) : new Color32(245, 245, 245, 255));
         }
 
         void AddActions(Button first, Button second)
         {
             var actions = new VisualElement();
-            actions.AddToClassList("actions");
+            actions.AddToClassList("settings-footer");
+            actions.AddToClassList("settings-confirmation-actions");
             actions.Add(first);
             if (second != null)
                 actions.Add(second);
@@ -138,10 +162,17 @@ internal static class SetupPresetDialog
         }
     }
 
-    private static Button Button(string label, Action action)
+    private static Button Button(string label, Action action, bool primary = false)
     {
-        var button = new Button(action) { text = label };
-        button.AddToClassList("nav-button");
+        var button = SettingsFormStyle.Button(label, action, primary);
+        button.tooltip = label switch
+        {
+            "Save" => "Save the current setup with this name.",
+            "Overwrite" => "Replace the existing saved setup.",
+            "Back" => "Return to the setup preset list.",
+            "Cancel" => "Close without changes.",
+            _ => label
+        };
         return button;
     }
 }

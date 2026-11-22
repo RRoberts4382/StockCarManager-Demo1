@@ -6,8 +6,10 @@ using UnityEngine.UIElements;
 internal sealed class ShopCarPicker
 {
     private TeamCar selectedCar;
+    private float scrollX;
+    private bool revealSelected = true;
 
-    public void SelectCar(TeamCar car) => selectedCar = car;
+    public void SelectCar(TeamCar car) { selectedCar = car; revealSelected = true; }
 
     public void Show(VisualElement host, List<TeamCar> cars, CarThumbnails thumbnails, string[] sponsors, Action repaint,
         Action<TeamCar> selectionChanged)
@@ -15,101 +17,108 @@ internal sealed class ShopCarPicker
         host.Clear();
         if (cars == null || cars.Count == 0)
         {
-            var empty = new Button { text = "No team cars" };
-            empty.AddToClassList("nav-button");
-            empty.SetEnabled(false);
-            host.Add(empty);
+            host.Add(SettingsFormStyle.Label("No team cars", "shop-car-spec"));
             selectedCar = null;
             selectionChanged(null);
             return;
         }
-
-        if (!cars.Contains(selectedCar))
-            selectedCar = cars[0];
-
-        var picker = new VisualElement();
-        host.Add(picker);
-        var toggle = new Button { tooltip = "Choose a team car" };
-        toggle.AddToClassList("nav-button");
-        toggle.AddToClassList("shop-car-toggle");
-        picker.Add(toggle);
-        var choices = new ScrollView();
-        choices.AddToClassList("shop-car-choices");
-        choices.style.backgroundColor = (Color)CarThumbnails.BackgroundColor;
-        picker.Add(choices);
+        if (!cars.Contains(selectedCar)) { selectedCar = cars[0]; revealSelected = true; }
+        var left = SettingsFormStyle.Button("◀", null);
+        var right = SettingsFormStyle.Button("▶", null);
+        left.AddToClassList("shop-strip-arrow");
+        right.AddToClassList("shop-strip-arrow");
+        left.tooltip = "Scroll chassis panels to the left.";
+        right.tooltip = "Scroll chassis panels to the right.";
+        var list = new ScrollView(ScrollViewMode.Horizontal)
+        {
+            verticalScrollerVisibility = ScrollerVisibility.Hidden,
+            horizontalScrollerVisibility = ScrollerVisibility.Hidden
+        };
+        list.AddToClassList("shop-chassis-strip");
+        host.Add(left); host.Add(list); host.Add(right);
+        var choices = new List<Button>();
+        Button selectedPanel = null;
         foreach (var car in cars)
         {
-            var choice = new Button(() =>
+            var panel = SettingsFormStyle.Button("", null);
+            panel.AddToClassList("team-home-panel");
+            panel.AddToClassList("shop-strip-card");
+            SettingsFormStyle.StylePanel(panel);
+            panel.tooltip = $"Select chassis {car.chassisNumber} for component work.";
+            var title = SettingsFormStyle.Label($"Chassis {car.chassisNumber}", "team-home-heading");
+            title.pickingMode = PickingMode.Ignore;
+            panel.Add(title);
+            var content = new VisualElement { pickingMode = PickingMode.Ignore };
+            content.AddToClassList("shop-strip-card-content");
+            var image = new Image
+            {
+                image = thumbnails.Get(car, sponsors, transparentBackground: true),
+                scaleMode = ScaleMode.ScaleToFit, pickingMode = PickingMode.Ignore
+            };
+            image.AddToClassList("shop-strip-image");
+            content.Add(image);
+            var specs = new VisualElement { pickingMode = PickingMode.Ignore };
+            specs.AddToClassList("shop-strip-specs");
+            specs.Add(SettingsFormStyle.Label(car.manufacturer.ToString(), "shop-car-spec"));
+            specs.Add(SettingsFormStyle.Label(car.ChassisTypeName, "shop-car-spec"));
+            content.Add(specs);
+            panel.Add(content);
+            panel.userData = car;
+            panel.clicked += () =>
             {
                 selectedCar = car;
                 selectionChanged(car);
-                ShowSelection(false);
-                toggle.Focus();
-            });
-            choice.userData = car;
-            choice.AddToClassList("nav-button");
-            choice.AddToClassList("shop-car-choice");
-            var row = BuildRow(car, thumbnails, sponsors);
-            bool wearBlocked = car.HasRaceBlockingWear;
-            row.EnableInClassList("shop-wear-blocked", wearBlocked);
-            if (wearBlocked)
-                choice.tooltip = $"A component is at least {ComponentCondition.RaceBlockingWear:P0} worn.";
-            choice.Add(row);
-            choices.Add(choice);
+                UpdateSelection();
+            };
+            choices.Add(panel);
+            list.Add(panel);
+            if (ReferenceEquals(car, selectedCar)) selectedPanel = panel;
         }
-
-        bool expanded = false;
-        toggle.clicked += () => ShowSelection(!expanded);
-        picker.RegisterCallback<KeyDownEvent>(evt =>
+        left.clicked += () => Move(-1);
+        right.clicked += () => Move(1);
+        list.RegisterCallback<WheelEvent>(evt =>
         {
-            if (expanded && evt.keyCode == KeyCode.Escape)
-            {
-                ShowSelection(false);
-                toggle.Focus();
-                evt.StopPropagation();
-            }
+            float delta = Mathf.Abs(evt.delta.x) > Mathf.Abs(evt.delta.y) ? evt.delta.x : evt.delta.y;
+            SetOffset(scrollX + delta * 36f);
+            evt.StopImmediatePropagation();
         }, TrickleDown.TrickleDown);
-        ShowSelection(false);
+        list.horizontalScroller.valueChanged += value => { scrollX = value; UpdateArrows(); };
+        list.RegisterCallback<GeometryChangedEvent>(_ => UpdateArrows());
+        list.schedule.Execute(() =>
+        {
+            if (revealSelected && selectedPanel != null)
+            {
+                list.ScrollTo(selectedPanel);
+                revealSelected = false;
+            }
+            else SetOffset(scrollX);
+            UpdateArrows();
+        });
+        UpdateSelection();
         selectionChanged(selectedCar);
 
-        void ShowSelection(bool open)
+        void UpdateSelection()
         {
-            expanded = open;
-            choices.style.display = open ? DisplayStyle.Flex : DisplayStyle.None;
-            toggle.Clear();
-            toggle.Add(BuildRow(selectedCar, thumbnails, sponsors));
-            AddLabel(toggle, open ? "▴" : "▾", "shop-car-caret");
-            foreach (var choice in choices.Children())
-                choice.EnableInClassList("nav-button-selected", ReferenceEquals(choice.userData, selectedCar));
+            foreach (var panel in choices)
+            {
+                panel.EnableInClassList("shop-strip-selected", ReferenceEquals(panel.userData, selectedCar));
+                panel.MarkDirtyRepaint();
+            }
             repaint();
         }
-    }
-
-    private static VisualElement BuildRow(TeamCar car, CarThumbnails thumbnails, string[] sponsors)
-    {
-        var row = new VisualElement { pickingMode = PickingMode.Ignore };
-        row.AddToClassList("shop-car-row");
-        var thumbnail = new Image
+        void Move(int direction) => SetOffset(scrollX + direction * Mathf.Max(280f, list.contentViewport.layout.width * 0.8f));
+        void SetOffset(float offset)
         {
-            image = thumbnails.Get(car, sponsors),
-            scaleMode = ScaleMode.ScaleToFit,
-            pickingMode = PickingMode.Ignore
-        };
-        thumbnail.AddToClassList("shop-car-thumbnail");
-        row.Add(thumbnail);
-        AddLabel(row, car.chassisNumber ?? "—", "shop-car-chassis");
-        var specs = new VisualElement { pickingMode = PickingMode.Ignore };
-        specs.AddToClassList("shop-car-specs");
-        AddLabel(specs, car.manufacturer.ToString(), "shop-car-spec");
-        AddLabel(specs, car.ChassisTypeName, "shop-car-spec");
-        row.Add(specs);
-        return row;
-    }
-
-    private static void AddLabel(VisualElement parent, string text, string styleClass)
-    {
-        var label = new Label(text) { pickingMode = PickingMode.Ignore };
-        label.AddToClassList(styleClass);
-        parent.Add(label);
+            float maximum = Mathf.Max(0, list.contentContainer.layout.width - list.contentViewport.layout.width);
+            list.scrollOffset = new Vector2(Mathf.Clamp(offset, 0, maximum), 0);
+            scrollX = list.scrollOffset.x;
+            UpdateArrows();
+        }
+        void UpdateArrows()
+        {
+            float maximum = Mathf.Max(0, list.contentContainer.layout.width - list.contentViewport.layout.width);
+            left.SetEnabled(list.scrollOffset.x > 0.5f);
+            right.SetEnabled(list.scrollOffset.x < maximum - 0.5f);
+        }
     }
 }

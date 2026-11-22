@@ -8,22 +8,37 @@ internal sealed class CarThumbnails : IDisposable
     private const int Layer = 30;
     internal static readonly Color32 BackgroundColor = new Color32(31, 39, 48, 255);
     private readonly int width;
+    private readonly bool highQuality;
     private readonly Dictionary<string, (string Livery, RenderTexture Image)> images = new();
     private Camera orbitCamera;
+    private RenderTexture orbitImage;
     private Action releaseOrbitScene;
     private float yaw = 55f;
     private float pitch = 16f;
 
-    public CarThumbnails(int width = 256) => this.width = width;
+    public CarThumbnails(int width = 256) : this(width, highQuality: false) { }
 
-    public RenderTexture Get(TeamCar car, string[] sponsorNames, CarPaintStyle? preview = null, bool overhead = false)
+    public static CarThumbnails CreateLargePreview() => new CarThumbnails(2560, highQuality: true);
+
+    private CarThumbnails(int width, bool highQuality)
     {
-        int number = car.number;
+        this.width = width;
+        this.highQuality = highQuality;
+    }
+
+    public RenderTexture Get(TeamCar car, string[] sponsorNames, CarPaintStyle? preview = null, bool overhead = false, string cacheScope = null, bool transparentBackground = false, bool retainOrbitScene = true, int? displayNumber = null)
+    {
+        int number = displayNumber ?? car.number;
         string key = car.chassisNumber ?? number.ToString();
+        if (cacheScope != null)
+            key = cacheScope + "|" + key;
         if (overhead)
             key += ":overhead";
+        if (transparentBackground)
+            key += ":transparent";
+        string highestModel = CarTypeDefinition.ForModel(car.modelResource).ModelForLod(car.modelResource, 5);
         var livery = preview ?? car.PaintStyle;
-        string liveryKey = $"{number}|{livery.Scheme}|{livery.Primary}|{livery.Secondary}|{livery.Trim}|{livery.HasTrim}|{string.Join("|", sponsorNames)}";
+        string liveryKey = $"{car.modelResource}|{highestModel}|{number}|{livery.Scheme}|{livery.Primary}|{livery.Secondary}|{livery.Trim}|{livery.HasTrim}|{livery.NumberColor}|{livery.NumberFont}|{livery.NumberBold}|{livery.NumberItalic}|{string.Join("|", sponsorNames)}";
         if (images.TryGetValue(key, out var cached))
         {
             if (cached.Livery == liveryKey)
@@ -43,13 +58,32 @@ internal sealed class CarThumbnails : IDisposable
         root.transform.position = new Vector3(0f, preview.HasValue ? -4000f : -3000f, 0f);
         var materials = new List<Material>(4);
         var paintTextures = new List<Texture2D>();
-        var image = overhead ? new RenderTexture(width, width * 3 / 2, 16) : new RenderTexture(width, width * 9 / 16, 16);
+        // Keep the portrait preview's short edge at the landscape preview's height.
+        int renderWidth = overhead && highQuality ? width * 9 / 16 : width;
+        int height = overhead ? renderWidth * 3 / 2 : renderWidth * 9 / 16;
+        var image = new RenderTexture(renderWidth, height, highQuality ? 0 : 16);
+        RenderTexture renderTarget = image;
         image.name = $"Car {number} thumbnail";
         bool keepScene = false;
         try
         {
+            if (highQuality)
+            {
+                // Resolve into a single-sample texture so UI Toolkit can use mipmaps when scaling it.
+                image.useMipMap = true;
+                image.autoGenerateMips = false;
+                image.filterMode = FilterMode.Trilinear;
+                var descriptor = new RenderTextureDescriptor(renderWidth, height, image.graphicsFormat, 24)
+                {
+                    msaaSamples = 8
+                };
+                descriptor.msaaSamples = Mathf.Max(1, SystemInfo.GetRenderTextureSupportedMSAASampleCount(descriptor));
+                renderTarget = new RenderTexture(descriptor) { name = image.name + " render target" };
+            }
+
             TrackPreview.BuildCar(root.transform, number, Paint(livery.Primary), Paint(livery.Secondary),
-                Paint(new Color32(43, 66, 87, 255)), Paint(new Color32(24, 25, 30, 255)), sponsorNames, livery, paintTextures.Add);
+                Paint(new Color32(43, 66, 87, 255)), Paint(new Color32(24, 25, 30, 255)), sponsorNames, livery, paintTextures.Add,
+                car.modelResource);
             foreach (var child in root.GetComponentsInChildren<Transform>())
                 child.gameObject.layer = Layer;
 
@@ -57,7 +91,7 @@ internal sealed class CarThumbnails : IDisposable
             camera.enabled = false;
             camera.cullingMask = 1 << Layer;
             camera.clearFlags = CameraClearFlags.SolidColor;
-            camera.backgroundColor = BackgroundColor;
+            camera.backgroundColor = transparentBackground ? Color.clear : (Color)BackgroundColor;
             camera.orthographic = true;
             camera.orthographicSize = 1.24f;
             camera.farClipPlane = 25f;
@@ -79,13 +113,15 @@ internal sealed class CarThumbnails : IDisposable
             light.cullingMask = 1 << Layer;
             light.intensity = 1.25f;
             light.transform.localRotation = Quaternion.Euler(48f, -28f, 0f);
-            camera.targetTexture = image;
-            camera.Render();
+            camera.allowMSAA = renderTarget.antiAliasing > 1;
+            camera.targetTexture = renderTarget;
+            Render(camera, image);
             images.Add(key, (liveryKey, image));
-            if (preview.HasValue && !overhead)
+            if (preview.HasValue && !overhead && retainOrbitScene)
             {
                 keepScene = true;
                 orbitCamera = camera;
+                orbitImage = image;
                 releaseOrbitScene = DestroyScene;
             }
             else
@@ -108,6 +144,11 @@ internal sealed class CarThumbnails : IDisposable
         void DestroyScene()
         {
             UnityEngine.Object.Destroy(root);
+            if (renderTarget != image)
+            {
+                renderTarget.Release();
+                UnityEngine.Object.Destroy(renderTarget);
+            }
             foreach (var material in materials)
                 UnityEngine.Object.Destroy(material);
             foreach (var texture in paintTextures)
@@ -131,18 +172,18 @@ internal sealed class CarThumbnails : IDisposable
 
     public Image CreateOrbitPreview()
     {
-        var preview = new Image { scaleMode = ScaleMode.ScaleToFit, tooltip = "Right-drag to rotate the car" };
+        var preview = new Image { scaleMode = ScaleMode.ScaleToFit, tooltip = "Left-drag horizontally to rotate the car; drag vertically to change the viewing angle." };
         preview.AddToClassList("car-paint-preview");
         preview.RegisterCallback<PointerDownEvent>(evt =>
         {
-            if (evt.button != 1)
+            if (evt.button != 0)
                 return;
             preview.CapturePointer(evt.pointerId);
             evt.StopPropagation();
         });
         preview.RegisterCallback<PointerMoveEvent>(evt =>
         {
-            if (!preview.HasPointerCapture(evt.pointerId) || (evt.pressedButtons & 2) == 0)
+            if (!preview.HasPointerCapture(evt.pointerId) || (evt.pressedButtons & 1) == 0)
                 return;
             RotatePreview(evt.deltaPosition);
             preview.MarkDirtyRepaint();
@@ -150,7 +191,7 @@ internal sealed class CarThumbnails : IDisposable
         });
         preview.RegisterCallback<PointerUpEvent>(evt =>
         {
-            if (evt.button != 1 || !preview.HasPointerCapture(evt.pointerId))
+            if (evt.button != 0 || !preview.HasPointerCapture(evt.pointerId))
                 return;
             preview.ReleasePointer(evt.pointerId);
             evt.StopPropagation();
@@ -170,12 +211,27 @@ internal sealed class CarThumbnails : IDisposable
         scene.SetActive(true);
         try
         {
-            orbitCamera.Render();
+            Render(orbitCamera, orbitImage);
         }
         finally
         {
             scene.SetActive(false);
         }
+    }
+
+    private static void Render(Camera camera, RenderTexture image)
+    {
+        camera.Render();
+        var target = camera.targetTexture;
+        if (target == image)
+            return;
+        if (!image.IsCreated())
+            image.Create();
+        if (target.antiAliasing > 1)
+            target.ResolveAntiAliasedSurface(image);
+        else
+            Graphics.Blit(target, image);
+        image.GenerateMips();
     }
 
     private void PositionOrbitCamera(Camera camera)
@@ -190,6 +246,7 @@ internal sealed class CarThumbnails : IDisposable
         if (orbitCamera != null)
             orbitCamera.targetTexture = null;
         orbitCamera = null;
+        orbitImage = null;
         releaseOrbitScene?.Invoke();
         releaseOrbitScene = null;
     }

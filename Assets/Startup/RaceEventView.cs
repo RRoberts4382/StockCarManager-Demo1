@@ -9,30 +9,17 @@ internal sealed class RaceEventView
     private const int VictoryBackgroundBlurPixels = 10;
     private readonly ScrollView body = new ScrollView();
     private readonly VisualElement chartHost = new VisualElement();
+    private readonly VisualElement resultsHost = new VisualElement();
+    private bool showPracticeReport;
     private readonly Dictionary<RaceSession, PracticeRunChart.Selection> chartSelections =
         new Dictionary<RaceSession, PracticeRunChart.Selection>();
     private readonly VisualElement footer = new VisualElement();
     private readonly Label title = new Label();
     private readonly Label sessionClock = new Label();
     private readonly Label weatherLabel = new Label();
-    private readonly Toggle garageCollisions = new Toggle("Collisions");
-    private readonly Toggle garageTraffic = new Toggle("Traffic interactions");
-    internal Action<bool> ChangeCollisions;
-    internal Action<bool> ChangeTraffic;
-    internal void SetTrafficOptions(bool collisions, bool traffic)
-    {
-        garageCollisions.SetValueWithoutNotify(collisions);
-        garageTraffic.SetValueWithoutNotify(traffic);
-    }
-    private readonly Toggle lockWeather = new Toggle("Lock weather");
-    private SessionWeatherState displayedWeather;
     public void UpdateWeather(SessionWeatherState weather)
     {
-        displayedWeather = weather;
         var session = runningSession ?? race?.sessions.FirstOrDefault(s => !s.Completed);
-        bool practice = session?.kind == RaceSessionKind.Practice;
-        lockWeather.style.display = practice ? DisplayStyle.Flex : DisplayStyle.None;
-        lockWeather.SetValueWithoutNotify(weather != null ? weather.IsLocked : session?.lockPracticeWeather == true);
         weatherLabel.text = weather != null ? weather.Summary + (weather.IsLocked ? " (locked)" : "") :
             session?.weather == null ? string.Empty : session.weather.Summary;
         weatherLabel.style.display = string.IsNullOrEmpty(weatherLabel.text) ? DisplayStyle.None : DisplayStyle.Flex;
@@ -43,6 +30,7 @@ internal sealed class RaceEventView
     private readonly Button next;
     private readonly Button options;
     private readonly Button simulate;
+    private readonly Button leaveButton;
     private readonly Label status = new Label();
     private readonly Action repaint;
     private readonly Func<(Color32 Primary, Color32 Secondary)> teamColors;
@@ -55,41 +43,44 @@ internal sealed class RaceEventView
     private TrackDefinition track;
     private RaceSession runningSession;
     private Texture carImage;
-    private Action<CarComponent> repair;
     private Action changeTires;
     private Action repairBody;
     private Func<long> balance;
+    private RacingSeries seriesRules;
     private Func<string, Setup, string> saveSetup;
     private Func<Texture> setupCarImage;
     private VisualElement setupPanel;
     private Func<Setup> readSetupDraft;
+    private GarageSetupEditor garageSetup;
+    private VisualElement garageServices;
     private Func<EventCarCondition> readCarCondition;
     private Func<bool> garageServiceAvailable;
-    private VisualElement setupPage;
+    private readonly VisualElement eventHost = new VisualElement();
+    private readonly VisualElement setupHost = new VisualElement();
     private int page;
     private int simulationLapCount = 10;
     internal float StartingFuelGallons { get; private set; } = (float)SessionFuel.TankCapacity;
     internal Action<int> SimulateGarageLaps;
     internal Func<bool> CanSimulateGarageLaps;
     private float lastRunReviewRefresh = -1f;
+    private ScrollView garageRunReviews;
+    private Action closeGarageRunReviews;
 
     public VisualElement Screen { get; } = new VisualElement();
 
     public RaceEventView(Action startSession, Action simulateSession, Action leave, Action repaint,
         Func<(Color32 Primary, Color32 Secondary)> teamColors)
     {
-        garageCollisions.tooltip = "Enable car collisions and collision damage.";
-        garageTraffic.tooltip = "Enable traffic avoidance, slowing for cars ahead, and drafting decisions.";
-        garageCollisions.RegisterValueChangedCallback(evt => ChangeCollisions?.Invoke(evt.newValue));
-        garageTraffic.RegisterValueChangedCallback(evt => ChangeTraffic?.Invoke(evt.newValue));
         this.repaint = repaint;
         this.teamColors = teamColors;
         Screen.AddToClassList("screen");
         Screen.AddToClassList("game-neutral");
         Screen.AddToClassList("garage-screen");
+        Screen.AddToClassList("event-garage-screen");
 
         var header = new VisualElement();
         header.AddToClassList("header");
+        header.AddToClassList("garage-header");
         title.AddToClassList("garage-heading");
         header.Add(title);
         sessionClock.AddToClassList("garage-detail");
@@ -98,36 +89,24 @@ internal sealed class RaceEventView
         header.Add(sessionClock);
         Screen.Add(header);
         weatherLabel.AddToClassList("garage-detail");
+        weatherLabel.AddToClassList("garage-toolbar");
         weatherLabel.style.flexShrink = 0;
         weatherLabel.style.display = DisplayStyle.None;
-        var weatherRow = new VisualElement();
-        weatherRow.style.flexDirection = FlexDirection.Row;
-        weatherRow.style.flexWrap = Wrap.Wrap;
-        weatherRow.style.flexShrink = 0;
-        weatherRow.Add(weatherLabel);
-        lockWeather.style.marginLeft = 12;
-        lockWeather.style.display = DisplayStyle.None;
-        lockWeather.tooltip = "Before practice, lock its starting weather. During practice, freeze current weather across runs. Unlock to resume changes.";
-        lockWeather.RegisterValueChangedCallback(evt =>
-        {
-            var session = runningSession ?? race?.sessions.FirstOrDefault(s => !s.Completed);
-            if (session?.kind == RaceSessionKind.Practice)
-                session.lockPracticeWeather = evt.newValue;
-            displayedWeather?.SetLocked(evt.newValue);
-            UpdateWeather(displayedWeather);
-        });
-        weatherRow.Add(lockWeather);
-        Screen.Add(weatherRow);
+        Screen.Add(weatherLabel);
         sessionLaps.AddToClassList("garage-detail");
         sessionLaps.style.display = DisplayStyle.None;
         Screen.Add(sessionLaps);
         body.AddToClassList("garage-body");
-        body.contentViewport.RegisterCallback<GeometryChangedEvent>(_ =>
-        {
-            FitSetupPage();
-            FitPracticeReport();
-        });
         Screen.Add(body);
+        eventHost.AddToClassList("garage-event-host");
+        eventHost.style.display = DisplayStyle.None;
+        Screen.Add(eventHost);
+        setupHost.AddToClassList("garage-setup-host");
+        setupHost.style.display = DisplayStyle.None;
+        Screen.Add(setupHost);
+        resultsHost.AddToClassList("garage-results-host");
+        resultsHost.style.display = DisplayStyle.None;
+        Screen.Add(resultsHost);
         chartHost.style.flexGrow = 1;
         chartHost.style.minHeight = 0;
         chartHost.style.minWidth = 0;
@@ -146,6 +125,7 @@ internal sealed class RaceEventView
         {
             int selected = i;
             tabs[i] = Button(names[i], () => Show(selected));
+            tabs[i].tooltip = "Show the " + names[i] + " page.";
             footer.Add(tabs[i]);
         }
         var sessionMenu = new VisualElement();
@@ -161,7 +141,8 @@ internal sealed class RaceEventView
         {
             simulate.style.display = simulate.style.display == DisplayStyle.None ? DisplayStyle.Flex : DisplayStyle.None;
         });
-        options.tooltip = "Show simulation option";
+        next.tooltip = "Open or return to the next on-track session.";
+        options.tooltip = "Show the session simulation option.";
         options.AddToClassList("event-session-options");
         sessionMenu.Add(options);
         simulate = Button("Simulate Session", () =>
@@ -169,17 +150,23 @@ internal sealed class RaceEventView
             CloseSessionOptions();
             simulateSession();
         });
+        simulate.tooltip = "Simulate the next session without opening the track view.";
         simulate.AddToClassList("event-simulate-session");
         sessionMenu.Add(simulate);
         footer.Add(sessionMenu);
-        footer.Add(Button("Return To Shop", leave));
+        leaveButton = Button("Return To Shop", leave);
+        leaveButton.tooltip = "Leave this garage and return to the team or startup screen.";
+        footer.Add(leaveButton);
         Screen.Add(footer);
+        var controls = Resources.Load<StyleSheet>("Settings/SettingsControls");
+        if (controls != null) Screen.styleSheets.Add(controls);
+        SettingsFormStyle.AddHoverTooltips(Screen);
     }
 
     public void Open(ScheduledRace eventRace, TrackDefinition definition, TeamCar enteredCar, Texture thumbnail,
-        Func<long> teamBalance, Action<CarComponent> instantRepair, Action tires, Action bodyRepair,
+        Func<long> teamBalance, Action tires, Action bodyRepair,
         Func<string, Setup, string> saveChassisSetup, Func<Texture> overheadCarImage, Func<EventCarCondition> carCondition,
-        Func<bool> canServiceInGarage)
+        Func<bool> canServiceInGarage, bool testPractice, RacingSeries series)
     {
         race = eventRace;
         StartingFuelGallons = (float)SessionFuel.TankCapacity;
@@ -188,7 +175,7 @@ internal sealed class RaceEventView
         foreach (var session in race.sessions) SessionWeatherForecast.Ensure(session, track, race);
         carImage = thumbnail;
         balance = teamBalance;
-        repair = instantRepair;
+        seriesRules = series;
         changeTires = tires;
         repairBody = bodyRepair;
         saveSetup = saveChassisSetup;
@@ -197,9 +184,14 @@ internal sealed class RaceEventView
         garageServiceAvailable = canServiceInGarage;
         setupPanel = null;
         readSetupDraft = null;
+        garageSetup = null;
         SetRunningSession(null);
         shownResult = race.sessions.LastOrDefault(session => session.Completed);
-        title.text = $"Race Event  /  {race.trackName}";
+        string eventTitle = testPractice
+            ? (race.sessions.Any(session => session.kind == RaceSessionKind.Race) ? "Test Race" : "Test Practice")
+            : "Race Event";
+        title.text = $"{eventTitle}  /  {race.trackName}";
+        leaveButton.text = testPractice ? "Leave Session" : "Return To Shop";
         Show(0);
     }
 
@@ -242,22 +234,25 @@ internal sealed class RaceEventView
         if (page == 1 && elapsed - lastRunReviewRefresh >= 1f)
         {
             lastRunReviewRefresh = elapsed;
-            var reviews = body.Q<VisualElement>("garageRunReviews");
-            if (reviews != null)
-                UpdateRunReviews(reviews);
-            body.Q<Button>("simulateGarageLaps")?.SetEnabled(CanSimulateGarageLaps?.Invoke() == true);
+            if (garageRunReviews != null)
+            {
+                var offset = garageRunReviews.scrollOffset;
+                UpdateRunReviews(garageRunReviews.contentContainer);
+                garageRunReviews.scrollOffset = offset;
+            }
+            garageServices?.Q<Button>("simulateGarageLaps")?.SetEnabled(CanSimulateGarageLaps?.Invoke() == true);
         }
         if (page == 1 && readCarCondition != null)
         {
             var condition = readCarCondition();
             for (int i = 0; i < 4; i++)
             {
-                var wearGauge = body.Q<ProgressBar>("tireWear" + i);
+                var wearGauge = garageServices?.Q<ProgressBar>("tireWear" + i);
                 if (wearGauge != null) UpdateTireWear(wearGauge, condition.Wear(i));
-                var gauge = body.Q<ProgressBar>("tireTemperature" + i);
+                var gauge = garageServices?.Q<ProgressBar>("tireTemperature" + i);
                 if (gauge != null)
                     UpdateTireTemperature(gauge, condition.Temperature(i));
-                var pressureLabel = body.Q<Label>("tirePressure" + i);
+                var pressureLabel = garageServices?.Q<Label>("tirePressure" + i);
                 if (pressureLabel != null) UpdatePressureLabel(pressureLabel, new[] { "Left front", "Right front", "Left rear", "Right rear" }[i], condition, i);
             }
         }
@@ -269,17 +264,14 @@ internal sealed class RaceEventView
 
     public bool EqualConditionTesting { get; set; }
 
-    public Setup CurrentSetup => (race?.SetupLocked == true ? race.EventSetup(car) : null) ?? readSetupDraft?.Invoke() ?? car.SetupsFor(track.id).LastOrDefault()?.setup ?? car.setup;
+    public Setup CurrentSetup => (race?.SetupLocked == true ? race.EventSetup(car) : null) ?? garageSetup?.ReadDraft() ?? readSetupDraft?.Invoke() ?? car.SetupsFor(track.id).LastOrDefault()?.setup ?? car.setup;
 
     public void ShowGarage() => Show(1);
 
     public void ShowPracticeRunResults()
     {
-        if (runningSession?.kind != RaceSessionKind.Practice ||
-            runningSession.garageRuns?.Any(run => run.complete) != true)
-            return;
-        shownResult = runningSession;
-        Show(2);
+        if (page == 1 && LatestRun().Run != null)
+            Show(1);
     }
 
     public void RefreshGarageParking()
@@ -296,9 +288,7 @@ internal sealed class RaceEventView
 
     public void RefreshGarage(string message)
     {
-        float scroll = body.scrollOffset.y;
         Show(1);
-        body.schedule.Execute(() => body.scrollOffset = new Vector2(0, scroll));
         SetStatus(message);
     }
 
@@ -312,19 +302,28 @@ internal sealed class RaceEventView
 
     private void Show(int selected)
     {
+        closeGarageRunReviews?.Invoke();
         chartHost.Clear();
         chartHost.style.display = DisplayStyle.None;
-        body.style.display = DisplayStyle.Flex;
         page = selected;
+        body.style.display = DisplayStyle.None;
+        eventHost.style.display = page == 0 ? DisplayStyle.Flex : DisplayStyle.None;
+        eventHost.Clear();
+        setupHost.style.display = page is 1 or 3 ? DisplayStyle.Flex : DisplayStyle.None;
+        setupHost.Clear();
+        resultsHost.style.display = page == 2 ? DisplayStyle.Flex : DisplayStyle.None;
+        resultsHost.Clear();
         footer.SetEnabled(page != 3);
-        body.EnableInClassList("victory-results-background", false);
-        body.style.backgroundImage = StyleKeyword.Null;
         body.Clear();
         var content = new VisualElement();
         content.AddToClassList("garage-page");
         content.EnableInClassList("event-setup-page", page == 3);
-        setupPage = page == 3 ? content : null;
-        body.Add(content);
+        if (page == 0)
+            eventHost.Add(content);
+        else if (page == 2)
+            resultsHost.Add(content);
+        else
+            setupHost.Add(content);
         for (int i = 0; i < tabs.Length; i++)
             tabs[i].EnableInClassList("nav-button-selected", i == (page == 3 ? 1 : page));
         CloseSessionOptions();
@@ -336,12 +335,6 @@ internal sealed class RaceEventView
         options.SetEnabled(canStart);
         simulate.SetEnabled(canStart);
 
-        if (page != 3)
-        {
-            var heading = new Label(tabs[page].text);
-            heading.AddToClassList("garage-page-title");
-            content.Add(heading);
-        }
         switch (page)
         {
             case 0:
@@ -351,24 +344,16 @@ internal sealed class RaceEventView
                 BuildGarage(content);
                 break;
             case 2:
-                SetVictoryBackground(body, teamColors());
+                SetVictoryBackground(resultsHost, teamColors());
                 BuildResults(content);
                 break;
             case 3:
                 setupPanel ??= EventSetupPanel.Create(car, track, saveSetup, setupCarImage(), Screen, ShowGarage, out readSetupDraft, () => StartingFuelGallons, () => race.SetupLocked, () => CurrentSetup);
                 content.Add(setupPanel);
-                FitSetupPage();
                 break;
         }
         body.scrollOffset = Vector2.zero;
         repaint();
-    }
-
-    private void FitSetupPage()
-    {
-        float height = body.contentViewport.layout.height;
-        if (setupPage != null && height > 1f)
-            setupPage.style.minHeight = Mathf.Floor(height) - 1f;
     }
 
     private void BuildEvent(VisualElement content)
@@ -377,7 +362,7 @@ internal sealed class RaceEventView
         var overview = new VisualElement();
         overview.AddToClassList("event-overview");
         content.Add(overview);
-        var trackPanel = Section(overview, race.trackName);
+        var trackPanel = Section(overview, race.trackName, garagePanel: true);
         AddText($"{track.location?.city}, {track.location?.state}  ·  {track.lengthMiles:0.###} miles  ·  {track.surface}  ·  {track.minorStyle}", trackPanel);
         AddText($"{race.EffectiveRaceLaps} race laps  ·  Purse {RaceFinances.Dollars(race.purse)}", trackPanel);
         var outline = new VisualElement { pickingMode = PickingMode.Ignore };
@@ -387,167 +372,233 @@ internal sealed class RaceEventView
         var ratings = new VisualElement();
         ratings.AddToClassList("track-ratings");
         trackPanel.Add(ratings);
-        StartupMenu.DisplayTrackRatings(ratings, track.weights, all: true);
+        StartupMenu.DisplayTrackRatings(ratings, track.weights);
 
-        var sessions = Section(overview, "Sessions");
+        var sessions = Section(overview, "Sessions", garagePanel: true);
         var nextSession = race.sessions.FirstOrDefault(session => !session.Completed);
         string date = Career.TryReadDate(race.date, out var eventDate) ? eventDate.ToString("MMM d, yyyy") : race.date;
+        if (!string.IsNullOrEmpty(date))
+            AddText(date, sessions).AddToClassList("event-session-date");
         foreach (var session in race.sessions)
         {
             string length = session.minutes > 0 ? $"{session.minutes} minutes" : $"{session.laps} {(session.laps == 1 ? "lap" : "laps")}";
             string state = session.Completed ? "Complete" : session == runningSession ? "In progress" :
                 session == nextSession ? "Next" : "Scheduled";
-            var row = AddText($"{session.name}  ·  {length}  ·  {state}\n{date}\n{session.weather.Summary}", sessions);
+            var row = AddText($"{session.name}  ·  {length}  ·  {state}\n{session.weather.Summary}", sessions);
             row.AddToClassList("schedule-race");
             row.EnableInClassList("schedule-race-completed", session.Completed);
         }
-        AddComponents(Section(content, "Selected car"), service: false);
+        var selectedCar = Section(content, $"Chassis {car.chassisNumber} {car.manufacturer} {car.ChassisTypeName}", garagePanel: true);
+        selectedCar.AddToClassList("event-selected-car");
+        AddComponents(selectedCar, compactMetrics: true);
     }
 
     private void UpdatePressureLabel(Label label, string name, EventCarCondition condition, int corner)
     {
-        float cold = condition.coldPressures?.Length == 4 && condition.coldPressures[corner] > 0f
+        bool flat = condition.Wear(corner) >= 1f;
+        float cold = flat ? 0f : condition.coldPressures?.Length == 4 && condition.coldPressures[corner] > 0f
             ? condition.coldPressures[corner] : VehicleSpeed003.ColdPressure(CurrentSetup, corner);
-        float hot = VehicleSpeed003.HotPressure(cold, TireTemperatureModel.Fahrenheit(condition.Temperature(corner)));
-        label.text = $"{name}\n{hot:0.0} PSI";
+        float hot = flat ? 0f : VehicleSpeed003.HotPressure(cold, TireTemperatureModel.Fahrenheit(condition.Temperature(corner)));
+        label.text = $"{name}  ·  {hot:0.0} PSI";
         label.tooltip = $"Cold: {cold:0.0} PSI / Current: {hot:0.0} PSI";
+    }
+
+    private (RaceSession Session, GarageRunReview Run, int Number) LatestRun(int skip = 0)
+    {
+        foreach (var session in race.sessions.AsEnumerable().Reverse())
+        {
+            if (session.garageRuns == null) continue;
+            for (int i = session.garageRuns.Count - 1; i >= 0; i--)
+                if (session.garageRuns[i]?.complete == true && skip-- == 0)
+                    return (session, session.garageRuns[i], i + 1);
+        }
+        return (runningSession ?? race.sessions.LastOrDefault(s => s.Completed), null, 0);
     }
 
     private void BuildGarage(VisualElement content)
     {
+        content.AddToClassList("garage-redesign");
+        if (EqualConditionTesting) StartingFuelGallons = (float)SessionFuel.TankCapacity;
+        var layout = GarageSetupEditor.Group(content, "garage-redesign-layout");
+        var report = GarageSetupEditor.Group(layout, "garage-redesign-report");
+        var last = LatestRun();
+        GarageDebrief.Build(report, last.Session, last.Run, LatestRun(skip: 1).Run, last.Number, seriesRules?.id);
+        garageSetup ??= new GarageSetupEditor(car, track, Screen, setupCarImage?.Invoke(), saveSetup,
+            () => LatestRun().Run, () => StartingFuelGallons,
+            gallons => StartingFuelGallons = EqualConditionTesting ? (float)SessionFuel.TankCapacity : gallons,
+            () => race.SetupLocked, () => garageServiceAvailable() && !EqualConditionTesting,
+            source => OpenGarageRunReviews(source));
+        garageSetup.Refresh();
+        layout.Add(garageSetup.Root);
+
+    }
+
+    private void BuildGarageServices(VisualElement content)
+    {
         content.AddToClassList("event-garage-page");
         bool canService = garageServiceAvailable();
         if (runningSession != null)
-            AddText(canService ? "Player car parked in its pit stall." : "Player car waiting to reach its pit stall.", content);
+            AddText(canService ? "Player car parked in its pit stall." : "Player car waiting to reach its pit stall.", content).AddToClassList("garage-status");
         var overview = new VisualElement();
         overview.AddToClassList("event-overview");
         content.Add(overview);
-        var preview = Section(overview, car.ChassisDisplayName);
+        var preview = Section(overview, car.ChassisDisplayName, garagePanel: true);
+        preview.AddToClassList("garage-chassis-panel");
         var image = new Image { image = carImage, scaleMode = ScaleMode.ScaleToFit };
         image.AddToClassList("car-paint-preview");
         preview.Add(image);
-        var openSetup = EventSetupPanel.OpenSetupButton(() => Show(3));
-        openSetup.AddToClassList("garage-open-setup");
-        preview.Add(openSetup);
-        AddText(car.manufacturer + "  ·  " + car.ChassisTypeName, preview);
+        var chassisActions = new VisualElement();
+        chassisActions.AddToClassList("garage-inline-actions");
+        preview.Add(chassisActions);
+        AddText(car.manufacturer + "  \u00B7  " + car.ChassisTypeName, chassisActions);
         var condition = readCarCondition();
-        var tires = Section(overview, "Tires");
+        var tires = Section(overview, "Tires", garagePanel: true);
+        tires.AddToClassList("garage-tires-panel");
+        var tireGrid = new VisualElement();
+        tireGrid.AddToClassList("garage-tire-grid");
+        tires.Add(tireGrid);
         string[] names = { "Left front", "Right front", "Left rear", "Right rear" };
         for (int i = 0; i < names.Length; i++)
         {
             var row = new VisualElement();
             row.AddToClassList("event-tire-row");
-            tires.Add(row);
+            tireGrid.Add(row);
             var tireName = AddText(names[i], row);
             tireName.name = "tirePressure" + i;
             UpdatePressureLabel(tireName, names[i], condition, i);
-            AddTireGauge(row, "Wear", condition.Wear(i)).name = "tireWear" + i;
+            var meters = new VisualElement();
+            meters.AddToClassList("garage-tire-meters");
+            row.Add(meters);
+            AddTireGauge(meters, "Wear", condition.Wear(i)).name = "tireWear" + i;
             var temperature = new ProgressBar { lowValue = 75f, highValue = 325f };
             temperature.name = "tireTemperature" + i;
-            row.Add(temperature);
+            meters.Add(temperature);
             UpdateTireTemperature(temperature, condition.Temperature(i));
         }
         var change = Button("Change Tires", changeTires);
+        change.tooltip = "Fit fresh tires while the car is in its stall.";
         change.SetEnabled(canService);
         tires.Add(change);
 
-        if (EqualConditionTesting)
-        {
-            StartingFuelGallons = (float)SessionFuel.TankCapacity;
-            AddText("Equal-condition test: field matched at session start. Restart practice for a fresh comparison; tires and fuel evolve during the session.", content);
-        }
-        var fuelPanel = Section(content, "Starting fuel");
-        fuelPanel.AddToClassList("garage-fuel-panel");
-        var fuelAmount = new Label($"{StartingFuelGallons:0.0} / {SessionFuel.TankCapacity:0} gallons");
-        fuelAmount.AddToClassList("garage-detail");
-        var fuelSlider = new Slider("Fuel for next run", 0f, (float)SessionFuel.TankCapacity)
-        {
-            name = "garageStartingFuel",
-            value = StartingFuelGallons,
-            showInputField = true
-        };
-        fuelSlider.style.minHeight = 32f;
-        fuelSlider.style.marginTop = 8f;
-        fuelSlider.style.marginBottom = 8f;
-        fuelSlider.SetEnabled(canService && !EqualConditionTesting);
-        fuelSlider.RegisterValueChangedCallback(evt =>
-        {
-            if (float.IsNaN(evt.newValue) || float.IsInfinity(evt.newValue))
-            {
-                fuelSlider.SetValueWithoutNotify(StartingFuelGallons);
-                return;
-            }
-            StartingFuelGallons = Mathf.Clamp(Mathf.Round(evt.newValue * 10f) / 10f,
-                0f, (float)SessionFuel.TankCapacity);
-            fuelSlider.SetValueWithoutNotify(StartingFuelGallons);
-            fuelAmount.text = $"{StartingFuelGallons:0.0} / {SessionFuel.TankCapacity:0} gallons";
-        });
-        fuelPanel.Add(fuelAmount);
-        fuelPanel.Add(fuelSlider);
-
+        var fuelPanel = Section(overview, "Practice tools", garagePanel: true);
+        var fuelControls = GarageSetupEditor.Group(fuelPanel, "garage-fuel-controls");
         var simulationControls = new VisualElement { style = { flexDirection = FlexDirection.Row } };
         simulationControls.AddToClassList("garage-simulation-controls");
         var lapChoice = new DropdownField("Laps", new List<string> { "5", "10", "25", "50", "100", "200" },
             new List<int> { 5, 10, 25, 50, 100, 200 }.IndexOf(simulationLapCount));
+        lapChoice.tooltip = "Choose the number of laps to simulate.";
         lapChoice.RegisterValueChangedCallback(evt => simulationLapCount = int.Parse(evt.newValue));
         simulationControls.Add(lapChoice);
         var runButton = Button("Simulate laps", () => SimulateGarageLaps?.Invoke(simulationLapCount));
         runButton.name = "simulateGarageLaps";
+        runButton.tooltip = "Simulate the selected number of laps.";
         runButton.SetEnabled(CanSimulateGarageLaps?.Invoke() == true);
         simulationControls.Add(runButton);
-        content.Add(simulationControls);
-        var trafficOptions = new VisualElement();
-        trafficOptions.style.flexDirection = FlexDirection.Row;
-        trafficOptions.style.flexWrap = Wrap.Wrap;
-        trafficOptions.style.flexShrink = 0;
-        trafficOptions.style.marginBottom = 8;
-        garageTraffic.style.marginLeft = 18;
-        trafficOptions.Add(garageCollisions);
-        trafficOptions.Add(garageTraffic);
-        content.Add(trafficOptions);
-        var reviewSession = runningSession ?? race.sessions.LastOrDefault(item => item.garageRuns?.Count > 0);
-        if (reviewSession?.kind != RaceSessionKind.Practice)
-        {
-            var reviews = Section(content, "On-track runs");
-            reviews.name = "garageRunReviews";
-            UpdateRunReviews(reviews);
-        }
+        fuelControls.Add(simulationControls);
 
-        var components = Section(content, "Components");
-        AddText($"Team balance  ·  {RaceFinances.Dollars(balance())}", components);
-        AddComponents(components, service: true);
-        int cost = ComponentRepair.CostForWear(condition.damage / 100f);
-        AddText($"Body damage {condition.damage:0.#}%", content);
+        var components = Section(content, "Components", garagePanel: true);
+        var conditionActions = new VisualElement();
+        conditionActions.AddToClassList("garage-inline-actions");
+        components.Add(conditionActions);
+        AddText($"Team balance  ·  {RaceFinances.Dollars(balance())}", conditionActions);
+        AddText($"Body damage {condition.damage:0.#}%", conditionActions);
+        int cost = ComponentRepair.CostForWear(condition.damage / 100f, seriesRules.maximumComponentRepairCost);
         if (cost > 0)
         {
             var fixBody = Button($"Repair Body  ·  {RaceFinances.Dollars(cost)}", repairBody);
+            fixBody.tooltip = "Repair the body damage while the car is in its stall.";
             fixBody.SetEnabled(canService && balance() >= cost);
-            content.Add(fixBody);
+            conditionActions.Add(fixBody);
             if (balance() < cost)
-                AddText("Insufficient funds for body repair.", content);
+                AddText("Insufficient funds for body repair.", conditionActions);
         }
+        AddComponents(components);
     }
 
-    private void AddComponents(VisualElement panel, bool service)
+    private void OpenGarageRunReviews(Button source, bool services = false)
     {
-        if (!service)
+        if (Screen.parent == null || garageRunReviews != null) return;
+        var overlay = new VisualElement();
+        overlay.AddToClassList("settings-confirmation-overlay");
+        overlay.AddToClassList("garage-styled");
+        foreach (string path in new[] { "Startup/Startup", "Settings/SettingsControls", "Startup/GarageStyles" })
         {
-            AddText($"{car.ChassisDisplayName}  ·  {car.manufacturer}  ·  {car.ChassisTypeName}", panel);
-            AddText($"Body damage {readCarCondition().damage:0.#}%", panel);
+            var sheet = Resources.Load<StyleSheet>(path);
+            if (sheet != null) overlay.styleSheets.Add(sheet);
         }
+        var dialog = new VisualElement();
+        dialog.AddToClassList("settings-confirmation-dialog");
+        dialog.AddToClassList("garage-run-dialog");
+        dialog.Add(SettingsFormStyle.Label(services ? "Garage services" : "On-track runs", "settings-group-heading"));
+        var reviews = new ScrollView(ScrollViewMode.Vertical);
+        reviews.verticalScrollerVisibility = ScrollerVisibility.Hidden;
+        reviews.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
+        if (services)
+        {
+            garageServices = reviews.contentContainer;
+            BuildGarageServices(garageServices);
+        }
+        else
+        {
+            garageRunReviews = reviews;
+            UpdateRunReviews(reviews.contentContainer);
+        }
+        dialog.Add(reviews);
+        var actions = new VisualElement();
+        actions.AddToClassList("settings-footer");
+        void Close()
+        {
+            closeGarageRunReviews = null;
+            garageRunReviews = null;
+            garageServices = null;
+            Screen.UnregisterCallback<DetachFromPanelEvent>(OnGarageDetached);
+            overlay.RemoveFromHierarchy();
+            Screen.SetEnabled(true);
+            source.Focus();
+        }
+        void OnGarageDetached(DetachFromPanelEvent evt) { if (evt.target == Screen) Close(); }
+        closeGarageRunReviews = Close;
+        Screen.RegisterCallback<DetachFromPanelEvent>(OnGarageDetached);
+        var close = SettingsFormStyle.Button("Close", Close);
+        close.tooltip = "Close the run history and return to the garage.";
+        actions.Add(close);
+        dialog.Add(actions);
+        overlay.Add(dialog);
+        overlay.RegisterCallback<KeyDownEvent>(evt =>
+        {
+            if (evt.keyCode != KeyCode.Escape) return;
+            Close();
+            evt.StopPropagation();
+        }, TrickleDown.TrickleDown);
+        Screen.parent.Add(overlay);
+        Screen.SetEnabled(false);
+        SettingsFormStyle.AddHoverTooltips(overlay);
+        close.Focus();
+    }
+
+    private void AddComponents(VisualElement panel, bool compactMetrics = false)
+    {
         var components = new VisualElement();
+        components.AddToClassList("event-component-strip");
         panel.Add(components);
         ShopComponentPanel.Show(components, car, null, null, null, null, balance(), null,
-            service && garageServiceAvailable() ? repair : null, null,
-            showRepairAvailability: service);
+            null, null, seriesRules, showService: false, compactMetrics: compactMetrics);
+        if (components.childCount > 0)
+            components[components.childCount - 1].AddToClassList("event-component-last");
     }
 
-    private static VisualElement Section(VisualElement parent, string title)
+    private static VisualElement Section(VisualElement parent, string title, bool garagePanel = false)
     {
         var panel = new VisualElement();
         panel.AddToClassList("event-detail-panel");
         var heading = new Label(title);
         heading.AddToClassList("schedule-heading");
+        if (garagePanel)
+        {
+            panel.AddToClassList("team-home-panel");
+            heading.AddToClassList("team-home-heading");
+            SettingsFormStyle.StylePanel(panel);
+        }
         panel.Add(heading);
         parent.Add(panel);
         return panel;
@@ -575,16 +626,12 @@ internal sealed class RaceEventView
             AddText($"Run {index + 1} · {count} timed laps · {times} · {(run.complete ? run.ending : "In progress")}", target);
             AddHandlingReport(target, run);
             string[] names = { "LF", "RF", "LR", "RR" };
-            for (int tire = 0; tire < 4; tire++)
-                AddText($"{names[tire]} · Start {run.startingTemperatures[tire]:0}°F → {(run.complete ? "End" : "Current")} {run.endingTemperatures[tire]:0}°F", target);
+            if (run.startingTemperatures?.Length == 4 && run.endingTemperatures?.Length == 4)
+                for (int tire = 0; tire < 4; tire++)
+                    AddText($"{names[tire]} \u00b7 Start {run.startingTemperatures[tire]:0}\u00b0F \u2192 {(run.complete ? "End" : "Current")} {run.endingTemperatures[tire]:0}\u00b0F", target);
+            else
+                AddText("Tire temperatures were not recorded for this run.", target);
         }
-    }
-
-    private void FitPracticeReport()
-    {
-        var report = body.Q<VisualElement>("practiceRunReport");
-        if (report != null)
-            report.style.minHeight = Mathf.Max(260f, body.contentViewport.layout.height - 115f);
     }
 
     private void BuildPracticeReport(VisualElement content, RaceSession session)
@@ -592,7 +639,6 @@ internal sealed class RaceEventView
         var report = new VisualElement { name = "practiceRunReport" };
         report.AddToClassList("practice-run-report");
         content.Add(report);
-        report.RegisterCallback<GeometryChangedEvent>(_ => FitPracticeReport());
         if (session.rivalSetupChanges?.Count > 0)
         {
             var changes = new Foldout { text = "Rival practice setup evaluations", value = false };
@@ -645,7 +691,6 @@ internal sealed class RaceEventView
             for (int lap = 0; lap < count; lap++)
                 laps.Add(new Label($"Lap {lap + 1}     {run.lapTimes[lap]:0.000} s"));
         }
-        FitPracticeReport();
     }
 
     private static void AddHandlingReport(VisualElement parent, GarageRunReview run)
@@ -743,7 +788,7 @@ internal sealed class RaceEventView
         var session = shownResult;
         if (session == null)
             return;
-        body.style.display = DisplayStyle.None;
+        resultsHost.style.display = DisplayStyle.None;
         chartHost.Clear();
         chartHost.style.display = DisplayStyle.Flex;
         if (!chartSelections.TryGetValue(session, out var selection))
@@ -760,35 +805,78 @@ internal sealed class RaceEventView
 
     private void BuildResults(VisualElement content)
     {
+        content.AddToClassList("garage-results-page");
+        var panel = Section(content, "Results", garagePanel: true);
         var completed = race.sessions.Where(session => session.DisplayResults?.Count > 0 ||
             session.kind == RaceSessionKind.Practice && session.garageRuns?.Any(run => run.complete) == true).ToList();
         if (completed.Count == 0)
         {
-            AddText("Results appear after a session or a practice run finishes.", content);
+            AddText("Results appear after a session or a practice run finishes.", panel);
             return;
         }
         if (!completed.Contains(shownResult))
+        {
             shownResult = completed[completed.Count - 1];
+            showPracticeReport = false;
+        }
 
+        var toolbar = new VisualElement();
+        toolbar.AddToClassList("garage-results-toolbar");
+        panel.Add(toolbar);
         var picker = new DropdownField("Session", completed.Select(session => session.name).ToList(), completed.IndexOf(shownResult));
+        picker.tooltip = "Choose which session results to display.";
+        SettingsFormStyle.StyleField(picker);
         picker.RegisterValueChangedCallback(_ =>
         {
             shownResult = completed[picker.index];
+            showPracticeReport = false;
             Show(2);
         });
-        content.Add(picker);
-        if (shownResult.kind == RaceSessionKind.Practice &&
-            shownResult.garageRuns?.Any(run => run.complete) == true)
+        toolbar.Add(picker);
+
+        var session = shownResult;
+        bool hasTiming = session.DisplayResults?.Count > 0;
+        bool hasRuns = session.kind == RaceSessionKind.Practice && session.garageRuns?.Any(run => run.complete) == true;
+        if (hasRuns)
         {
-            var chartButton = Button("Run comparison graph", ShowRunChart);
-            content.Add(chartButton);
-            var comparison = new Foldout { text = "Compare two runs", value = shownResult.garageRuns.Count(run => run.complete) >= 2 };
-            comparison.Add(PracticeRunComparison.Create(shownResult));
-            content.Add(comparison);
-            BuildPracticeReport(content, shownResult);
+            var chart = Button("Run comparison graph", ShowRunChart);
+            chart.tooltip = "Compare lap times, tire temperatures, and handling across runs.";
+            toolbar.Add(chart);
         }
-        if (shownResult.DisplayResults?.Count > 0)
-            content.Add(CreateResultsGrid(shownResult));
+
+        bool showReport = hasRuns && (!hasTiming || showPracticeReport);
+        if (hasRuns && hasTiming)
+        {
+            var toggle = Button(showReport ? "Timing results" : "Practice report", () =>
+            {
+                showPracticeReport = !showReport;
+                Show(2);
+            });
+            toggle.tooltip = showReport ? "Show the session timing table." : "Show run comparisons and detailed practice reports.";
+            toolbar.Add(toggle);
+        }
+
+        if (showReport)
+        {
+            var report = new ScrollView(ScrollViewMode.Vertical)
+            {
+                verticalScrollerVisibility = ScrollerVisibility.Hidden,
+                horizontalScrollerVisibility = ScrollerVisibility.Hidden
+            };
+            report.AddToClassList("garage-practice-report-scroll");
+            var comparison = new Foldout { text = "Compare two runs", value = session.garageRuns.Count(run => run.complete) >= 2 };
+            comparison.Add(PracticeRunComparison.Create(session));
+            report.Add(comparison);
+            BuildPracticeReport(report, session);
+            panel.Add(report);
+            SettingsFormStyle.CheckSelectorListSpacing(toolbar, report);
+        }
+        else if (hasTiming)
+        {
+            var grid = CreateResultsGrid(session, scrollRows: true, resultTrack: track);
+            panel.Add(grid);
+            SettingsFormStyle.CheckSelectorListSpacing(toolbar, grid);
+        }
     }
 
     internal void SetVictoryBackground(VisualElement target, (Color32 Primary, Color32 Secondary) paint)
@@ -873,52 +961,111 @@ internal sealed class RaceEventView
         victoryArtwork = null;
     }
 
-    internal static VisualElement CreateResultsGrid(RaceSession session)
+    internal static VisualElement CreateResultsGrid(RaceSession session, Career career = null, TeamCar playerCar = null, bool scrollRows = false, TrackDefinition resultTrack = null)
     {
         var grid = new VisualElement();
         grid.AddToClassList("results-grid");
+        var thumbnails = new CarThumbnails(256);
+        grid.RegisterCallback<DetachFromPanelEvent>(evt =>
+        {
+            if (evt.target == grid) thumbnails.Dispose();
+        });
+        var roster = career?.cars?.Count > 0
+            ? TrackPreview.CreateTimingEntries(playerCar ?? career.cars[0], career) : Array.Empty<SessionCarResult>();
         bool isRace = session.kind == RaceSessionKind.Race;
-        var headers = new List<string> { "Position", "Car number", "Driver name", "Team name", "Fastest lap", "Last lap", "Average lap" };
+        var headers = new List<string> { "Pos", "", "Car #", "Driver", "Team", "Laps" };
+        if (!isRace)
+        {
+            headers.Add("Fastest lap");
+            headers.Add("Best Lap MPH");
+        }
         if (isRace)
         {
             headers.Add("Winnings");
             headers.Add("Points");
         }
-        grid.Add(ResultRow(true, headers));
+        grid.Add(ResultRow(true, headers, lapColumns: !isRace));
+        VisualElement rows = grid;
+        if (scrollRows)
+        {
+            grid.AddToClassList("results-grid-scrollable");
+            var body = new ScrollView(ScrollViewMode.Vertical)
+            {
+                verticalScrollerVisibility = ScrollerVisibility.Hidden,
+                horizontalScrollerVisibility = ScrollerVisibility.Hidden
+            };
+            body.AddToClassList("results-body-scroll");
+            grid.Add(body);
+            rows = body;
+        }
         foreach (var result in session.DisplayResults)
         {
             var times = result.lapTimes;
             bool hasTime = times?.Count > 0;
             var cells = new List<string>
             {
-                result.position.ToString(), result.carNumber > 0 ? result.carNumber.ToString() : "—",
-                result.driverName ?? result.carName, result.teamName ?? "—",
-                hasTime ? LapTime(result.FastestLap) : "—",
-                hasTime ? LapTime(times[times.Count - 1]) : "—",
-                hasTime ? LapTime(times.Average()) : "—"
+                result.position.ToString(), "", result.carNumber > 0 ? result.carNumber.ToString() : "—",
+                result.driverName ?? result.carName, result.teamName ?? "—", (times?.Count ?? 0).ToString()
             };
+            if (!isRace)
+            {
+                cells.Add(hasTime ? LapTime(result.FastestLap) : "—");
+                float bestLap = hasTime ? result.FastestLap : 0f;
+                cells.Add(resultTrack != null && resultTrack.lengthMiles > 0 && bestLap > 0 &&
+                    !float.IsNaN(bestLap) && !float.IsInfinity(bestLap)
+                    ? (resultTrack.lengthMiles * 3600f / bestLap).ToString("F2") : "—");
+            }
             if (isRace)
             {
                 cells.Add(result.winnings > 0 ? RaceFinances.Dollars(result.winnings) : "—");
                 cells.Add(result.pointsEarned.ToString());
             }
-            grid.Add(ResultRow(false, cells));
+            var rosterEntry = roster.FirstOrDefault(entry =>
+                entry.teamName == result.teamName &&
+                ((!string.IsNullOrEmpty(result.ownerEntryId) && entry.ownerEntryId == result.ownerEntryId) ||
+                 entry.driverName == result.driverName)) ??
+                roster.FirstOrDefault(entry => entry.carNumber == result.carNumber && entry.teamName == result.teamName);
+            var car = result.car ?? rosterEntry?.car ?? new TeamCar { number = result.carNumber };
+            if (string.IsNullOrEmpty(car.modelResource) && career != null) car.modelResource = career.SeriesRules.carModel;
+            var image = thumbnails.Get(car, Array.Empty<string>(), cacheScope: result.teamName ?? "result",
+                transparentBackground: true, displayNumber: result.carNumber);
+            var row = ResultRow(false, cells, image, lapColumns: !isRace);
+            if (!string.IsNullOrEmpty(result.mechanicalFailure))
+                row.tooltip = result.mechanicalFailure;
+            bool player = career != null && roster.FirstOrDefault()?.carNumber == result.carNumber;
+            row.EnableInClassList("results-player-row", player);
+            rows.Add(row);
         }
         return grid;
     }
 
-    private static VisualElement ResultRow(bool header, IReadOnlyList<string> values)
+    private static VisualElement ResultRow(bool header, IReadOnlyList<string> values, Texture carImage = null, bool lapColumns = false)
     {
         var row = new VisualElement();
         row.AddToClassList("results-grid-row");
         row.EnableInClassList("results-grid-header", header);
         for (int i = 0; i < values.Count; i++)
         {
+            if (i == 1 && !header)
+            {
+                var image = new Image { image = carImage, scaleMode = ScaleMode.ScaleToFit, pickingMode = PickingMode.Ignore };
+                image.AddToClassList("results-car-image");
+                row.Add(image);
+                continue;
+            }
             var cell = new Label(values[i]);
             cell.AddToClassList("garage-detail");
             cell.AddToClassList("results-grid-cell");
-            if (i == 2 || i == 3)
-                cell.AddToClassList("results-grid-name");
+            if (i == 0) cell.AddToClassList("results-position");
+            if (i == 1) cell.AddToClassList("results-car-image");
+            if (i == 2) cell.AddToClassList("results-car-number");
+            if (i == 3 || i == 4) cell.AddToClassList("results-grid-name");
+            if (i == 5) cell.AddToClassList("results-laps");
+            if (lapColumns && i == 6) cell.AddToClassList("results-fastest-lap");
+            if (lapColumns && i == 7) cell.AddToClassList("results-best-lap-mph");
+            if (!lapColumns && i == 6 && values.Count > 7) cell.AddToClassList("results-winnings");
+            if (!lapColumns && i == 7) cell.AddToClassList("results-points");
+            cell.tooltip = values[i];
             row.Add(cell);
         }
         return row;
@@ -942,6 +1089,7 @@ internal sealed class RaceEventView
     {
         var button = new Button(action) { text = text };
         button.AddToClassList("nav-button");
+        button.AddToClassList("settings-button");
         return button;
     }
 }

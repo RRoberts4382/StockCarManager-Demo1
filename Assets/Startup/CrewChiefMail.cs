@@ -52,7 +52,7 @@ internal static class CrewChiefMail
         if (AlreadySent(career, id))
             return false;
 
-        var track = catalog.Entries.Find(entry => entry.Definition.id == race.trackId)?.Definition;
+        var track = catalog.Find(race.trackId)?.Definition;
         var candidates = (career.cars ?? Enumerable.Empty<TeamCar>())
             .Select(car => (Car: car, Block: car.Damage >= 100f ? "Body damage must be repaired" : entryBlockReason(car, race)))
             .ToArray();
@@ -75,7 +75,7 @@ internal static class CrewChiefMail
             {
                 lines.Add($"Track weights (0–1): Aero {weights.aerodynamics:F2}, Horsepower {weights.horsepower:F2}, " +
                     $"Brakes {weights.brakes:F2}, Suspension {weights.suspension:F2}, Transmission {weights.transmission:F2}, " +
-                    $"Handling {weights.handling:F2}, Tire wear {weights.tireWear:F2}, Surface roughness {weights.surfaceRoughness:F2}.");
+                    $"Tire Wear {weights.surfaceRoughness:F2}.");
             }
         }
         else
@@ -148,7 +148,7 @@ internal static class CrewChiefMail
             snapshots.Add(new StaffProgressSnapshot($"{employee.FullName} · {employee.RoleName}",
                 ("Aero", () => employee.bodywork), ("Suspension", () => employee.suspensions),
                 ("Transmission", () => employee.transmissions), ("Engine", () => employee.engines),
-                ("Morale", () => employee.morale)));
+                ("Morale", () => employee.EffectiveMorale(career.currentDate))));
         }
         return snapshots;
     }
@@ -247,7 +247,7 @@ internal static class CrewChiefMail
             lines.Add("No repairs flagged. Complete the usual pre-race inspection.");
     }
 
-    private static float TrackScore(TeamCar car, TrackDefinition track)
+    internal static float TrackScore(TeamCar car, TrackDefinition track)
     {
         var weights = track?.weights ?? new TrackWeights();
         float performance = weights.aerodynamics * car.GetComponent(CarComponent.Aerodynamics).EffectiveValue +

@@ -21,8 +21,12 @@
   "pitStalls": 24,
   "raceMarkers": {
     "hasStartFinish": true,
-    "startFinish": 0.10756986348504015
+    "startFinish": 0.10756986348504015,
+    "hasRestartZone": true,
+    "restartZoneStart": 0.007569863485040074,
+    "restartZoneEnd": 0.08756986348504014
   },
+  "smoothLayoutBanking": true,
   "layoutPoints": [
     {
       "x": -67.62379467987049,

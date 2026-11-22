@@ -87,20 +87,20 @@ internal static class Sponsorships
     }
 
     public static SponsorOffer[] CreateSeasonOffers(SponsorContract contract, int seasonYear,
-        int raceCount, int rank, int fieldSize, Random random)
+        int raceCount, int rank, int fieldSize, Random random, RacingSeries series, Driver driver = null)
     {
         int? signedCompany = contract?.offer?.companyId;
         var companies = Enumerable.Range(0, Brands.Length * Industries.Length).Where(id => id != signedCompany).ToList();
         double standing = fieldSize > 1 ? Math.Clamp((fieldSize - rank) / (double)(fieldSize - 1), 0, 1) : 0;
+        double audience = (Math.Clamp(driver?.SocialMediaXp ?? .5f, 0f, 1f) +
+            Math.Clamp(driver?.Charisma ?? .5f, 0f, 1f)) / 2d;
         var offers = new SponsorOffer[2];
         for (int i = 0; i < offers.Length; i++)
         {
             int choice = random.Next(companies.Count);
             double variation = 0.9 + random.NextDouble() * 0.2;
-            long signing = (long)Math.Round((300000 + 1700000 * standing) * variation);
-            long perRace = (long)Math.Round((12500 + 47500 * standing) * (2 - variation));
-            if (i > 0 && perRace == offers[0].perRacePayment)
-                perRace++;
+            long signing = OfferAmount(series.minimumSponsorshipSigning, series.maximumSponsorshipSigning, variation);
+            long perRace = OfferAmount(series.minimumSponsorshipPerRace, series.maximumSponsorshipPerRace, 2 - variation);
             offers[i] = new SponsorOffer
             {
                 companyId = companies[choice],
@@ -113,5 +113,13 @@ internal static class Sponsorships
             companies.RemoveAt(choice);
         }
         return offers;
+
+        long OfferAmount(long min, long max, double variation)
+        {
+            double baseAmount = Math.Clamp((min + (max - min) * standing) * variation, min, max);
+            double adjustment = (audience - .5d) * .4d;
+            double room = adjustment >= 0 ? max - baseAmount : baseAmount - min;
+            return (long)Math.Round(baseAmount + adjustment * room);
+        }
     }
 }

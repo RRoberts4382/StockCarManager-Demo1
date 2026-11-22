@@ -19,6 +19,7 @@
   },
   "raceLaps": 100,
   "pitStalls": 24,
+  "smoothLayoutBanking": true,
   "layoutPoints": [
     {
       "x": -72.9698056994858,

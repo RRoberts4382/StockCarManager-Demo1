@@ -1,0 +1,54 @@
+{
+  "geometry": "Blender source",
+  "filled_marked_stalls": {
+    "media": 10,
+    "paddock": 22,
+    "frontstretch spectator": 40,
+    "behind haulers": 26
+  },
+  "ordinary_cars_in_filled_stalls": 98,
+  "body_shape_counts": {
+    "media parking": {
+      "sedan": 3,
+      "hatchback": 3,
+      "wagon": 4
+    },
+    "paddock parking": {
+      "sedan": 9,
+      "hatchback": 6,
+      "wagon": 7
+    },
+    "frontstretch spectator parking": {
+      "sedan": 15,
+      "hatchback": 10,
+      "wagon": 15
+    },
+    "support parking behind haulers": {
+      "sedan": 10,
+      "hatchback": 6,
+      "wagon": 10
+    }
+  },
+  "verified_car_dimensions_length_width_m": {
+    "sedan": [
+      4.58,
+      1.84
+    ],
+    "hatchback": [
+      4.02,
+      1.74
+    ],
+    "wagon": [
+      4.43,
+      1.83
+    ]
+  },
+  "haul_clearance_to_marked_spaces_m": 0.936,
+  "support_aisle_width_m": 2.7,
+  "minimum_tow_clearances_m": {
+    "loaded tow": 20.55,
+    "empty tow": 3.1527,
+    "one-way support aisle": 0.4606
+  },
+  "turn_four_loaded_tow_clearance_m": 95.5159
+}

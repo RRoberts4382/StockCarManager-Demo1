@@ -101,7 +101,7 @@ internal sealed class VehicleSpeed003 : IVehicleSpeedModel
         var weights = context.Track.weights;
         var car = carIndex < context.Cars.Count ? context.Cars[carIndex].car : null;
         if (car == null || weights == null)
-            return reference;
+            return VehicleSpeedModels.ApplyEngineAndDriverPerformance(context, carIndex, reference);
 
         float weightedPerformance =
             weights.aerodynamics * (car.GetComponent(CarComponent.Aerodynamics).EffectiveValue - ReferenceEffectiveValue) +
@@ -110,7 +110,8 @@ internal sealed class VehicleSpeed003 : IVehicleSpeedModel
             weights.transmission * (car.GetComponent(CarComponent.Transmission).EffectiveValue - ReferenceEffectiveValue) +
             weights.suspension * (car.GetComponent(CarComponent.Suspension).EffectiveValue - ReferenceEffectiveValue);
 
-        return reference + SpeedPerEffectiveValuePoint * weightedPerformance;
+        return VehicleSpeedModels.ApplyEngineAndDriverPerformance(context, carIndex,
+            reference + SpeedPerEffectiveValuePoint * weightedPerformance);
     }
 
     // Initial tuning targets, in lb/in. These approximate setup suitability, not
@@ -378,6 +379,13 @@ internal sealed class VehicleSpeed003 : IVehicleSpeedModel
         float trackBarFactor = Mathf.Clamp(1f - TrackBarErrorDifference(track, setup) * 0.06f, 0.94f, 1.015f);
         return springFactor * swayBarFactor * trackBarFactor * tireSpeedFactor * DistributionCornerFactor(track, setup, fuelGallons);
     }
+
+    // Plate cars stay on power. Setup/condition changes the sustainable pace for
+    // the whole lap; the plate profile supplies the small turn-only tire scrub.
+    internal static float RestrictorPlatePaceFactor(TrackDefinition track, Setup setup, TeamCar car,
+        double fuelGallons, float trackGrip) =>
+        CornerSpeedFactor(track, setup, car, fuelGallons) *
+        ShockSpeedFactor(track, setup, Vector2.zero) * WeightCornerSpeedFactor(fuelGallons) * Mathf.Sqrt(trackGrip);
 
     // Diagnostic only: relative front/rear lateral grip per pound of axle load.
     // Uses the same tire grip and load sensitivity as the speed model; it does

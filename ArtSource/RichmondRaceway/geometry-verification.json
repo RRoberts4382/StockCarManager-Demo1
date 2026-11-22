@@ -1,0 +1,190 @@
+{
+  "lap_m": 1207.0079999999875,
+  "published_offset_measurement_line_m": 1237.2657677830791,
+  "published_line_note": "Unity normalizes the centerline to nominal 0.75 mi; official distance is measured 13.5 ft in from the wall.",
+  "backstretch_straight_line_deviation_m": 7.783083419404813e-05,
+  "pit_straight_line_deviation_m": 4.263256414560601e-14,
+  "pit_segments_m": [
+    61.335847812694105,
+    385.7650968895417,
+    44.28836727417003
+  ],
+  "width_range_m": [
+    18.288,
+    18.288
+  ],
+  "apron_width_range_m": [
+    3.048,
+    21.355347463186995
+  ],
+  "turn_heading_delta_on_1_5_15m_windows_deg": [
+    [
+      -0.0186,
+      0.7668
+    ],
+    [
+      -0.0222,
+      3.7223
+    ],
+    [
+      -0.0227,
+      10.6829
+    ]
+  ],
+  "pit_heading_delta_deg": {
+    "entry": [
+      [
+        0.4622,
+        1.3729
+      ],
+      [
+        2.328,
+        6.6083
+      ],
+      [
+        7.2102,
+        16.1187
+      ]
+    ],
+    "road": [
+      [
+        -0.0452,
+        1.0896
+      ],
+      [
+        -0.043,
+        5.2845
+      ],
+      [
+        -0.043,
+        13.6606
+      ]
+    ],
+    "exit": [
+      [
+        0.4566,
+        1.4564
+      ],
+      [
+        2.3018,
+        6.7803
+      ],
+      [
+        7.3343,
+        15.1921
+      ]
+    ]
+  },
+  "pit_endpoint_heading_error_deg": {
+    "apron_to_entry": 0.011094743693588458,
+    "entry_to_road": 0.012326100367549135,
+    "road_to_exit": 0.019755052706479877,
+    "exit_to_apron": 0.012813115370052666
+  },
+  "pit_footprint": {
+    "entry": {
+      "samples_beyond_outer_wall": 0,
+      "min_inside_racing_surface_clearance_m": 0.7269197193607582,
+      "largest_apron_to_pit_grass_gap_m": 0.0,
+      "racing_surface_overlap_m": null
+    },
+    "road": {
+      "samples_beyond_outer_wall": 0,
+      "min_inside_racing_surface_clearance_m": 2.3791886365477204,
+      "largest_apron_to_pit_grass_gap_m": 35.02499943539691,
+      "racing_surface_overlap_m": null
+    },
+    "exit": {
+      "samples_beyond_outer_wall": 0,
+      "min_inside_racing_surface_clearance_m": 0.7360811096530817,
+      "largest_apron_to_pit_grass_gap_m": 0.0,
+      "racing_surface_overlap_m": null
+    }
+  },
+  "profile_checks": {
+    "-2": {
+      "height_range_m": [
+        0.0,
+        0.0
+      ],
+      "grade_range_percent": [
+        0.0,
+        0.0
+      ],
+      "max_half_meter_grade_change_percentage_points": 0.0,
+      "seam_grade_change_percentage_points": 0.0
+    },
+    "-1": {
+      "height_range_m": [
+        0.0,
+        0.0
+      ],
+      "grade_range_percent": [
+        0.0,
+        0.0
+      ],
+      "max_half_meter_grade_change_percentage_points": 0.0,
+      "seam_grade_change_percentage_points": 0.0
+    },
+    "-0.5": {
+      "height_range_m": [
+        0.15956049892383442,
+        1.1060669066816808
+      ],
+      "grade_range_percent": [
+        -1.632698858675877,
+        1.9624989140757128
+      ],
+      "max_half_meter_grade_change_percentage_points": 0.04534244659926012,
+      "seam_grade_change_percentage_points": 0.0
+    },
+    "0": {
+      "height_range_m": [
+        0.31912099784766884,
+        2.2121338133633617
+      ],
+      "grade_range_percent": [
+        -3.112781414383573,
+        3.7812755475636437
+      ],
+      "max_half_meter_grade_change_percentage_points": 0.08905234176954613,
+      "seam_grade_change_percentage_points": 0.0
+    },
+    "0.5": {
+      "height_range_m": [
+        0.4786814967715033,
+        3.3182007200450423
+      ],
+      "grade_range_percent": [
+        -4.4685192986458295,
+        5.473452585470417
+      ],
+      "max_half_meter_grade_change_percentage_points": 0.13119965439982995,
+      "seam_grade_change_percentage_points": 0.0
+    },
+    "1": {
+      "height_range_m": [
+        0.6382419956953377,
+        4.424267626726723
+      ],
+      "grade_range_percent": [
+        -5.719116294930334,
+        7.051172430574494
+      ],
+      "max_half_meter_grade_change_percentage_points": 0.17185269491820554,
+      "seam_grade_change_percentage_points": 0.0
+    }
+  },
+  "restart_stations_m": [
+    1121.310432,
+    1179.246816
+  ],
+  "wall_backed_stalls": 40,
+  "pit_usable_footprint_m": 19.5072,
+  "pit_walkway_width_m": 3.0479999999999983,
+  "stall_min_longitudinal_margin_behind_wall_m": 3.0,
+  "pit_speed_limit_mph": 40,
+  "cup_reference_mph": 130.59881977362872,
+  "cup_reference_lap_seconds": 20.674,
+  "stall_spacing_m": 8.699002934859166
+}

@@ -1,0 +1,159 @@
+{
+  "grounded_standing_anchors": {
+    "protected_fan_paths": 120,
+    "campground": 99,
+    "inside_wall": 312,
+    "pit_amenities": 38
+  },
+  "grounded_walking_endpoints": 56,
+  "max_anchor_to_surface_gap_m": 3.528594970703125e-05,
+  "max_corrected_anchor_height_m": 2.2471346855163574,
+  "original_anchor_xy_and_basis_preserved": true,
+  "walking_interior_probes": 10623,
+  "walking_linear_root_gap_m": [
+    -0.010645154863595963,
+    0.015781452879309654
+  ],
+  "walking_paths": {
+    "Richmond pedestrian walk 01": {
+      "probes": 1241,
+      "minimum_linear_root_gap_m": -4.772096872329712e-06,
+      "maximum_linear_root_gap_m": 1.9781291484832764e-06
+    },
+    "Richmond pedestrian walk 02": {
+      "probes": 1131,
+      "minimum_linear_root_gap_m": -1.1444091796875e-05,
+      "maximum_linear_root_gap_m": -2.8796494007110596e-06
+    },
+    "Richmond pedestrian walk 03": {
+      "probes": 271,
+      "minimum_linear_root_gap_m": -2.86102294921875e-06,
+      "maximum_linear_root_gap_m": 2.86102294921875e-06
+    },
+    "Richmond pedestrian walk 04": {
+      "probes": 241,
+      "minimum_linear_root_gap_m": -8.69855284690857e-06,
+      "maximum_linear_root_gap_m": -4.67151403427124e-06
+    },
+    "Richmond pedestrian walk 05": {
+      "probes": 361,
+      "minimum_linear_root_gap_m": -3.814697265625e-06,
+      "maximum_linear_root_gap_m": 0.0
+    },
+    "Richmond pedestrian walk 06": {
+      "probes": 522,
+      "minimum_linear_root_gap_m": -1.2874603271484375e-05,
+      "maximum_linear_root_gap_m": -9.141862392425537e-06
+    },
+    "Richmond pedestrian walk 11": {
+      "probes": 782,
+      "minimum_linear_root_gap_m": -2.8563663363456726e-05,
+      "maximum_linear_root_gap_m": -1.337006688117981e-05
+    },
+    "Richmond pedestrian walk 12": {
+      "probes": 729,
+      "minimum_linear_root_gap_m": -3.342330455780029e-05,
+      "maximum_linear_root_gap_m": -2.647005021572113e-05
+    },
+    "Richmond pedestrian walk 13": {
+      "probes": 501,
+      "minimum_linear_root_gap_m": -3.62396240234375e-05,
+      "maximum_linear_root_gap_m": -3.24249267578125e-05
+    },
+    "Richmond pedestrian walk 14": {
+      "probes": 456,
+      "minimum_linear_root_gap_m": -3.62396240234375e-05,
+      "maximum_linear_root_gap_m": -3.337860107421875e-05
+    },
+    "Richmond pedestrian walk 15": {
+      "probes": 708,
+      "minimum_linear_root_gap_m": -3.528594970703125e-05,
+      "maximum_linear_root_gap_m": -2.956390380859375e-05
+    },
+    "Richmond pedestrian walk 16": {
+      "probes": 679,
+      "minimum_linear_root_gap_m": -3.248453140258789e-05,
+      "maximum_linear_root_gap_m": -2.566911280155182e-05
+    },
+    "Richmond pedestrian walk 17": {
+      "probes": 480,
+      "minimum_linear_root_gap_m": -2.6702880859375e-05,
+      "maximum_linear_root_gap_m": -1.811981201171875e-05
+    },
+    "Richmond pedestrian walk 18": {
+      "probes": 498,
+      "minimum_linear_root_gap_m": -2.0192936062812805e-05,
+      "maximum_linear_root_gap_m": -1.3269484043121338e-05
+    },
+    "Richmond pedestrian walk 31": {
+      "probes": 115,
+      "minimum_linear_root_gap_m": -1.8069520592689514e-05,
+      "maximum_linear_root_gap_m": -1.3785436749458313e-05
+    },
+    "Richmond pedestrian walk 32": {
+      "probes": 112,
+      "minimum_linear_root_gap_m": -1.71661376953125e-05,
+      "maximum_linear_root_gap_m": -1.430511474609375e-05
+    },
+    "Richmond pedestrian walk 33": {
+      "probes": 140,
+      "minimum_linear_root_gap_m": -1.82371586561203e-05,
+      "maximum_linear_root_gap_m": -1.3640150427818298e-05
+    },
+    "Richmond pedestrian walk 34": {
+      "probes": 151,
+      "minimum_linear_root_gap_m": -1.71661376953125e-05,
+      "maximum_linear_root_gap_m": -1.33514404296875e-05
+    },
+    "Richmond pedestrian walk 35": {
+      "probes": 172,
+      "minimum_linear_root_gap_m": -1.71661376953125e-05,
+      "maximum_linear_root_gap_m": -1.239776611328125e-05
+    },
+    "Richmond pedestrian walk 36": {
+      "probes": 161,
+      "minimum_linear_root_gap_m": -1.33514404296875e-05,
+      "maximum_linear_root_gap_m": -1.049041748046875e-05
+    },
+    "Richmond pedestrian walk 37": {
+      "probes": 162,
+      "minimum_linear_root_gap_m": -1.33514404296875e-05,
+      "maximum_linear_root_gap_m": -9.5367431640625e-06
+    },
+    "Richmond pedestrian walk 38": {
+      "probes": 151,
+      "minimum_linear_root_gap_m": -1.1444091796875e-05,
+      "maximum_linear_root_gap_m": -8.58306884765625e-06
+    },
+    "Richmond pedestrian walk 39": {
+      "probes": 131,
+      "minimum_linear_root_gap_m": -1.2258999049663544e-05,
+      "maximum_linear_root_gap_m": -7.783062756061554e-06
+    },
+    "Richmond pedestrian walk 40": {
+      "probes": 161,
+      "minimum_linear_root_gap_m": -9.531155228614807e-06,
+      "maximum_linear_root_gap_m": -5.734153091907501e-06
+    },
+    "Richmond pedestrian walk 41": {
+      "probes": 172,
+      "minimum_linear_root_gap_m": -0.00410204753279686,
+      "maximum_linear_root_gap_m": 0.015781452879309654
+    },
+    "Richmond pedestrian walk 42": {
+      "probes": 152,
+      "minimum_linear_root_gap_m": -9.499490261077881e-06,
+      "maximum_linear_root_gap_m": -6.690621376037598e-06
+    },
+    "Richmond pedestrian walk 43": {
+      "probes": 142,
+      "minimum_linear_root_gap_m": -0.010645154863595963,
+      "maximum_linear_root_gap_m": 0.009214423596858978
+    },
+    "Richmond pedestrian walk 44": {
+      "probes": 101,
+      "minimum_linear_root_gap_m": -6.0461461544036865e-06,
+      "maximum_linear_root_gap_m": -2.107582986354828e-06
+    }
+  }
+}
