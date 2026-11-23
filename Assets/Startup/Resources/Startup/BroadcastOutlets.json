@@ -1,0 +1,12 @@
+{
+  "outlets": [
+    { "id": "vanterra", "name": "Vanterra", "logoIndex": 0, "desk": "Race Desk", "focus": "finish" },
+    { "id": "lumetra", "name": "Lumetra", "logoIndex": 1, "desk": "Timing Desk", "focus": "pace" },
+    { "id": "ridgeline", "name": "Ridgeline", "logoIndex": 2, "desk": "Grid Report", "focus": "grid" },
+    { "id": "orbitspan", "name": "Orbitspan", "logoIndex": 3, "desk": "Team Report", "focus": "team" },
+    { "id": "fieldflare", "name": "Fieldflare", "logoIndex": 4, "desk": "Race Central", "focus": "finish" },
+    { "id": "meridion", "name": "Meridion", "logoIndex": 5, "desk": "Speed Desk", "focus": "pace" },
+    { "id": "vector-bay", "name": "Vector Bay", "logoIndex": 6, "desk": "Starting Grid", "focus": "grid" },
+    { "id": "nightrelay", "name": "Nightrelay", "logoIndex": 7, "desk": "Garage Report", "focus": "team" }
+  ]
+}

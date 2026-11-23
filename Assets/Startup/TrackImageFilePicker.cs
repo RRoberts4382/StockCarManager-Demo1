@@ -3,13 +3,13 @@ using System.Runtime.InteropServices;
 
 internal static class TrackImageFilePicker
 {
-    public static string Pick()
+    public static string Pick(string prompt = "Choose a track diagram")
     {
 #if UNITY_EDITOR
-        return UnityEditor.EditorUtility.OpenFilePanel("Choose a track diagram", "", "png,jpg,jpeg");
+        return UnityEditor.EditorUtility.OpenFilePanel(prompt, "", "png,jpg,jpeg");
 #elif UNITY_STANDALONE_WIN
         const int maxPathCharacters = 32768;
-        char[] filterText = "Track images (*.png;*.jpg;*.jpeg)\0*.png;*.jpg;*.jpeg\0\0".ToCharArray();
+        char[] filterText = "Images (*.png;*.jpg;*.jpeg)\0*.png;*.jpg;*.jpeg\0\0".ToCharArray();
         IntPtr file = IntPtr.Zero;
         IntPtr filter = IntPtr.Zero;
         IntPtr title = IntPtr.Zero;
@@ -20,7 +20,7 @@ internal static class TrackImageFilePicker
             Marshal.WriteInt16(file, 0);
             filter = Marshal.AllocHGlobal(filterText.Length * sizeof(char));
             Marshal.Copy(filterText, 0, filter, filterText.Length);
-            title = Marshal.StringToHGlobalUni("Choose a track diagram");
+            title = Marshal.StringToHGlobalUni(prompt);
             var dialog = new OpenFileName
             {
                 size = Marshal.SizeOf<OpenFileName>(),

@@ -4,23 +4,32 @@ using System.IO;
 using System.Linq;
 using UnityEngine;
 
+internal enum TrackValidationSection { Details, Layout, Race, Pit, Ratings }
+
 [Serializable]
 public sealed class TrackDefinition
 {
     public int id;
     public string name;
+    public string logo;
     public TrackLocation location = new TrackLocation();
     public const float DefaultAspectRatio = 34f / 19f;
     public const float MetersPerMile = 1609.344f;
     public const float MetersPerFoot = 0.3048f;
 
     public float qualifyingReferenceMph;
+    // Venue-specific VehicleSpeed003 corner calibration, applied before car
+    // setup/condition penalties. One preserves existing tracks and A/B models.
+    public float cornerSpeedCalibration = 1f;
     public float lengthMiles = 0.5f;
     public float aspectRatio = DefaultAspectRatio;
     public string majorStyle = "Oval";
     public string minorStyle = "Oval";
     public string surface = "Asphalt";
     public bool restrictorPlate;
+    internal ChassisType TrackCategory => majorStyle == "Road" ? ChassisType.RoadCourse
+        : restrictorPlate ? ChassisType.SuperSpeedway
+        : lengthMiles < 1f ? ChassisType.ShortTrack : ChassisType.IntermediateTrack;
     public TrackBanking banking = new TrackBanking();
     public float widthMeters = 9f;
     public int pitStalls;
@@ -29,11 +38,14 @@ public sealed class TrackDefinition
     public int[] raceStageLaps;
     public TrackWeights weights = new TrackWeights();
     public TrackLayoutPoint[] layoutPoints = Array.Empty<TrackLayoutPoint>();
+    public TrackBankingTransition[] bankingTransitions;
+    // Opt in to continuous interpolation between authored bank values in layoutPoints.
+    public bool smoothLayoutBanking;
     public TrackRaceMarkers raceMarkers;
     public TrackPitRoad pitRoad;
 
     public static readonly string[] MinorStyles =
-        { "Oval", "Tri-Oval", "Quad Oval", "Triangle", "Rectangle", "Road Course", "Street Course", "Roval" };
+        { "Oval", "Tri-Oval", "Quad Oval", "Triangle", "Rectangle", "D-Oval", "Road Course", "Street Course", "Roval" };
     public static readonly string[] Surfaces = { "Asphalt", "Concrete", "Dirt" };
 
     public float OvalTurnRadius => lengthMiles * MetersPerMile / (4f * (aspectRatio - 1f) + 2f * Mathf.PI);
@@ -41,40 +53,67 @@ public sealed class TrackDefinition
     public float StartFinishFraction => raceMarkers?.hasStartFinish == true ? raceMarkers.startFinish
         : (layoutPoints?.Length ?? 0) > 0 ? 0f : OvalStraightLength * 0.5f / (lengthMiles * MetersPerMile);
 
-    public string Validate()
+    public string Validate() => ValidationErrors().FirstOrDefault().Error;
+
+    internal IEnumerable<(TrackValidationSection Section, string Error)> ValidationErrors()
     {
         if (id <= 0 || string.IsNullOrWhiteSpace(name))
-            return "Enter a positive ID and a track name.";
+            yield return (TrackValidationSection.Details, "Enter a positive ID and a track name.");
         if (location == null || string.IsNullOrWhiteSpace(location.city) || string.IsNullOrWhiteSpace(location.state))
-            return "Enter a city and state.";
-        if (!InRange(lengthMiles, 0.01f, 100f) || !InRange(widthMeters, 3f, 100f) || pitStalls < 0 || raceLaps <= 0)
-            return "Use 0.01–100 miles for length, 9.84–328.08 feet for width, nonnegative pit stalls, and at least one lap.";
-        if (Array.IndexOf(MinorStyles, minorStyle) < 0 || Array.IndexOf(Surfaces, surface) < 0 ||
-            majorStyle != (Array.IndexOf(MinorStyles, minorStyle) < 5 ? "Oval" : "Road"))
-            return "Choose a valid surface and matching major and minor styles.";
+            yield return (TrackValidationSection.Details, "Enter a city and state.");
+        int styleIndex = Array.IndexOf(MinorStyles, minorStyle);
+        int firstRoadStyle = Array.IndexOf(MinorStyles, "Road Course");
+        if (styleIndex < 0 || Array.IndexOf(Surfaces, surface) < 0 ||
+            majorStyle != (styleIndex < firstRoadStyle ? "Oval" : "Road"))
+            yield return (TrackValidationSection.Details, "Choose a valid surface and matching major and minor styles.");
+
+        if (!InRange(lengthMiles, .01f, 100f) || !InRange(widthMeters, 3f, 100f))
+            yield return (TrackValidationSection.Layout, "Use 0.01–100 miles for length and 9.84–328.08 feet for width.");
         if (banking == null || !new[] { banking.turns12, banking.turns34, banking.frontStraight, banking.backStraight }
             .All(value => InRange(value, 0f, 60f)))
-            return "Enter banking angles from 0 to 60 degrees.";
-        if (weights == null || !new[] { weights.surfaceRoughness, weights.aerodynamics, weights.horsepower,
-            weights.brakes, weights.suspension, weights.handling, weights.tireWear }.All(value => InRange(value, 0f, 1f)))
-            return "Enter weights from 0 to 1.";
+            yield return (TrackValidationSection.Layout, "Enter banking angles from 0 to 60 degrees.");
+        string geometry = ValidateLayout();
+        if (geometry != null)
+            yield return (TrackValidationSection.Layout, geometry);
+        string bankProfile = ValidateBankingTransitions();
+        if (bankProfile != null)
+            yield return (TrackValidationSection.Layout, bankProfile);
 
+        if (raceLaps <= 0)
+            yield return (TrackValidationSection.Race, "Enter at least one race lap.");
         if (!InRange(qualifyingReferenceMph, 0f, 300f))
-            return "Enter a qualifying reference from 0 to 300 mph.";
+            yield return (TrackValidationSection.Race, "Enter a qualifying reference from 0 to 300 mph.");
+        if (!InRange(cornerSpeedCalibration, 0.5f, 1.5f))
+            yield return (TrackValidationSection.Race, "Use a corner-speed calibration between 0.5 and 1.5.");
         if (NumberOfQualifyingLaps <= 0)
-            return "Enter at least one qualifying lap.";
-
+            yield return (TrackValidationSection.Race, "Enter at least one qualifying lap.");
         if (raceStageLaps?.Length > 0 &&
-            (raceStageLaps.Any(count => count <= 0) || raceStageLaps.Sum(count => (long)count) != raceLaps))
-            return "Race stage laps must be positive and add up to the race length.";
+            (raceStageLaps.Length > ScheduledRace.MaximumStages || raceStageLaps.Any(count => count <= 0) ||
+                raceStageLaps.Sum(count => (long)count) != raceLaps))
+            yield return (TrackValidationSection.Race, "Use at most four stages with positive laps that add up to the race length.");
+        string markers = TrackUtilityGeometry.ValidateMarkers(this);
+        if (markers != null)
+            yield return (TrackValidationSection.Race, markers);
 
-        string extensionError = TrackUtilityGeometry.Validate(this);
-        if (extensionError != null)
-            return extensionError;
+        if (pitStalls < 0)
+            yield return (TrackValidationSection.Pit, "Enter a nonnegative pit stall count.");
+        string pits = TrackUtilityGeometry.ValidatePitRoad(this);
+        if (pits != null)
+            yield return (TrackValidationSection.Pit, pits);
 
+        if (weights == null || !new[] { weights.surfaceRoughness, weights.aerodynamics, weights.horsepower,
+            weights.brakes, weights.suspension, weights.transmission }
+            .All(value => InRange(value, 0f, 1f)))
+            yield return (TrackValidationSection.Ratings, "Enter weights from 0 to 1.");
+    }
+
+    private string ValidateLayout()
+    {
         int count = layoutPoints?.Length ?? 0;
         if (count == 0)
         {
+            if (smoothLayoutBanking)
+                return "Continuous layout banking needs a custom track layout.";
             if (minorStyle != "Oval")
                 return "Add layout points for this track style.";
             if (float.IsNaN(aspectRatio) || float.IsInfinity(aspectRatio) || aspectRatio < 1f)
@@ -99,6 +138,28 @@ public sealed class TrackDefinition
         return null;
     }
 
+    private string ValidateBankingTransitions()
+    {
+        if (bankingTransitions == null || bankingTransitions.Length == 0)
+            return null;
+        if ((layoutPoints?.Length ?? 0) < 3)
+            return "Banking transitions need a custom track layout.";
+
+        TrackBankingTransition previous = null;
+        foreach (var transition in bankingTransitions)
+        {
+            if (transition == null || !InRange(transition.start, 0f, 1f) ||
+                !InRange(transition.end, 0f, 1f) || transition.start >= transition.end ||
+                !InRange(transition.fromDegrees, -60f, 60f) || !InRange(transition.toDegrees, -60f, 60f))
+                return "Banking transitions need increasing lap fractions within 0 to 1 and angles from -60 to 60 degrees.";
+            if (previous != null && (previous.end > transition.start || previous.toDegrees != transition.fromDegrees))
+                return "Sort banking transitions by lap distance and match the angles between transitions without overlapping.";
+            previous = transition;
+        }
+        return previous.toDegrees == bankingTransitions[0].fromDegrees
+            ? null : "Match the banking angles on both sides of the lap seam.";
+    }
+
     private static bool InRange(float value, float min, float max) => value >= min && value <= max;
 }
 
@@ -117,14 +178,12 @@ public sealed class TrackBanking
 [Serializable]
 public sealed class TrackWeights
 {
+    public float transmission;
     public float surfaceRoughness = 0.5f;
     public float aerodynamics = 0.5f;
     public float horsepower = 0.5f;
     public float brakes = 0.5f;
     public float suspension = 0.5f;
-    public float handling = 0.5f;
-    public float tireWear = 0.5f;
-    public bool ratingsAssigned;
 }
 
 [Serializable]
@@ -133,9 +192,20 @@ public sealed class TrackLayoutPoint
     public float x;
     public float z;
     public float banking;
+    public float bankingSpread;
     public float elevationMeters = 0f;
     public float widthMeters;
     public float apronWidthMeters;
+}
+
+[Serializable]
+public sealed class TrackBankingTransition
+{
+    // Fractions of the horizontal lap distance measured along the authored spline.
+    public float start;
+    public float end;
+    public float fromDegrees;
+    public float toDegrees;
 }
 
 [Serializable]
@@ -189,6 +259,23 @@ public sealed class TrackCatalog
     public string Folder { get; } = Path.Combine(Directory.GetParent(Application.dataPath).FullName, "Tracks");
     public string Status { get; private set; }
 
+    internal static int CurrentTrackId(int id) => id switch
+    {
+        2 => 33,  // Martinsville
+        3 => 30,  // Daytona
+        8 => 31,  // Texas
+        25 => 32, // Kansas
+        _ => id
+    };
+
+    public Entry Find(int id)
+    {
+        // Keep saved event IDs intact. Only redirect the definition lookup.
+        int currentId = CurrentTrackId(id);
+        return Entries.Find(entry => entry.Definition.id == id) ??
+            (currentId == id ? null : Entries.Find(entry => entry.Definition.id == currentId));
+    }
+
     public void Refresh()
     {
         Entries.Clear();
@@ -228,9 +315,8 @@ public sealed class TrackCatalog
             if (Entries.Count > 0)
             {
                 float shortest = Entries.Min(entry => entry.Definition.lengthMiles);
-                float longest = Entries.Max(entry => entry.Definition.lengthMiles);
                 foreach (var entry in Entries)
-                    TrackRatings.Apply(entry.Definition, shortest, longest);
+                    TrackRatings.Apply(entry.Definition, shortest);
             }
             Entries.Sort((a, b) => StringComparer.OrdinalIgnoreCase.Compare(a.Definition.name, b.Definition.name));
         }
@@ -274,7 +360,7 @@ public sealed class TrackCatalog
 
         var otherLengths = Entries.Where(entry => entry != existing).Select(entry => entry.Definition.lengthMiles);
         var lengths = otherLengths.Append(definition.lengthMiles).ToArray();
-        TrackRatings.Apply(definition, lengths.Min(), lengths.Max());
+        TrackRatings.Apply(definition, lengths.Min());
 
         string path = existing?.Path ?? Path.Combine(Folder, $"{definition.id}.json");
         string temporaryPath = Path.Combine(Folder, $"{Guid.NewGuid():N}.tmp");

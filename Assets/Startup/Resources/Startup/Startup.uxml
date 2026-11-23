@@ -1,31 +1,50 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements">
     <Style src="Startup.uss" />
     <ui:VisualElement name="titleScreen" class="screen title-screen">
-        <ui:VisualElement class="header">
-            <ui:Label text="SCM  /  RACE OPERATIONS" class="brand" />
-            <ui:Label text="DEMO 01" class="muted" />
-        </ui:VisualElement>
+        <ui:VisualElement class="title-background" picking-mode="Ignore" />
+        <ui:VisualElement class="title-background title-background-shade" picking-mode="Ignore" />
         <ui:VisualElement class="main">
-            <ui:VisualElement class="card">
-                <ui:Label text="01  /  TEAM HEADQUARTERS" class="eyebrow" />
-                <ui:Label text="STOCK CAR" class="title" />
-                <ui:Label text="MANAGER" class="title accent" />
-                <ui:Label text="Take charge of a stock car racing team." class="description" />
+            <ui:VisualElement class="card title-card">
+                <ui:VisualElement name="startupLogo" class="title-logo" picking-mode="Ignore" />
+                <ui:Label text="Take charge of a stock car racing team." class="description title-tagline" />
                 <ui:VisualElement class="actions title-actions">
-                    <ui:Button name="continueCareerButton" text="Continue Career" class="action title-primary" />
-                    <ui:Button name="newCareerButton" text="Create a New Career" class="action title-primary" />
+                    <ui:VisualElement name="continueCareerControls" class="title-continue-controls" style="display: none;">
+                        <ui:Button name="continueCareerButton" text="Continue Career" tooltip="Resume your most recently saved career." class="settings-button title-career-action" />
+                    </ui:VisualElement>
+                    <ui:Button name="loadCareerButton" style="display: none;" text="Load Career" tooltip="Show your saved careers." class="settings-button title-career-action" />
+                    <ui:Button name="newCareerButton" text="New Career" class="settings-button title-career-action" />
                 </ui:VisualElement>
-                <ui:VisualElement class="actions title-actions">
-                    <ui:Button name="tracksButton" text="Tracks" class="action quit-action" />
-                    <ui:Button name="trackUtilityButton" text="Track Utility" class="action quit-action" />
-                    <ui:Button name="titleSettingsButton" text="Settings" class="action quit-action" />
-                    <ui:Button name="quitButton" text="Quit" class="action quit-action" />
-                </ui:VisualElement>
+                <ui:Label name="continueCareerDetails" class="title-continue-details" style="display: none;" />
+                <ui:ScrollView name="savedCareerList" vertical-scroller-visibility="Hidden" class="title-career-list" style="display: none;" />
+
             </ui:VisualElement>
         </ui:VisualElement>
-        <ui:VisualElement class="footer">
-            <ui:Label text="STOCK CAR MANAGER" class="muted" />
-            <ui:Label text="DESKTOP PROTOTYPE" class="muted" />
+        <ui:VisualElement class="actions title-icon-row">
+            <ui:Button name="testPracticeButton" tooltip="Choose a track and car for a standalone practice or race." class="title-icon-button title-practice-icon">
+                <ui:VisualElement class="track-icon-art" picking-mode="Ignore" />
+            </ui:Button>
+            <ui:Button name="titleSettingsButton" tooltip="Open Game, Series, and Car Type Settings." class="title-icon-button title-settings-icon">
+                <ui:VisualElement class="track-icon-art" picking-mode="Ignore" />
+            </ui:Button>
+            <ui:Button name="quitButton" tooltip="Exit Stock Car Manager." class="title-icon-button title-quit-icon">
+                <ui:VisualElement class="track-icon-art" picking-mode="Ignore" />
+            </ui:Button>
+        </ui:VisualElement>
+    </ui:VisualElement>
+    <ui:VisualElement name="developmentTrackPicker" class="screen title-screen" style="display: none;">
+        <ui:VisualElement class="main">
+            <ui:VisualElement class="card" style="max-height: 90%;">
+                <ui:Label text="Test Practice" class="title" />
+                <ui:DropdownField name="developmentTracks" label="Track" tooltip="Choose the track for the test session." class="team-results-event-picker" />
+                <ui:DropdownField name="developmentCars" label="Car" tooltip="Choose the car model for the test session." class="team-results-event-picker" />
+                <ui:Label name="developmentPracticeStatus" class="description" />
+                <ui:VisualElement class="actions title-actions">
+                    <ui:Button name="startDevelopmentPractice" text="Start Practice" tooltip="Start a standalone practice session." class="settings-button title-career-action" />
+                    <ui:Button name="startDevelopmentRace" text="Start Test Race" tooltip="Start a race with a randomized starting grid." class="settings-button title-career-action" />
+                    <ui:Button name="backFromDevelopmentPractice" text="Back" tooltip="Return to the title screen." class="action quit-action" />
+                    <ui:Button name="exitDevelopmentPractice" text="Exit" tooltip="Exit Stock Car Manager." class="action quit-action" />
+                </ui:VisualElement>
+            </ui:VisualElement>
         </ui:VisualElement>
     </ui:VisualElement>
 </ui:UXML>

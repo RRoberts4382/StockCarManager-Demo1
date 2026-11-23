@@ -1,0 +1,43 @@
+{
+  "displayName": "Race Truck",
+  "inCarCamera": {
+    "anchor": "DriverEye",
+    "position": {
+      "x": -0.225,
+      "y": 0.75,
+      "z": 0.23
+    }
+  },
+  "roofNumberScale": 0.82,
+  "roofNumber": {
+    "anchor": "",
+    "position": {
+      "x": 0.004,
+      "y": 0.879,
+      "z": 0.063
+    }
+  },
+  "leftNumber": {
+    "anchor": "LeftNumber",
+    "position": {
+      "x": -0.55,
+      "y": 0.355,
+      "z": 0.15
+    }
+  },
+  "rightNumber": {
+    "anchor": "RightNumber",
+    "position": {
+      "x": 0.54,
+      "y": 0.355,
+      "z": 0.15
+    }
+  },
+  "lodModels": [
+    "RaceTruck",
+    "RaceTruckLOD2",
+    "RaceTruckLOD3",
+    "RaceTruckLOD4",
+    "RaceTruckDetailed"
+  ]
+}

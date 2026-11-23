@@ -82,7 +82,7 @@ internal sealed class VehicleBehavior001 : IVehicleBehaviorModel
 
     public void AvoidTraffic(float lapLength, float inside, float seconds, bool allowPassing,
         float[] distances, float[] widths, bool[] onTrack, float[] lanes, float[] targets,
-        float[] currentSpeeds, float[] speeds, float brakingLimit, bool[] draftLine = null)
+        float[] currentSpeeds, float[] speeds, float brakingLimit, bool[] draftLine = null, bool respondToTraffic = true, float[] brakingFactors = null)
     {
         const float carLength = 2.9f;
         const float carWidth = 1.8f;
@@ -96,6 +96,11 @@ internal sealed class VehicleBehavior001 : IVehicleBehaviorModel
                 continue;
 
             float target = targets[i];
+            if (!respondToTraffic)
+            {
+                lanes[i] = Mathf.MoveTowards(lanes[i], target, 3f * seconds);
+                continue;
+            }
             float nearest = float.PositiveInfinity;
             int blocker = -1;
             for (int j = 0; j < lanes.Length; j++)
@@ -148,6 +153,9 @@ internal sealed class VehicleBehavior001 : IVehicleBehaviorModel
             }
         }
 
+        if (!respondToTraffic)
+            return;
+
         for (int pass = 0; pass < lanes.Length; pass++)
         {
             bool changed = false;
@@ -166,8 +174,9 @@ internal sealed class VehicleBehavior001 : IVehicleBehaviorModel
                     // Reserve a step of closing distance before applying the stopping-distance bound.
                     float closingSpeed = Mathf.Max(0f, currentSpeeds[i] - speeds[j]);
                     float brakingDistance = Mathf.Max(0f, clearance - closingSpeed * seconds);
-                    float limit = speeds[j] + Mathf.Sqrt(2f * brakingLimit * brakingDistance);
-                    limit = Mathf.Max(limit, currentSpeeds[i] - brakingLimit * seconds);
+                    float carBrakingLimit = brakingLimit * (brakingFactors == null ? 1f : brakingFactors[i]);
+                    float limit = speeds[j] + Mathf.Sqrt(2f * carBrakingLimit * brakingDistance);
+                    limit = Mathf.Max(limit, currentSpeeds[i] - carBrakingLimit * seconds);
                     if (speeds[i] > limit)
                     {
                         speeds[i] = limit;

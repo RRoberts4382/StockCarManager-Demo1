@@ -36,6 +36,7 @@
     125,
     250
   ],
+  "smoothLayoutBanking": true,
   "layoutPoints": [
     {
       "x": -99.06,

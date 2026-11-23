@@ -1,0 +1,60 @@
+{
+  "displayName": "Super Late Model Gen6 Chevy",
+  "inCarCamera": {
+    "anchor": "DriverEye",
+    "position": {
+      "x": -0.241457,
+      "y": 0.558849,
+      "z": 0.082954
+    }
+  },
+  "rearviewCamera": {
+    "x": 0.0,
+    "y": 0.65,
+    "z": -1.58
+  },
+  "roofNumber": {
+    "anchor": "RoofNumber",
+    "position": {
+      "x": -0.017119,
+      "y": 0.674269,
+      "z": -0.229623
+    }
+  },
+  "leftNumber": {
+    "anchor": "LeftNumber",
+    "position": {
+      "x": -0.571913,
+      "y": 0.265904,
+      "z": -0.009456
+    }
+  },
+  "rightNumber": {
+    "anchor": "RightNumber",
+    "position": {
+      "x": 0.571913,
+      "y": 0.265904,
+      "z": -0.009456
+    }
+  },
+  "roofNumberScale": 1.17,
+  "sideNumberScale": 1.4,
+  "lodModels": [
+    "LateModelStockCarLOD1",
+    "LateModelStockCarLOD2",
+    "LateModelStockCarLOD3",
+    "LateModelStockCarLOD4",
+    "LateModelStockCar"
+  ],
+  "roofNumberPitch": 0.0,
+  "leftNumberYaw": 0.0,
+  "rightNumberYaw": 0.0,
+  "roofNumberMaxSize": {
+    "x": 0.6,
+    "y": 0.44
+  },
+  "sideNumberMaxSize": {
+    "x": 0.5,
+    "y": 0.33
+  }
+}

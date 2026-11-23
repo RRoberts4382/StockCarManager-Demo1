@@ -4,7 +4,7 @@ using UnityEngine;
 
 internal static class TrackUtilityGeometry
 {
-    public static string Validate(TrackDefinition track)
+    public static string ValidateMarkers(TrackDefinition track)
     {
         var markers = track.raceMarkers;
         if (markers != null)
@@ -20,6 +20,11 @@ internal static class TrackUtilityGeometry
             }
         }
 
+        return null;
+    }
+
+    public static string ValidatePitRoad(TrackDefinition track)
+    {
         var pit = track.pitRoad;
         if (pit?.enabled != true)
             return null;
@@ -215,28 +220,47 @@ internal static class TrackUtilityGeometry
         return points;
     }
 
+    private sealed class ProjectionSegments
+    {
+        internal readonly Vector3[] points;
+        internal readonly float[] distance;
+        internal ProjectionSegments(TrackLayout main)
+        {
+            points = new Vector3[main.Samples + 1];
+            distance = new float[points.Length];
+            for (int i = 0; i < main.Samples; i++)
+            {
+                distance[i] = main.SampleDistance(i);
+                points[i] = main.Sample(distance[i], out _, out _);
+                points[i].y = 0f;
+            }
+            points[main.Samples] = points[0];
+        }
+    }
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<TrackLayout, ProjectionSegments>
+        projectionCache = new System.Runtime.CompilerServices.ConditionalWeakTable<TrackLayout, ProjectionSegments>();
+
     internal static float ClosestMainDistance(TrackLayout main, float lap, Vector3 position)
     {
-        float bestDistance = 0f;
-        float bestError = float.PositiveInfinity;
-        Vector3 start = main.Sample(0f, out _, out _);
-        start.y = position.y;
+        // TrackLayout is immutable. Reuse its exact sampled polyline instead of
+        // resampling every segment for every pavement vertex / height query.
+        var cached = projectionCache.GetValue(main, layout => new ProjectionSegments(layout));
+        float bestDistance = 0f, bestError = float.PositiveInfinity;
+        position.y = 0f;
         for (int i = 0; i < main.Samples; i++)
         {
-            float startDistance = main.SampleDistance(i);
-            float endDistance = i + 1 == main.Samples ? lap : main.SampleDistance(i + 1);
-            Vector3 end = main.Sample(endDistance, out _, out _);
-            end.y = position.y;
+            Vector3 start = cached.points[i], end = cached.points[i + 1];
+            float dx = Mathf.Max(0f, Mathf.Max(start.x, end.x) < position.x ? position.x - Mathf.Max(start.x, end.x) : Mathf.Min(start.x, end.x) - position.x);
+            float dz = Mathf.Max(0f, Mathf.Max(start.z, end.z) < position.z ? position.z - Mathf.Max(start.z, end.z) : Mathf.Min(start.z, end.z) - position.z);
+            if (dx * dx + dz * dz > bestError) continue;
             Vector3 segment = end - start;
-            float blend = segment.sqrMagnitude > 0f
-                ? Mathf.Clamp01(Vector3.Dot(position - start, segment) / segment.sqrMagnitude) : 0f;
+            float blend = segment.sqrMagnitude > 0f ? Mathf.Clamp01(Vector3.Dot(position - start, segment) / segment.sqrMagnitude) : 0f;
             float error = (position - Vector3.Lerp(start, end, blend)).sqrMagnitude;
             if (error < bestError)
             {
                 bestError = error;
-                bestDistance = Mathf.Lerp(startDistance, endDistance, blend);
+                bestDistance = Mathf.Lerp(cached.distance[i], i + 1 == main.Samples ? lap : cached.distance[i + 1], blend);
             }
-            start = end;
         }
         return bestDistance;
     }

@@ -44,9 +44,12 @@ internal sealed class TrackState001Stages
     private bool overtimeAttempt;
     private int nextTestCaution;
     private readonly bool scriptedCautions;
+    private readonly bool widenRestartFormationFirst;
     private static readonly int[] TestCautionLaps = { 2, 23, 40, 58 };
     private float formationBlend;
     private float doubleFileBlend;
+    private float doubleFileSpacingBlend;
+    private bool restartHeld;
 
     public SessionTrackState State { get; private set; } = SessionTrackState.TrackOpen;
     public bool PitOpen { get; private set; } = true;
@@ -60,12 +63,17 @@ internal sealed class TrackState001Stages
         (State == SessionTrackState.TrackOpen || State == SessionTrackState.WhiteFlag);
     public int FreePassCarIndex => freePassCar;
     public bool HasPaceCar => pace != null;
-    public bool OneToGo => State == SessionTrackState.Caution && paceMerged && paceDistance >= doubleFileAt;
+    internal bool PaceReturning => paceReturning;
+    internal float PacePitEntry => peelOffAt;
+    internal bool ReleasingRestartLanes { get; private set; }
+    public bool OneToGo => State == SessionTrackState.Caution && !restartHeld && paceMerged && paceDistance >= doubleFileAt;
+    internal bool StageWhiteOverriddenByCaution { get; private set; }
     public bool LightsVisible => State == SessionTrackState.Caution && !paceReturning &&
         (!paceMerged || paceDistance < doubleFileAt) && cautionTime % 0.5f < 0.25f;
 
     public TrackState001Stages(TrackPitTraffic pit, float lapLength, float startLine,
-        float zoneStart, float zoneEnd, int count, System.Random random, bool scriptedCautions = false)
+        float zoneStart, float zoneEnd, int count, System.Random random, bool scriptedCautions = false,
+        bool widenRestartFormationFirst = false)
     {
         this.pit = pit;
         this.lapLength = lapLength;
@@ -74,6 +82,7 @@ internal sealed class TrackState001Stages
         this.zoneEnd = zoneEnd;
         this.random = random;
         this.scriptedCautions = scriptedCautions;
+        this.widenRestartFormationFirst = widenRestartFormationFirst;
         ranks = new int[count];
         lapOffsets = new float[count];
         speeds = new float[count];
@@ -86,8 +95,9 @@ internal sealed class TrackState001Stages
             speeds[i] = PaceSpeed;
     }
 
-    public void BeforeStep(TrackPitTraffic.Car[] cars, float seconds)
+    public void BeforeStep(TrackPitTraffic.Car[] cars, float seconds, bool restartReady = true)
     {
+        restartHeld = !restartReady;
         if (ControlsField && cars[leader].Retired)
         {
             for (int i = 0; i < cars.Length; i++)
@@ -98,11 +108,23 @@ internal sealed class TrackState001Stages
         }
         formationBlend = Mathf.MoveTowards(formationBlend, ControlsField || earlyStageEnd.HasValue ? 1f : 0f, seconds / 3f);
         doubleFileBlend = Mathf.MoveTowards(doubleFileBlend, doubleFile ? 1f : 0f, seconds / 3f);
+        // Keep enough distance between bumpers while drivers move out into their restart lanes.
+        doubleFileSpacingBlend = widenRestartFormationFirst
+            ? Mathf.MoveTowards(doubleFileSpacingBlend, doubleFileBlend >= 1f ? 1f : 0f, seconds / 4f)
+            : doubleFileBlend;
         if (paceReturning)
             pit.Advance(pace, seconds, PaceSpeed, pit.ParkingDistance);
 
         if (State != SessionTrackState.Caution)
             return;
+
+        // Keep the pace car out for another lap when a safety crew is still on the course.
+        if (!restartReady && paceMerged && !paceReturning && paceDistance >= doubleFileAt - lapLength * .5f)
+        {
+            doubleFileAt += lapLength;
+            peelOffAt += lapLength;
+            restartAt += lapLength;
+        }
 
         if (!sortingForRestart && paceMerged && paceDistance >= doubleFileAt - lapLength * 0.5f)
         {
@@ -184,7 +206,8 @@ internal sealed class TrackState001Stages
 
     public void PreserveCautionOrder(TrackPitTraffic.Car[] cars, float[] stepSpeeds, float seconds)
     {
-        if ((!ControlsField && !earlyStageEnd.HasValue) || doubleFile)
+        if ((!ControlsField && !earlyStageEnd.HasValue) ||
+            doubleFile && (!widenRestartFormationFirst || doubleFileSpacingBlend > 0f))
             return;
 
         PreserveOrder(lapLength, stepSpeeds, seconds, carAhead, gapAhead,
@@ -244,15 +267,23 @@ internal sealed class TrackState001Stages
         stepSpeeds[index] > 0f && !cars[index].InPit && !cars[index].Retired &&
         (index != freePassCar || freePassLaneBlend == 0f) && yieldLane[index] == 0f;
 
-    public void AdvanceFinishedCar(TrackPitTraffic.Car car, float seconds, float stall)
+    public float FinishedCarSpeed(TrackPitTraffic.Car car, float seconds, float stall)
     {
         if (returningCars.Add(car))
             pit.CallToStall(car, stall);
-        pit.Advance(car, seconds, PaceSpeed, stall);
+        return pit.PlannedSpeed(car, PaceSpeed, FinishStop(car, stall), seconds);
     }
 
-    public void AfterStep(RaceSessionRun run, TrackPitTraffic.Car[] cars)
+    public void AdvanceFinishedCar(TrackPitTraffic.Car car, float seconds, float speed, float stall) =>
+        pit.Advance(car, seconds, speed, FinishStop(car, stall));
+
+    private static float FinishStop(TrackPitTraffic.Car car, float stall) =>
+        car.InPit && car.PitDistance > stall ? float.PositiveInfinity : stall;
+
+    public void AfterStep(RaceSessionRun run, TrackPitTraffic.Car[] cars, bool restartReady = true,
+        bool extendFinalCaution = false)
     {
+        restartHeld = !restartReady;
         if (State == SessionTrackState.FinishUnderCaution || State == SessionTrackState.Checkered)
             return;
 
@@ -265,15 +296,15 @@ internal sealed class TrackState001Stages
 
         if (!ControlsField && State != SessionTrackState.FinishUnderCaution)
         {
-            int stageEnd = breaksStarted < RaceSession.TestBonusStages
-                ? earlyStageEnd ?? (breaksStarted + 1) * RaceSession.TestOpeningStageLaps : run.TargetLaps;
+            int stageEnd = breaksStarted < run.BonusStageCount
+                ? earlyStageEnd ?? run.StageEndAt(breaksStarted) : run.TargetLaps;
             if (run.LeaderLaps >= stageEnd - 2)
                 PitOpen = false;
             if (!run.FinishSuspended && run.LeaderLaps >= stageEnd - 1)
                 State = SessionTrackState.WhiteFlag;
             if (!run.FinishSuspended && run.LeaderLaps >= stageEnd)
             {
-                if (breaksStarted < RaceSession.TestBonusStages)
+                if (breaksStarted < run.BonusStageCount)
                     BeginStageBreak(run, cars);
                 else
                     State = SessionTrackState.Checkered;
@@ -286,6 +317,15 @@ internal sealed class TrackState001Stages
             BeginYellow(yellowAt, run, cars);
         if (State != SessionTrackState.Caution)
             return;
+
+        if (extendFinalCaution && breaksStarted >= run.BonusStageCount &&
+            !run.FinishSuspended && run.TargetLaps - run.LeaderLaps <= 1)
+        {
+            // A long cleanup can run past the original finish while the field is still pacing.
+            // Use the existing overtime restart so classified cars never leave an active formation.
+            overtime = true;
+            run.SuspendFinish();
+        }
 
         if (!caughtUp)
         {
@@ -314,9 +354,12 @@ internal sealed class TrackState001Stages
         if (lead >= doubleFileAt && fieldSingleFile)
             doubleFile = true;
 
-        if (lead >= restartAt && paceReturning && caughtUp && fieldSingleFile)
+        bool restartRowsReady = !widenRestartFormationFirst || doubleFileSpacingBlend >= 1f;
+        if (lead >= restartAt && paceReturning && caughtUp && fieldSingleFile && restartRowsReady && restartReady)
         {
             State = SessionTrackState.TrackOpen;
+            ReleasingRestartLanes = widenRestartFormationFirst;
+            pit.CombinedRoute = false;
             PitOpen = true;
             if (overtime)
             {
@@ -338,7 +381,7 @@ internal sealed class TrackState001Stages
 
         cautionCause = causingCarIndex;
         int remaining = run.StageEnd - run.LeaderLaps;
-        if (breaksStarted < RaceSession.TestBonusStages && remaining <= 10)
+        if (breaksStarted < run.BonusStageCount && remaining <= 10)
         {
             // Keep the pit-closure and one-to-go sequence before awarding stage points.
             earlyStageEnd = Math.Min(run.StageEnd, run.LeaderLaps + 2);
@@ -346,12 +389,13 @@ internal sealed class TrackState001Stages
             PrepareFormation(run, cars);
             State = SessionTrackState.StageEndingUnderCaution;
             PitOpen = false;
-            if (remaining == 1)
+            StageWhiteOverriddenByCaution = remaining == 1;
+            if (StageWhiteOverriddenByCaution)
                 State = SessionTrackState.WhiteFlag;
             return;
         }
 
-        if (breaksStarted >= RaceSession.TestBonusStages && State == SessionTrackState.WhiteFlag)
+        if (breaksStarted >= run.BonusStageCount && State == SessionTrackState.WhiteFlag)
         {
             run.FreezeFinish();
             PitOpen = false;
@@ -359,7 +403,7 @@ internal sealed class TrackState001Stages
             return;
         }
 
-        overtime = breaksStarted >= RaceSession.TestBonusStages && (overtimeAttempt || remaining <= 5);
+        overtime = breaksStarted >= run.BonusStageCount && (overtimeAttempt || remaining <= 5);
         if (overtime)
             run.SuspendFinish();
 
@@ -370,6 +414,7 @@ internal sealed class TrackState001Stages
 
     private void BeginYellow(float lapAnchor, RaceSessionRun run, TrackPitTraffic.Car[] cars)
     {
+        pit.CombinedRoute = true;
         freePassCar = -1;
         freePassInProgress = false;
         freePassLaneBlend = 0f;
@@ -415,6 +460,7 @@ internal sealed class TrackState001Stages
         freePassInProgress = false;
         freePassLaneBlend = 0f;
         earlyStageEnd = null;
+        StageWhiteOverriddenByCaution = false;
         PrepareFormation(run, cars);
         yellowAt = NextMarker(cars[leader].TrackDistance + 0.01f, startLine);
         State = SessionTrackState.StageComplete;
@@ -425,6 +471,18 @@ internal sealed class TrackState001Stages
         UpdatePitFormation(run, cars);
         caughtUp = false;
         doubleFile = false;
+        if (widenRestartFormationFirst)
+        {
+            doubleFileBlend = 0f;
+            doubleFileSpacingBlend = 0f;
+            ReleasingRestartLanes = false;
+        }
+    }
+
+    internal void FinishRestartLaneRelease()
+    {
+        if (formationBlend == 0f)
+            ReleasingRestartLanes = false;
     }
 
     public void UpdatePitFormation(RaceSessionRun run, TrackPitTraffic.Car[] cars)
@@ -462,7 +520,7 @@ internal sealed class TrackState001Stages
         marker + Mathf.Ceil((distance - marker) / lapLength) * lapLength;
 
     private float FormationOffset(int index) =>
-        lapOffsets[index] + RowSpacing * Mathf.Lerp(ranks[index], ranks[index] / 2, doubleFileBlend);
+        lapOffsets[index] + RowSpacing * Mathf.Lerp(ranks[index], ranks[index] / 2, doubleFileSpacingBlend);
 
     public float Lane(int index, float raceLane, float width, float inside) =>
         Mathf.Lerp(

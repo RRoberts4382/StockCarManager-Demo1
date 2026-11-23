@@ -1,0 +1,71 @@
+{
+  "displayName": "Cup Impala",
+  "inCarCamera": {
+    "anchor": "",
+    "position": {
+      "x": -0.218799,
+      "y": 0.607245,
+      "z": -0.020394
+    }
+  },
+  "rearviewCamera": {
+    "x": 0,
+    "y": 0.95,
+    "z": -1.58
+  },
+  "rearviewMirrorOffset": {
+    "x": 0,
+    "y": 0
+  },
+  "dashboardImage": "",
+  "gauges": [
+    {
+      "source": "Rpm",
+      "label": "RPM",
+      "large": true
+    },
+    {
+      "source": "Fuel",
+      "label": "FUEL"
+    },
+    {
+      "source": "Throttle",
+      "label": "THROTTLE"
+    },
+    {
+      "source": "Brake",
+      "label": "BRAKE"
+    }
+  ],
+  "roofNumber": {
+    "anchor": "",
+    "position": {
+      "x": -0.001083,
+      "y": 0.755,
+      "z": -0.21
+    }
+  },
+  "leftNumber": {
+    "anchor": "RightNumber",
+    "position": {
+      "x": -0.602823,
+      "y": 0.338103,
+      "z": -0.003135
+    }
+  },
+  "rightNumber": {
+    "anchor": "LeftNumber",
+    "position": {
+      "x": 0.602823,
+      "y": 0.338103,
+      "z": -0.003135
+    }
+  },
+  "lodModels": [
+    "ImpalaLOD1",
+    "ImpalaLOD2",
+    "ImpalaLOD3",
+    "ImpalaLOD4",
+    "Impala"
+  ]
+}

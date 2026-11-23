@@ -1,0 +1,17 @@
+{
+  "geometry": "reimported FBX",
+  "hauler_stalls": 40,
+  "hauler_width_m": 3.12,
+  "hauler_length_m": 20.129,
+  "minimum_space_between_haulers_m": 1.68,
+  "verified_parking_surface_probes": 4760,
+  "recovery_drops_retained": 40,
+  "recovery_trajectory_probes": 76934,
+  "clearance_to_3_5m_tow_envelope_m": {
+    "loaded": 26.986,
+    "returning": 5.0089,
+    "responding": 68.2003
+  },
+  "turn_four_loaded_tow_probes": 665,
+  "turn_four_minimum_separating_axis_m": 7.683
+}

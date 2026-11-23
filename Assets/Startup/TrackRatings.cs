@@ -1,34 +1,39 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 internal static class TrackRatings
 {
     private const float MaxAeroLength = 2.5f;
-    private const float HandlingBandStart = 1f;
-    private const float HandlingBandEnd = 1.5f;
 
-    public static void Apply(TrackDefinition track, float shortest, float longest)
+    public static IEnumerable<(string Title, float Value, CarComponent? Component)> DisplayAttributes(TrackWeights weights)
+    {
+        foreach (var component in CarComponentDisplay.Order)
+        {
+            var (title, value) = component switch
+            {
+                CarComponent.Engine => ("Horsepower", weights.horsepower),
+                CarComponent.Transmission => ("Transmission", weights.transmission),
+                CarComponent.Suspension => ("Suspension", weights.suspension),
+                CarComponent.Brakes => ("Brakes", weights.brakes),
+                CarComponent.Aerodynamics => ("Aero", weights.aerodynamics),
+                _ => throw new ArgumentOutOfRangeException(nameof(component), component, "Unknown track attribute component.")
+            };
+            yield return (title, value, component);
+        }
+        yield return ("Tire Wear", weights.surfaceRoughness, null);
+    }
+
+    public static float TransmissionWeight(TrackDefinition track) =>
+        track.majorStyle == "Road" ? 1f : track.lengthMiles <= 1f ? 0.25f : 0f;
+
+    public static void Apply(TrackDefinition track, float shortest)
     {
         float length = track.lengthMiles;
         var weights = track.weights;
-        weights.aerodynamics = length >= MaxAeroLength ? 1f : Mathf.InverseLerp(shortest, MaxAeroLength, length);
-        weights.handling = length < HandlingBandStart
-            ? Mathf.InverseLerp(shortest, HandlingBandStart, length)
-            : length > HandlingBandEnd ? 1f - Mathf.InverseLerp(HandlingBandEnd, longest, length) : 1f;
-        weights.brakes = Mathf.Approximately(length, shortest) ? 1f : 0f;
-
-        if (track.name.IndexOf("Darlington", StringComparison.OrdinalIgnoreCase) >= 0)
-            weights.tireWear = 1f;
-        else if (!weights.ratingsAssigned)
-            weights.tireWear = TireWearForName(track.name);
-        weights.ratingsAssigned = true;
-    }
-
-    private static float TireWearForName(string name)
-    {
-        uint hash = 2166136261;
-        foreach (char letter in name.Trim().ToUpperInvariant())
-            hash = unchecked((hash ^ letter) * 16777619);
-        return 0.4f + (hash % 201) / 1000f;
+        weights.transmission = TransmissionWeight(track);
+        weights.aerodynamics = track.majorStyle == "Road" ? 0.25f :
+            length >= MaxAeroLength ? 1f : Mathf.InverseLerp(shortest, MaxAeroLength, length);
+        weights.brakes = track.majorStyle == "Road" || Mathf.Approximately(length, shortest) ? 1f : 0f;
     }
 }

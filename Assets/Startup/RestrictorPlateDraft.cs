@@ -2,6 +2,7 @@ using UnityEngine;
 
 internal sealed class RestrictorPlateDraft
 {
+    internal const float MaximumDraftBoostMph = 5f;
     private const float MphToMetersPerSecond = TrackDefinition.MetersPerMile / 3600f;
     private const float WakeRange = 65f * TrackDefinition.MetersPerFoot;
     private const float JoinRange = 120f * TrackDefinition.MetersPerFoot;
@@ -21,7 +22,7 @@ internal sealed class RestrictorPlateDraft
     public bool[] InLine => inLine;
 
     public void Update(float lapLength, float seconds, RaceSessionRun run, bool[] onTrack,
-        float[] distances, float[] widths, float[] lanes, float[] targets, float[] speeds, float[] pitApproach)
+        float[] distances, float[] widths, float[] lanes, float[] targets, float[] speeds, float[] pitApproach, bool holdDraftingLane = false)
     {
         for (int i = 0; i < active.Length; i++)
         {
@@ -67,10 +68,16 @@ internal sealed class RestrictorPlateDraft
                 }
             }
 
-            inLine[i] = frontWake > 0f;
-            float targetBoost = Mathf.Max(5f * frontWake, 4f * rearWake) * MphToMetersPerSecond;
+            inLine[i] = frontWake > 0f || holdDraftingLane && rearWake > 0f;
+            float targetBoost = Mathf.Max(MaximumDraftBoostMph * frontWake, 4f * rearWake) * MphToMetersPerSecond;
             boost[i] = Mathf.MoveTowards(boost[i], targetBoost, (targetBoost > boost[i] ? 3f : 5f) * MphToMetersPerSecond * seconds);
-            if (partner >= 0)
+            if (holdDraftingLane && inLine[i])
+            {
+                // This includes the leading car being pushed: it must not drag its
+                // whole line down to the solo low-line target through every turn.
+                targets[i] = lanes[i];
+            }
+            else if (partner >= 0)
             {
                 float edge = Mathf.Max(0f, widths[i] * 0.5f - 1.1f);
                 targets[i] = Mathf.Clamp(lanes[partner], -edge, edge);

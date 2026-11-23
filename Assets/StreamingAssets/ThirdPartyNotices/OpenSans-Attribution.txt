@@ -1,0 +1,5 @@
+Open Sans
+Copyright 2020 The Open Sans Project Authors (https://github.com/googlefonts/opensans)
+License: SIL Open Font License 1.1; full text in OpenSans-OFL.txt.
+Bundled files: OpenSans-Regular.ttf, OpenSans-Bold.ttf, OpenSans-Italic.ttf, OpenSans-BoldItalic.ttf.
+Source: user-provided Google Fonts download, Open_Sans/static. Font files are unmodified.

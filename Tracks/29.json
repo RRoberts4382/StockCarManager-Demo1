@@ -1,0 +1,951 @@
+{
+  "id": 29,
+  "name": "South Boston Speedway",
+  "location": {
+    "city": "South Boston",
+    "state": "VA"
+  },
+  "lengthMiles": 0.4,
+  "qualifyingReferenceMph": 98.11938,
+  "widthMeters": 13.716,
+  "surface": "Asphalt",
+  "majorStyle": "Oval",
+  "minorStyle": "Oval",
+  "banking": {
+    "turns12": 12,
+    "turns34": 12,
+    "frontStraight": 10,
+    "backStraight": 10
+  },
+  "raceLaps": 100,
+  "pitStalls": 24,
+  "smoothLayoutBanking": true,
+  "layoutPoints": [
+    {
+      "x": -72.9698056994858,
+      "z": -56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -67.9406056994858,
+      "z": -56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -62.911405699485805,
+      "z": -56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -57.8822056994858,
+      "z": -56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -52.853005699485806,
+      "z": -56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -47.8238056994858,
+      "z": -56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -42.7946056994858,
+      "z": -56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -37.765405699485804,
+      "z": -56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -32.7362056994858,
+      "z": -56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -27.707005699485798,
+      "z": -56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -22.677805699485802,
+      "z": -56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -17.6486056994858,
+      "z": -56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -12.619405699485796,
+      "z": -56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -7.590205699485793,
+      "z": -56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -2.561005699485804,
+      "z": -56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 2.468194300514199,
+      "z": -56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 7.497394300514202,
+      "z": -56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 12.526594300514205,
+      "z": -56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 17.555794300514208,
+      "z": -56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 22.584994300514197,
+      "z": -56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 27.6141943005142,
+      "z": -56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 32.6433943005142,
+      "z": -56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 37.672594300514206,
+      "z": -56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 42.70179430051421,
+      "z": -56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 47.73099430051421,
+      "z": -56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 52.7601943005142,
+      "z": -56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 57.78939430051422,
+      "z": -56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 62.81859430051419,
+      "z": -56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 67.8477943005142,
+      "z": -56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 72.8769943005142,
+      "z": -56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 77.89980384251848,
+      "z": -55.78257002245141,
+      "banking": 10.46986231403447,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 82.88287803235546,
+      "z": -55.115614819425666,
+      "banking": 11.396716902097834,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 87.78605381501622,
+      "z": -54.00443307524894,
+      "banking": 11.988875820963369,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 92.5698120664608,
+      "z": -52.457980807638215,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 97.19559615643655,
+      "z": -50.48872227276023,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 101.6261227112002,
+      "z": -48.11252950452853,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 105.82568211391543,
+      "z": -45.34855438754059,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 109.7604263207214,
+      "z": -42.219074294734526,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 113.39864167270254,
+      "z": -38.749312533911315,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 116.71100450492168,
+      "z": -34.96723505030582,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 119.6708174923319,
+      "z": -30.903325023764836,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 122.25422482764232,
+      "z": -26.590337177256707,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 124.44040449682463,
+      "z": -22.06303377696239,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 126.21173610253848,
+      "z": -17.35790445176189,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 127.55394288283509,
+      "z": -12.512872090343832,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 128.45620678048198,
+      "z": -7.566987186379164,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 128.91125563546115,
+      "z": -2.5601130953075,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 128.91542179787763,
+      "z": 2.467395260464089,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 128.4686716888641,
+      "z": 7.47501664834466,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 127.57460607122314,
+      "z": 12.422390122786894,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 126.24043102762643,
+      "z": 17.269640330616703,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 124.47689988028304,
+      "z": 21.977698902534907,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 122.29822652019944,
+      "z": 26.508619340406728,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 119.72197084458838,
+      "z": 30.82588286237808,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 116.76889722579065,
+      "z": 34.894692740735955,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 113.46280715243583,
+      "z": 38.682254760178964,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 109.8303473917392,
+      "z": 42.15804153603021,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 105.90079521912722,
+      "z": 45.29403856201461,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 101.70582244622044,
+      "z": 48.06497000447818,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 97.27924014908567,
+      "z": 50.448502423170176,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 92.6567261542231,
+      "z": 52.42542477661813,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 87.87553747872467,
+      "z": 53.97980326126975,
+      "banking": 11.991651460384876,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 82.97421004230864,
+      "z": 55.09910973641323,
+      "banking": 11.413111084711199,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 77.9922480715225,
+      "z": 55.77432269978337,
+      "banking": 10.485260935646169,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 72.9698056994858,
+      "z": 56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 67.9406056994858,
+      "z": 56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 62.9114056994858,
+      "z": 56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 57.882205699485795,
+      "z": 56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 52.85300569948579,
+      "z": 56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 47.82380569948579,
+      "z": 56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 42.794605699485786,
+      "z": 56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 37.76540569948578,
+      "z": 56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 32.73620569948578,
+      "z": 56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 27.707005699485777,
+      "z": 56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 22.677805699485774,
+      "z": 56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 17.648605699485827,
+      "z": 56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 12.619405699485824,
+      "z": 56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 7.590205699485821,
+      "z": 56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": 2.5610056994858184,
+      "z": 56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -2.4681943005141846,
+      "z": 56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -7.497394300514216,
+      "z": 56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -12.526594300514162,
+      "z": 56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -17.555794300514222,
+      "z": 56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -22.58499430051417,
+      "z": 56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -27.614194300514228,
+      "z": 56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -32.643394300514174,
+      "z": 56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -37.672594300514234,
+      "z": 56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -42.70179430051418,
+      "z": 56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -47.73099430051424,
+      "z": 56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -52.760194300514186,
+      "z": 56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -57.789394300514246,
+      "z": 56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -62.81859430051419,
+      "z": 56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -67.84779430051425,
+      "z": 56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -72.8769943005142,
+      "z": 56,
+      "banking": 10,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -77.89980384251854,
+      "z": 55.7825700224514,
+      "banking": 10.469862314034481,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -82.88287803235546,
+      "z": 55.115614819425666,
+      "banking": 11.396716902097834,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -87.78605381501627,
+      "z": 54.004433075248926,
+      "banking": 11.98887582096337,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -92.5698120664608,
+      "z": 52.457980807638215,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -97.1955961564365,
+      "z": 50.48872227276025,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -101.6261227112002,
+      "z": 48.11252950452853,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -105.82568211391539,
+      "z": 45.34855438754062,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -109.7604263207214,
+      "z": 42.219074294734526,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -113.39864167270261,
+      "z": 38.74931253391125,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -116.7110045049217,
+      "z": 34.96723505030579,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -119.67081749233195,
+      "z": 30.903325023764765,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -122.25422482764233,
+      "z": 26.590337177256686,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -124.44040449682467,
+      "z": 22.06303377696231,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -126.21173610253848,
+      "z": 17.357904451761865,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -127.55394288283509,
+      "z": 12.512872090343857,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -128.45620678048198,
+      "z": 7.566987186379139,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -128.91125563546115,
+      "z": 2.5601130953075373,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -128.91542179787763,
+      "z": -2.4673952604641265,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -128.4686716888641,
+      "z": -7.475016648344635,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -127.57460607122314,
+      "z": -12.422390122786942,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -126.24043102762643,
+      "z": -17.269640330616703,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -124.47689988028301,
+      "z": -21.977698902534964,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -122.29822652019944,
+      "z": -26.508619340406728,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -119.72197084458837,
+      "z": -30.825882862378116,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -116.76889722579061,
+      "z": -34.89469274073601,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -113.46280715243573,
+      "z": -38.68225476017905,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -109.83034739173917,
+      "z": -42.15804153603024,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -105.90079521912713,
+      "z": -45.294038562014684,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -101.7058224462204,
+      "z": -48.0649700044782,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -97.27924014908558,
+      "z": -50.44850242317022,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -92.65672615422305,
+      "z": -52.42542477661815,
+      "banking": 12,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -87.87553747872455,
+      "z": -53.97980326126978,
+      "banking": 11.991651460384873,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -82.97421004230857,
+      "z": -55.09910973641324,
+      "banking": 11.413111084711185,
+      "apronWidthMeters": 3
+    },
+    {
+      "x": -77.99224807152237,
+      "z": -55.774322699783376,
+      "banking": 10.485260935646147,
+      "apronWidthMeters": 3
+    }
+  ],
+  "raceMarkers": {
+    "hasStartFinish": true,
+    "startFinish": 0.11389703770524791,
+    "hasRestartZone": true,
+    "restartZoneStart": 0.06053678657186686,
+    "restartZoneEnd": 0.09471220214492022
+  },
+  "pitRoad": {
+    "enabled": true,
+    "widthMeters": 10,
+    "speedLimitMph": 30,
+    "speedLimitStart": 0.05,
+    "speedLimitEnd": 0.95,
+    "points": [
+      {
+        "x": -68.9698056994858,
+        "z": -34
+      },
+      {
+        "x": 68.9698056994858,
+        "z": -34
+      }
+    ],
+    "entrance": [
+      {
+        "x": -96.9698056994858,
+        "z": -45.8
+      },
+      {
+        "x": -87.9698056994858,
+        "z": -41
+      },
+      {
+        "x": -78.9698056994858,
+        "z": -37.5
+      },
+      {
+        "x": -68.9698056994858,
+        "z": -34
+      }
+    ],
+    "exit": [
+      {
+        "x": 68.9698056994858,
+        "z": -34
+      },
+      {
+        "x": 78.9698056994858,
+        "z": -37.5
+      },
+      {
+        "x": 87.9698056994858,
+        "z": -41
+      },
+      {
+        "x": 96.9698056994858,
+        "z": -45.8
+      }
+    ],
+    "stalls": [
+      {
+        "x": -57.5,
+        "z": -30.9
+      },
+      {
+        "x": -52.5,
+        "z": -30.9
+      },
+      {
+        "x": -47.5,
+        "z": -30.9
+      },
+      {
+        "x": -42.5,
+        "z": -30.9
+      },
+      {
+        "x": -37.5,
+        "z": -30.9
+      },
+      {
+        "x": -32.5,
+        "z": -30.9
+      },
+      {
+        "x": -27.5,
+        "z": -30.9
+      },
+      {
+        "x": -22.5,
+        "z": -30.9
+      },
+      {
+        "x": -17.5,
+        "z": -30.9
+      },
+      {
+        "x": -12.5,
+        "z": -30.9
+      },
+      {
+        "x": -7.5,
+        "z": -30.9
+      },
+      {
+        "x": -2.5,
+        "z": -30.9
+      },
+      {
+        "x": 2.5,
+        "z": -30.9
+      },
+      {
+        "x": 7.5,
+        "z": -30.9
+      },
+      {
+        "x": 12.5,
+        "z": -30.9
+      },
+      {
+        "x": 17.5,
+        "z": -30.9
+      },
+      {
+        "x": 22.5,
+        "z": -30.9
+      },
+      {
+        "x": 27.5,
+        "z": -30.9
+      },
+      {
+        "x": 32.5,
+        "z": -30.9
+      },
+      {
+        "x": 37.5,
+        "z": -30.9
+      },
+      {
+        "x": 42.5,
+        "z": -30.9
+      },
+      {
+        "x": 47.5,
+        "z": -30.9
+      },
+      {
+        "x": 52.5,
+        "z": -30.9
+      },
+      {
+        "x": 57.5,
+        "z": -30.9
+      }
+    ]
+  }
+}

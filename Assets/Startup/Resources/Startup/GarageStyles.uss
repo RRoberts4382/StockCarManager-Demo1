@@ -1,0 +1,852 @@
+/* Attached only to the career and race-event garage roots. */
+.garage-styled,
+.garage-styled Label,
+.garage-styled Button,
+.garage-styled .unity-base-field__input {
+    -unity-font-definition: url("../Fonts/OpenSans/OpenSans-Bold.ttf");
+    -unity-font-style: normal;
+}
+
+.garage-styled .team-header-name,
+.garage-styled .team-header-series-title {
+    -unity-font-definition: url("../Fonts/SCMUprightDisplay-Regular.ttf");
+    -unity-font-style: normal;
+}
+
+.event-garage-screen {
+    background-color: #10151e;
+    color: #f5f5f5;
+}
+
+.event-garage-screen > .garage-header,
+.event-garage-screen > .garage-footer {
+    margin: 0;
+    padding-left: 12px;
+    padding-right: 12px;
+    background-color: #10151e;
+}
+
+.event-garage-screen > .garage-header {
+    border-bottom-width: 1px;
+    border-bottom-color: #009bdd;
+}
+
+.event-garage-screen .garage-toolbar {
+    margin: 0 16px;
+    padding: 4px 6px;
+    background-color: #10151e;
+}
+
+.event-garage-screen .garage-footer .settings-button {
+    min-height: 35px;
+    padding-left: 6px;
+    padding-right: 6px;
+}
+
+.event-garage-screen .garage-footer > .settings-button {
+    flex-grow: 1;
+    flex-basis: auto;
+}
+
+.event-garage-screen .garage-footer .nav-button-selected {
+    background-color: #34495f;
+    border-color: #009bdd;
+    color: #f5f5f5;
+}
+
+.event-garage-screen .event-garage-page .event-detail-panel.team-home-panel {
+    margin-top: 12px;
+    padding-top: 15px;
+    background-color: transparent;
+    border-color: transparent;
+}
+
+.event-garage-screen .event-garage-page .team-home-panel > .team-home-heading {
+    margin: 0;
+    color: #009bdd;
+}
+
+.event-garage-screen .event-garage-page .settings-field {
+    flex-grow: 0;
+    flex-basis: auto;
+}
+
+.event-garage-screen .event-garage-page #garageStartingFuel .unity-base-text-field__input {
+    --unity-cursor-color: #f5f5f5;
+}
+
+.event-garage-screen .garage-simulation-controls > .unity-dropdown-field {
+    flex-grow: 0;
+    flex-basis: auto;
+}
+
+.garage-styled .garage-legacy-dialog {
+    width: 440px;
+    max-width: 90%;
+    background-color: #10151e;
+    border-color: #009bdd;
+}
+
+.garage-styled .garage-legacy-dialog.car-options-dialog {
+    width: 520px;
+}
+
+.garage-styled .garage-legacy-dialog > .settings-footer {
+    justify-content: flex-end;
+}
+
+.event-garage-screen .setup-editor .setup-corner {
+    background-color: rgba(16, 21, 30, 0.94);
+    border-width: 1px;
+    border-color: #009bdd;
+    border-radius: 8px;
+}
+
+.event-garage-screen .setup-editor .setup-footer {
+    border-top-width: 1px;
+    border-top-color: #009bdd;
+}
+
+.event-garage-screen .setup-editor Button {
+    border-radius: 8px;
+}
+
+/* Keep the Event chassis panel at the bottom of the available body. */
+.event-garage-screen > .garage-event-host {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-height: 0;
+    margin: 0 16px;
+}
+
+.garage-event-host > .event-information-page {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-height: 0;
+}
+
+.event-garage-screen .event-information-page > .event-overview {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-height: 0;
+    flex-wrap: nowrap;
+    margin-bottom: 0;
+}
+
+.event-garage-screen .event-information-page .event-detail-panel.team-home-panel {
+    margin: 12px 5px 5px;
+    padding: 15px 9px 6px;
+    background-color: transparent;
+    border-color: transparent;
+}
+
+.event-garage-screen .event-information-page > .event-overview > .event-detail-panel {
+    flex-basis: 0;
+    flex-grow: 1;
+}
+
+.event-garage-screen .event-information-page .team-home-panel > .team-home-heading {
+    min-height: 0;
+    margin: 0;
+    white-space: nowrap;
+}
+
+.event-garage-screen .event-information-page .event-detail-panel > .garage-detail {
+    min-height: 0;
+    margin: 0 0 3px;
+}
+
+.event-garage-screen .event-information-page .event-track-outline {
+    height: 66px;
+    flex-grow: 1;
+    margin: 3px 0;
+}
+
+.event-garage-screen .event-information-page .track-ratings {
+    flex-wrap: nowrap;
+    margin: 2px 0 0;
+}
+
+.event-garage-screen .event-information-page .rating-column {
+    flex-basis: 0;
+    min-width: 40px;
+    margin: 0 2px 3px;
+}
+
+.event-garage-screen .event-information-page .track-attribute-icon {
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    align-self: center;
+    margin: 2px 0 0;
+}
+
+.event-garage-screen .event-information-page .rating-well {
+    height: 19px;
+}
+
+.event-garage-screen .event-information-page .rating-label {
+    min-height: 0;
+    font-size: 12px;
+    margin: 0;
+}
+
+.event-garage-screen .event-information-page .schedule-race {
+    min-height: 0;
+    flex-shrink: 0;
+    padding: 3px 5px;
+    margin: 0 0 3px;
+}
+
+.event-garage-screen .event-information-page .event-session-date {
+    color: #55c4ef;
+}
+
+.event-garage-screen .event-component-strip {
+    flex-direction: row;
+}
+
+.event-garage-screen .event-component-strip .shop-component-row {
+    flex-direction: column;
+    flex-basis: 0;
+    flex-grow: 1;
+    align-items: stretch;
+    min-width: 0;
+    min-height: 0;
+    padding: 2px 7px;
+    border-bottom-width: 0;
+    border-right-width: 1px;
+    border-right-color: rgba(190, 222, 239, 0.22);
+}
+
+.event-garage-screen .event-component-strip .shop-component-row.event-component-last {
+    border-right-width: 0;
+}
+
+.event-garage-screen .event-component-strip .shop-component-icon {
+    width: 24px;
+    height: 24px;
+    margin: 0 0 2px;
+}
+
+.event-garage-screen .event-component-strip .shop-component-metric,
+.event-garage-screen .event-component-strip .shop-component-service {
+    flex-grow: 0;
+    flex-basis: auto;
+    padding: 0;
+    margin-bottom: 2px;
+}
+
+.event-garage-screen .event-component-strip .shop-component-caption {
+    margin: 0;
+}
+
+.event-garage-screen .event-information-page > .event-selected-car {
+    flex-shrink: 0;
+    padding-bottom: 4px;
+}
+
+.event-garage-screen .event-selected-car .shop-component-row {
+    flex-direction: row;
+    align-items: center;
+    padding: 0 7px;
+}
+
+.event-garage-screen .event-selected-car .shop-component-metrics {
+    flex-grow: 1;
+    min-width: 0;
+}
+
+.event-garage-screen .event-selected-car .shop-component-metric {
+    margin-bottom: 0;
+}
+
+.event-garage-screen .event-selected-car .shop-component-metric.event-component-wear-metric {
+    margin-top: 4px;
+}
+
+/* The Garage tab has a fixed set of panels. Run history uses its own dialog. */
+.event-garage-screen .event-garage-page > .event-detail-panel.team-home-panel,
+.event-garage-screen .event-garage-page > .event-overview {
+    margin-bottom: 4px;
+}
+
+.event-garage-screen .event-garage-page .event-overview > .event-detail-panel.team-home-panel {
+    flex-basis: 0;
+    min-width: 0;
+    margin: 12px 5px 4px;
+    padding: 13px 9px 5px;
+}
+
+.event-garage-screen .event-garage-page .car-paint-preview {
+    height: 88px;
+    margin: 0;
+}
+
+.event-garage-screen .event-garage-page .garage-open-setup {
+    position: relative;
+    top: auto;
+    right: auto;
+    flex-shrink: 0;
+}
+
+.event-garage-screen .event-garage-page .event-overview > .garage-chassis-panel {
+    flex-grow: 0.75;
+}
+
+.event-garage-screen .event-garage-page .event-overview > .garage-tires-panel {
+    flex-grow: 1.25;
+}
+
+.event-garage-screen .garage-tire-grid {
+    flex-direction: row;
+    flex-wrap: wrap;
+}
+
+.event-garage-screen .garage-tire-grid .event-tire-row {
+    flex-direction: column;
+    flex-basis: 48%;
+    flex-grow: 1;
+    align-items: stretch;
+    min-height: 0;
+    padding: 0 3px;
+    margin: 0 0 2px;
+}
+
+.event-garage-screen .garage-tire-grid .event-tire-row > .garage-detail {
+    width: auto;
+    min-width: 0;
+    white-space: normal;
+    margin: 0;
+}
+
+.event-garage-screen .garage-tire-meters {
+    flex-direction: row;
+    align-items: center;
+}
+
+.event-garage-screen .garage-tire-meters > .unity-progress-bar {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-width: 0;
+    margin: 0 2px;
+}
+
+.event-garage-screen .event-garage-page .event-detail-panel.team-home-panel {
+    padding-bottom: 5px;
+}
+
+.event-garage-screen .event-garage-page .garage-fuel-panel {
+    min-height: 0;
+}
+
+.event-garage-screen .garage-inline-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    flex-shrink: 0;
+    align-items: center;
+}
+
+.event-garage-screen .garage-inline-actions > Label {
+    margin: 0 8px 0 0;
+}
+
+.event-garage-screen .garage-fuel-controls #garageStartingFuel {
+    min-width: 0;
+    margin: 0;
+}
+
+.event-garage-screen .garage-fuel-controls > Label {
+    margin: 0 0 3px;
+}
+
+.event-garage-screen .event-garage-page .garage-simulation-controls {
+    min-height: 0;
+    margin: 0;
+}
+
+.event-garage-screen .event-garage-page .garage-simulation-controls > .unity-dropdown-field {
+    min-width: 100px;
+    width: 105px;
+    margin-right: 6px;
+}
+
+.event-garage-screen .event-garage-page .garage-simulation-controls > Button {
+    min-width: 103px;
+    margin-left: 4px;
+}
+
+.event-garage-screen .event-garage-page .event-component-strip .shop-component-icon {
+    width: 40px;
+    height: 40px;
+    margin-bottom: 6px;
+}
+
+.garage-styled .garage-run-dialog {
+    width: 740px;
+    max-height: 82%;
+    background-color: #10151e;
+    border-color: #009bdd;
+}
+
+.garage-styled .garage-run-dialog > ScrollView {
+    min-height: 0;
+    flex-shrink: 1;
+}
+
+.event-garage-screen .garage-page.event-garage-page {
+    padding-top: 4px;
+    padding-bottom: 4px;
+}
+
+.event-garage-screen .event-garage-page > .event-overview {
+    margin-bottom: 0;
+}
+
+.event-garage-screen .event-garage-page > .garage-status {
+    min-height: 0;
+    font-size: 13px;
+    margin: 0 0 2px;
+}
+
+/* The component icons are drawn on a 40px canvas. */
+.event-garage-screen .event-information-page .event-component-strip .shop-component-icon {
+    width: 40px;
+    height: 40px;
+    margin: 0 6px 0 0;
+}
+
+.event-garage-screen .event-garage-page .event-component-strip .shop-component-caption {
+    font-size: 12px;
+}
+
+/* Results controls and column headings stay outside the scrolling rows. */
+.event-garage-screen > .garage-results-host {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-height: 0;
+    margin: 0 16px;
+}
+
+.garage-results-host > .garage-results-page {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-height: 0;
+}
+
+.garage-results-page > .event-detail-panel.team-home-panel {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-height: 0;
+    margin: 10px 4px 3px;
+    padding: 14px 9px 6px;
+    background-color: transparent;
+    border-color: transparent;
+}
+
+.garage-results-toolbar {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    flex-grow: 0;
+    flex-shrink: 0;
+    flex-basis: auto;
+    margin-bottom: 6px;
+}
+
+.garage-results-toolbar > .settings-field {
+    flex-grow: 0;
+    flex-shrink: 1;
+    flex-basis: auto;
+    min-width: 205px;
+    margin: 0 8px 0 0;
+}
+
+.garage-results-toolbar > Button {
+    flex-shrink: 0;
+    margin: 0 6px 0 0;
+}
+
+.garage-results-page .results-grid-scrollable,
+.garage-results-page .results-body-scroll,
+.garage-results-page .garage-practice-report-scroll {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-height: 0;
+}
+
+.garage-results-page .results-grid-scrollable {
+    margin-top: 0;
+}
+
+.garage-results-page .results-grid-row {
+    flex-shrink: 0;
+    align-items: center;
+    min-height: 54px;
+}
+
+.garage-results-page .results-grid-header {
+    min-height: 28px;
+}
+
+.garage-results-page .results-grid-row > .results-car-image {
+    flex-basis: 90px;
+    width: 90px;
+    height: 48px;
+}
+
+.garage-results-page .results-grid-header > .results-car-image {
+    height: auto;
+}
+
+.garage-results-page .results-grid-row > .results-grid-name {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-width: 0;
+    white-space: normal;
+}
+
+.garage-results-page .results-grid-row > .results-winnings,
+.garage-results-page .results-grid-row > .results-points {
+    flex-grow: 0;
+    flex-shrink: 0;
+    -unity-text-align: middle-right;
+}
+
+.garage-results-page .results-grid-row > .results-winnings { flex-basis: 112px; }
+.garage-results-page .results-grid-row > .results-points { flex-basis: 72px; }
+
+/* The Car Setup board shares the available height with notes and actions. */
+.event-garage-screen > .garage-setup-host {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-height: 0;
+    margin: 0 16px;
+}
+
+.garage-setup-host > .event-setup-page,
+.garage-setup-host .setup-editor,
+.garage-setup-host .setup-board {
+    flex-grow: 1;
+    flex-basis: 0;
+    flex-shrink: 1;
+    min-height: 0;
+}
+
+.garage-setup-host .setup-editor {
+    padding: 0 4px;
+}
+
+.garage-setup-host .setup-board {
+    margin: 0 0 3px;
+}
+
+.garage-setup-host .setup-side,
+.garage-setup-host .setup-center {
+    margin: 0 3px;
+}
+
+.garage-setup-host .setup-side {
+    justify-content: flex-start;
+    padding-top: 0;
+}
+
+.garage-setup-host .setup-corner {
+    padding: 4px;
+    margin-bottom: 4px;
+}
+
+.garage-setup-host .setup-field,
+.garage-setup-host .setup-field > .unity-slider {
+    min-height: 23px;
+}
+
+.garage-setup-host .setup-field .unity-base-field__label {
+    min-width: 94px;
+}
+
+.garage-setup-host .setup-slider-value {
+    width: 58px;
+}
+
+.garage-setup-host .setup-part-icon {
+    margin-right: 4px;
+}
+
+.garage-setup-host .setup-navigation-icon .setup-part-icon {
+    margin: 0;
+}
+
+.garage-setup-host .setup-overhead-car {
+    min-height: 72px;
+    max-height: 180px;
+    flex-shrink: 1;
+    margin: 2px 0;
+}
+
+.garage-setup-host .setup-footer,
+.garage-setup-host .setup-summary {
+    flex-shrink: 0;
+}
+
+.garage-setup-host .setup-footer {
+    flex-wrap: nowrap;
+}
+
+.garage-setup-host .setup-notes {
+    flex-shrink: 1;
+    flex-basis: 175px;
+    margin: 1px 0 4px;
+}
+
+.garage-setup-host .setup-notes .unity-base-text-field__input {
+    height: 40px;
+    --unity-cursor-color: #f5f5f5;
+}
+
+.garage-setup-host .setup-actions {
+    flex-shrink: 0;
+    margin: 0 0 4px 6px;
+}
+
+.garage-setup-host .setup-actions > Button {
+    margin: 0 0 0 4px;
+}
+
+/* The post-run report and the setup board share the fixed Garage viewport. */
+.garage-setup-host > .garage-redesign {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-height: 0;
+    padding: 4px 0;
+}
+.garage-redesign-layout {
+    flex-direction: row;
+    flex-grow: 1;
+    flex-basis: 0;
+    min-height: 0;
+}
+.garage-redesign-report, .garage-redesign-setup {
+    min-width: 0;
+    min-height: 0;
+    flex-basis: 0;
+    padding: 6px;
+    background-color: #10151e;
+    border-width: 1px;
+    border-color: #009bdd;
+    border-radius: 8px;
+}
+.garage-redesign-report { flex-grow: 2; margin-right: 6px; }
+.garage-redesign-setup { flex-grow: 3; }
+.garage-redesign-row {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+}
+.garage-redesign-row { min-height: 28px; }
+.garage-redesign-title, .garage-redesign-count, .garage-redesign-heading {
+    -unity-font-style: bold;
+    color: #009bdd;
+    flex-shrink: 0;
+}
+.garage-redesign-title, .garage-redesign-count { font-size: 17px; }
+.garage-redesign-title {
+    min-width: 0;
+    flex-shrink: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.garage-redesign-heading { font-size: 14px; }
+.garage-redesign-buttons { flex-direction: row; flex-shrink: 0; }
+.garage-redesign .garage-redesign-icon-button {
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 28px;
+    min-width: 30px;
+    min-height: 28px;
+    margin: 1px 2px;
+    padding: 0;
+}
+.garage-redesign-icon { width: 22px; height: 22px; }
+.garage-redesign-board {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-height: 0;
+    flex-direction: row;
+    margin: 3px 0;
+}
+.garage-redesign-side, .garage-redesign-center {
+    flex-basis: 0;
+    flex-grow: 1;
+    min-width: 0;
+}
+.garage-redesign-center { flex-grow: .9; }
+.garage-redesign-car { flex-grow: 1; min-height: 0; }
+.garage-redesign-slot {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-height: 0;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+}
+.garage-redesign-adjust, .garage-redesign-stacked {
+    justify-content: center;
+    align-items: center;
+    align-self: stretch;
+    min-width: 0;
+    min-height: 0;
+    margin: 6px 3px;
+}
+.garage-redesign-adjust { flex-direction: row; }
+.garage-redesign-stacked { flex-grow: 1; flex-basis: 0; }
+.garage-redesign-adjust-label, .garage-redesign-value, .garage-redesign-previous {
+    -unity-text-align: middle-center;
+    font-size: 13px;
+    margin: 0;
+}
+.garage-redesign-adjust-label { white-space: normal; }
+.garage-redesign-value {
+    padding: 3px 5px;
+    min-height: 24px;
+    border-width: 1px;
+    border-color: #728195;
+    border-radius: 3px;
+}
+.garage-redesign-previous { color: #ff6969; min-height: 18px; }
+.garage-redesign-vertical {
+    width: 30px;
+    min-width: 30px;
+    min-height: 0;
+    flex-shrink: 0;
+    margin: 0 4px;
+}
+.garage-redesign-adjust > .garage-redesign-vertical { align-self: stretch; }
+.garage-redesign-stacked > .garage-redesign-vertical {
+    flex-grow: 1;
+    flex-basis: 0;
+}
+.garage-redesign-horizontal {
+    width: 100%;
+    height: 32px;
+    min-height: 32px;
+    flex-shrink: 0;
+    margin: 0;
+}
+.garage-redesign-load-badge { position: absolute; }
+.garage-redesign-corner-load {
+    background-color: #06090d;
+    border-width: 1px;
+    border-color: #009bdd;
+    padding: 1px 3px;
+    font-size: 11px;
+    -unity-text-align: middle-center;
+}
+.garage-redesign .garage-redesign-notes {
+    flex-direction: row;
+    align-items: center;
+    flex-grow: 0;
+    flex-shrink: 0;
+    min-height: 0;
+    margin: 2px 0 0;
+}
+.garage-redesign .garage-redesign-notes > .unity-base-field__label {
+    align-self: center;
+    margin: 0 6px 0 0;
+    white-space: nowrap;
+}
+.garage-redesign .garage-redesign-notes > .unity-base-field__input {
+    flex-basis: 0;
+    height: 34px;
+    min-height: 34px;
+    max-height: 34px;
+    padding: 1px 5px;
+    font-size: 12px;
+    white-space: normal;
+    --unity-cursor-color: #f5f5f5;
+}
+.garage-redesign-status { min-height: 15px; font-size: 11px; margin: 0; }
+.garage-redesign-timing {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-height: 0;
+    flex-direction: row;
+    margin: 4px 0;
+}
+.garage-redesign-timing-column {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-width: 0;
+    min-height: 0;
+    margin: 0 2px;
+}
+.garage-redesign-laps { flex-grow: 1; min-height: 0; }
+.garage-redesign-lap-row { flex-direction: row; min-height: 20px; flex-shrink: 0; }
+.garage-redesign-lap-number { width: 37%; }
+.garage-redesign-best { background-color: #00659c; }
+.garage-redesign-metric, .garage-redesign-chart, .garage-redesign-comments {
+    border-width: 1px;
+    border-color: #536478;
+    border-radius: 4px;
+}
+.garage-redesign-metric { flex-shrink: 0; margin-bottom: 3px; padding: 0 3px; }
+.garage-redesign-metric-value { -unity-font-style: bold; }
+.garage-redesign-chart { flex-grow: 1; min-height: 22px; }
+.garage-redesign-tire-row { flex-direction: row; flex-shrink: 0; height: 63px; margin-bottom: 3px; }
+.garage-redesign-tire {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-width: 0;
+    margin: 0 2px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    border-width: 1px;
+    border-color: #536478;
+    border-radius: 4px;
+}
+.garage-redesign-wheel { width: 46px; height: 46px; }
+.garage-redesign-gauge { width: 16px; height: 42px; }
+.garage-redesign-comments { padding: 2px 4px; flex-shrink: 0; min-height: 78px; }
+.garage-redesign-comment, .garage-redesign-dialog-text { white-space: normal; }
+.garage-redesign-comment { font-size: 11px; margin: 0; }
+
+.garage-redesign-row.garage-redesign-caption { min-height: 17px; }
+
+.garage-styled .garage-run-dialog {
+    color: #f5f5f5;
+}
+
+.garage-styled .garage-redesign-dialog-text {
+    color: #f5f5f5;
+}
+
+.garage-styled .setup-preset-dialog {
+    width: 420px;
+    background-color: #10151e;
+    border-color: #009bdd;
+    color: #f5f5f5;
+}
+
+.garage-styled .setup-preset-dialog .settings-group-heading {
+    color: #009bdd;
+}
+
+.garage-styled .setup-preset-dialog .settings-confirmation-actions {
+    border-top-width: 1px;
+    border-top-color: #009bdd;
+    padding-top: 8px;
+}
+
+.garage-styled .setup-preset-list .settings-button {
+    margin: 2px 0;
+    white-space: normal;
+}
+
+.garage-styled .setup-preset-list .settings-button:hover {
+    background-color: #263e50;
+    border-color: #009bdd;
+}

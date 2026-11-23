@@ -1,0 +1,59 @@
+# Richmond Raceway
+
+Richmond, Virginia, United States. Assume the modern NASCAR oval with the 2018 infield redevelopment.
+
+## Generation instructions
+
+- Rebuild Richmond Raceway using the current Stock Car Track Builder skill. Use the inside red line in the supplied plan for pit road and fit its connection to the racing apron. The historical catalog identifies Richmond as ID 5. Retain that lookup identity when registering the new geometry.
+- Separate Richmond's pit road from the racing apron with a concrete wall along the track side of the pit lane. Keep the entry, exit, and service accesses open.
+- Extend the track-side wall past the first and last pit boxes. Relocate the overlapping pit-exit building and pad into the infield, extend the adjacent stall-side wall toward the inside-turn wall, and leave a paved safety-vehicle gap. Join the infield service roads onto the backstretch asphalt at their full widths.
+- Continue the infield barrier around the course and connect it to the stall-side pit wall, with paved openings reserved for recovery and garage service. Extend the Turns 3 and 4 barrier almost to the stall-side wall. Keep the Turns 1 and 4 gates and the backstretch recovery opening clear of structures and pedestrian activity.
+- Pave the entire grandstand frontage from the track wall out to the stand foundations and join it to the perimeter walkway. Populate the infield with campgrounds and put spectators in staggered groups behind the protected inside-wall stretches.
+- Convert the unused paved area between the frontstretch and pit road to grass. Keep a paved running apron and complete pit approaches. Use the existing infield lot for 40 team haulers and put the pace car in a sheltered paved bay accessible through the Turn One gate.
+- Fill the marked ordinary-car parking spaces and add parking behind the haulers. Place standing fans and the ends of their walking routes on the finished terrain or concrete where they appear.
+
+## Images
+
+[richmond-track-diagram.png](richmond-track-diagram.png), supplied November 20, 2026. The outside red line defines the racing layout. The inside red line is pit road as specified by the user. The checkered mark gives the start/finish location. The image does not show the apron width or venue scenery.
+
+## Written specifications
+
+- 0.75 mi (1,207.008 m), D-shaped asphalt oval. The current D-shaped oval dates to 1988. The infield was redeveloped in 2018. [NASCAR track profile](https://www.nascar.com/news-media/2022/03/30/track-profile-richmond-raceway/) and [Richmond Raceway history](https://www.richmondraceway.com/2021/04/12/richmond-raceway-to-unveil-the-75-greatest-moments-presented-by-virginia-is-for-lovers/)
+- 14 degrees banking in Turns 1–2 and 3–4, 8 degrees at start/finish on the curved frontstretch, and 2 degrees on the backstretch. NASCAR lists frontstretch length as 1,290 ft (393.192 m) and backstretch length as 860 ft (262.128 m). [NASCAR Richmond data](https://www.nascar.com/news-media/2015/04/20/stats-advance-analyzing-the-toyota-owners-400/) and [NASCAR Richmond 101](https://www.nascar.com/news-media/2019/04/09/richmond-tv-times-tires-rules-package/)
+- The 2025 NASCAR Cup chart lists 40 mph on pit road and 45 mph for the caution vehicle. [NASCAR pit-road speeds](https://rbfiles.ndms.nascar.com/2025/02/2025-PIT-ROAD-SPEED-CHART_REVB.pdf)
+- Qualifying reference for this oval: Jeff Gordon, NASCAR Cup Series, September 6, 2013, 20.674 s. NASCAR reports 130.599 mph. Calculated from the nominal distance and rounded lap time, 0.75 × 3,600 ÷ 20.674 = 130.598820 mph. [NASCAR Cup qualifying records](https://www.nascar.com/gallery/nascar-all-time-qualifying-records-by-track/)
+- Published oval pavement width is 60 ft (18.288 m) with a 10 ft (3.048 m) apron. Published nominal distance is measured 13.5 ft (4.115 m) inward from the outside barrier. The published 64 ft (19.507 m) pit-road footprint describes the overall historic facility including concrete pit bays (28 ft by 19 ft), so distinguish the driving ribbon from stall work areas during the trace. [NASCAR event facts archived by Jayski](https://www.jayski.com/race-results/2010-nascar-sprint-cup-series/2010-richmond-i-race-info-page/)
+- The restart zone is before the start/finish stripe. Its exact bounds and surveyed elevation were unavailable and will be estimated. The post-2018 grandstand and paddock footprints cannot be inferred from the plan and will be approximate. [NASCAR restart guidance](https://www.nascar.com/news-media/2015/09/18/tech-talk-drivers-look-for-clarity-on-restarts/)
+
+## Build geometry
+
+- The model follows the course plan counterclockwise. Start/finish is the diagram's checkered stripe. The restart zone spans 92.9% to 97.7% of the lap, about 86 to 28 m before the stripe. The endpoints are estimates.
+- The game uses the 0.75-mile centerline convention. The same model measures 1,237.27 m along the published 13.5-ft-inset survey line. The traced backstretch and transitions use the diagram's proportions, which are approximate due to its resolution.
+- The pit driving ribbon is 11.0 m wide. Forty stalls share the roughly 19.5 m overall footprint. The apron runs around the full inside edge, with additional width between the bowed frontstretch and pit lane and at both merges. The apron and pit joins follow a common level datum. Away from the joins, banking transitions smoothly between the written specifications.
+- The track-side pit divider follows pit stations 15.4 m to 370.4 m, covering all forty bays and extending 3.5 m beyond each end. Its pit-facing edge is 0.65 m outside the paved pit lane. The wall is 0.30 m thick and 0.99 m high. The running apron line transitions toward the racing surface where the track-side wall narrows the usable apron. Both pit connectors and their handoff points retain their authored positions.
+- The adjacent stall-side wall follows the infield side of pit exit and ends before the inside-turn wall. A 10 m-wide asphalt access road crosses the opening and connects to the service yard. The backstretch response and recovery approach ribbons tie into the existing apron at full width and use the original route anchors.
+- At Turn 4, the inside apron wall ends at race station 915.287 m and the stall-side wall begins at the inside apron edge near station 936.287 m. The stall-side concrete follows the infield edge of the entrance, pit lane, and exit as one continuous wall. A 10 m-wide asphalt road through the approximately 17 m opening joins the existing service yard. Its final 20 m blend up to yard grade. The existing Turn One gate and native backstretch recovery paths retain their original coordinates.
+- The frontstretch concourse covers 500 m beside the outer wall and extends behind all fourteen grandstand foundations. The six infield camping areas have 28 RVs, 14 golf carts, 33 grills, and 99 campsite fan markers. Separated spectator rows add 312 fan markers on the protected side of the inside wall.
+- The frontstretch grass median leaves a 5.7 m paved shoulder at start/finish. The catalog and FBX use the same paved apron widths. The reduction is contained within Richmond's capped running-apron section so the native car and recovery offsets remain the same. The grass is 4 mm below the pavement datum. All pit entry, exit, and safety road connections are fully paved.
+- The pace car parks facing forward in the infield at Blender X 196.0 m and Y 20.8 m. Its return path leaves the running apron around race station 316.196 m. The departure path joins the apron near 353.196 m. Both paths use the Turn One opening. The Turn Four service-road endpoint blends to the circulation aisle on the recovery side of the new hauler parking row.
+- Grounding runs after the pavement and scenery are built. It samples upward-facing terrain, pavement, and low concrete building pads at each authored standing or walking anchor. Wall-side fan positions use the marker's own plan coordinates and the grass grade. Four ordinary-car lots contain 98 sedans, hatchbacks, and wagons, including 26 cars in the new lot behind the hauler row.
+- Current venue references place the Fan Zone and central garage along the frontstretch and camping by Turns 3–4. The building, seating, parking, camping, and service-area footprints were inferred from those references because the user's diagram covers only the driving routes. [Official Richmond venue maps](https://www.richmondraceway.com/maps/)
+- Run `python richmond_layout.py` to regenerate the catalog entry and run Blender with `-b --python-exit-code 3 --python build_richmond.py` from the Blender source folder to regenerate the editable model, FBX, and renders. The in-game crowds, lights, safety signals, scoring pylon, billboards, and pit crews are added through Unity.
+
+## Verification
+
+The FBX reimport retained upward-facing driving triangles and passed 8,520 pavement-height samples. Unity matched the road, apron, pit lane and both joins at 1,353 points with a worst height difference of 0.020 m. A requested practice stop entered pit road, stopped at the assigned stall, and rejoined the track. The pit-entry signal is mounted behind the stall-side wall.
+
+Fourteen grandstands and 21 track-facing billboards were present in Unity. At least 78.8% of the seat targets for each stand were visible in every one of 42 sampled driver and broadcast views. The venue test also confirmed that the live scoring pylon followed the race leader, 47 venue fixtures responded to day and night, and all 24 active pit stalls had work areas and working lights.
+
+A collision-enabled 30-lap race completed its stage finish, green restart and checkered finish. All 24 cars saw the finish and returned to their stalls. Unity also confirmed the final red track signal, the Test Practice picker and newly generated Cup schedules.
+
+A second 30-lap race verified an apron wreck, tow and recovery, safe return to green, and the checkered flag for all 23 remaining cars. The field returned to its stalls after the finish.
+
+FBX reimport verified the longer track-side wall as a closed, outward-facing mesh. It clears the adjusted apron line by at least 2.21 m and the racing surface by at least 4.36 m. Both pit lane ends retain over 15 m of unobstructed through lane before their connectors. The turn-one opening is over 16 m wide between the wall noses. Full vehicle-footprint sweeps checked the pit connectors, pit road, running apron, and safety gate in the exported geometry.
+
+The continuous barrier revision passed 6,201 exported-mesh car and loaded-tow pose checks, 1,610 paved Turn 4 approach checks, and 954 service-road scenery-clearance checks. The Turn 4 opening measures at least 17.04 m between the new wall ends. The concourse passed 48,024 concrete surface probes in both the source scene and the reimported FBX. The largest measured height step at the wall foot was 9.3 mm. The three adjusted campground driveway joins passed 75 pavement probes.
+
+The grass revision passed 18,108 native-apron offset comparisons for the running line, recovery pickup, and response passing limits. The imported pace route passed 2,718 vehicle-footprint probes on the pavement and cleared the gate, wall, and static scenery. Its two directed routes meet the same bay pose. The marked hauler row passed 4,760 parking-pavement probes, with 1.68 m between adjacent modeled hauler bodies. The recovery approach and return sweeps and the extended Turn Four access route clear the parked hauler envelopes.
+
+FBX reimport checked 569 standing anchors and 56 walking endpoints against the visible ground. Their maximum height difference was 0.036 mm. Grounding corrected as much as 2.247 m at the inside wall. The three walking paths adjoining the raised Victory Lane pad account for the recorded linear-path residuals in the separate anchor verification report.

@@ -1,41 +1,72 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements">
     <Style src="Startup.uss" />
+    <Style src="../Fonts/GoogleSans/SettingsTypography.uss" />
     <ui:VisualElement name="trackScreen" class="screen">
-        <ui:VisualElement class="header">
-            <ui:Label text="SCM  /  RACE OPERATIONS" class="brand" />
-            <ui:Label text="DEMO 01" class="muted" />
-        </ui:VisualElement>
-        <ui:VisualElement class="track-heading">
-            <ui:VisualElement class="track-heading-labels">
-                <ui:Label name="selectedTrackName" text="03  /  TRACK" class="eyebrow" />
-                <ui:Label name="raceProgressLabel" class="garage-detail" />
-                <ui:VisualElement name="practiceFlags" style="display: none; flex-direction: row; align-items: center;">
-                    <ui:VisualElement name="primaryPracticeFlag" style="width: 20px; height: 13px; margin-right: 5px;" />
-                    <ui:VisualElement name="blackPracticeFlag" style="width: 20px; height: 13px; margin-right: 5px; background-color: #080808; border-color: #a0a0a0; border-width: 1px;" />
-                    <ui:VisualElement name="checkeredFlag" style="display: none; width: 20px; height: 13px; margin-right: 5px;" />
-                    <ui:Label class="garage-detail" />
+        <ui:VisualElement name="raceViewport" class="race-viewport" />
+        <ui:VisualElement class="header track-header">
+            <ui:VisualElement class="track-header-left">
+                <ui:VisualElement class="track-heading-labels">
+                    <ui:Label name="selectedTrackName" class="brand track-name" />
+                    <ui:VisualElement name="practiceFlags" class="track-icon-tooltip-target" style="display: none; flex-direction: row; align-items: center;">
+                        <ui:VisualElement name="primaryPracticeFlag" style="width: 20px; height: 13px; margin-right: 5px;" />
+                        <ui:VisualElement name="blackPracticeFlag" style="width: 20px; height: 13px; margin-right: 5px; background-color: #080808; border-color: #a0a0a0; border-width: 1px;" />
+                        <ui:VisualElement name="checkeredFlag" style="display: none; width: 20px; height: 13px; margin-right: 5px;" />
+                        <ui:Label class="garage-detail" />
+                    </ui:VisualElement>
+                    <ui:Label name="luckyDogLabel" class="garage-detail" style="display: none;" />
                 </ui:VisualElement>
-                <ui:Label name="luckyDogLabel" class="garage-detail" style="display: none;" />
+                <ui:VisualElement class="track-session">
+                    <ui:Label name="raceProgressLabel" class="garage-detail" />
+                    <ui:Label name="playerTrackLaps" text="Run laps: 0 / Session laps: 0" class="garage-detail" />
+                </ui:VisualElement>
             </ui:VisualElement>
-            <ui:VisualElement class="actions">
-                <ui:DropdownField name="sessionSpeedSelector" label="Speed" class="session-speed" />
-                <ui:Button name="returnToGarageButton" text="Team" class="action" />
-                <ui:Button name="cautionButton" text="Caution" class="action quit-action" />
-                <ui:Button name="snapshotButton" text="Snapshot" class="action quit-action" />
-                <ui:Button name="resetCameraButton" text="Reset" class="action quit-action" />
+            <ui:VisualElement class="track-playback">
+                <ui:Button name="playbackSpeedButton" text="1x &#x25BE;" tooltip="Playback speed" class="track-header-icon playback-speed-button" />
+                <ui:Button name="playSessionButton" text="&#x25B6;" tooltip="Play" class="track-header-icon playback-play-button" />
+                <ui:Button name="pauseSessionButton" text="&#x2161;" tooltip="Pause" class="track-header-icon" />
+            </ui:VisualElement>
+            <ui:VisualElement class="track-header-right">
+                <ui:Button name="returnToGarageButton" class="track-header-icon" tooltip="Leave and end the current session">
+                    <ui:VisualElement class="track-icon-art" picking-mode="Ignore" />
+                </ui:Button>
+                <ui:Button name="snapshotButton" class="track-header-icon" tooltip="Save track snapshot">
+                    <ui:VisualElement class="track-icon-art" picking-mode="Ignore" />
+                </ui:Button>
+                <ui:Button name="resetCameraButton" class="track-header-icon" tooltip="Reset the track camera">
+                    <ui:VisualElement class="track-icon-art" picking-mode="Ignore" />
+                </ui:Button>
+                <ui:Button name="visitGarageButton" class="track-header-icon" tooltip="Call your car to its pit stall" style="display: none;">
+                    <ui:VisualElement class="track-icon-art" picking-mode="Ignore" />
+                </ui:Button>
+                <ui:Button name="trackSettingsButton" text="&#x2699;" tooltip="Open track settings" class="track-header-icon" />
             </ui:VisualElement>
         </ui:VisualElement>
-        <ui:VisualElement class="track-content">
-            <ui:VisualElement name="raceViewport" class="race-viewport" />
-            <ui:VisualElement class="track-timing">
+        <ui:VisualElement class="track-content" picking-mode="Ignore">
+            <ui:VisualElement name="trackCockpit" class="track-cockpit" picking-mode="Ignore">
+                <ui:VisualElement class="cockpit-mirror" picking-mode="Ignore">
+                    <ui:VisualElement name="cockpitMirrorImage" class="cockpit-mirror-image" picking-mode="Ignore" />
+                </ui:VisualElement>
+                <ui:VisualElement name="cockpitDashboard" class="cockpit-dashboard" picking-mode="Ignore" />
+            </ui:VisualElement>
+            <ui:VisualElement name="trackStandings" class="track-standings" picking-mode="Ignore">
                 <ui:VisualElement class="timing-row timing-header">
-                    <ui:Label name="timingPositionHeader" text="Pos" class="timing-position" />
+                    <ui:Label text="Pos" class="timing-position" />
                     <ui:Label text="Car" class="timing-car" />
                     <ui:Label text="Driver" class="timing-driver" />
-                    <ui:Label name="timingValueHeader" text="Fastest lap" class="timing-lap" />
-                    <ui:Label text="MPH" class="timing-speed" />
+                    <ui:Label text="Best MPH" tooltip="Average speed on the fastest completed lap" class="timing-lap-mph" />
+                    <ui:Label text="Last MPH" tooltip="Average speed on the most recent completed lap" class="timing-lap-mph" />
+                    <ui:Button name="toggleTrackStandings" text="&lt;" tooltip="Collapse standings" class="standings-toggle track-icon-tooltip-target" />
+                    <ui:Button name="toggleStandingsLapSpeeds" text="+" tooltip="Show lap speeds" class="standings-toggle standings-laps-toggle track-icon-tooltip-target" />
                 </ui:VisualElement>
-                <ui:ScrollView name="trackTimingRows" class="timing-rows" />
+                <ui:ScrollView name="trackTimingRows" class="timing-rows" horizontal-scroller-visibility="Hidden" vertical-scroller-visibility="Hidden" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+        <ui:VisualElement class="track-right-dock" picking-mode="Ignore">
+            <ui:VisualElement name="trackMapWidget" class="track-map-widget" picking-mode="Ignore">
+                <ui:VisualElement name="trackSessionMap" class="track-session-map" picking-mode="Ignore" />
+                <ui:Button name="toggleTrackMap" text="&gt;" tooltip="Collapse track map" class="standings-toggle track-map-toggle track-icon-tooltip-target" />
+            </ui:VisualElement>
+            <ui:VisualElement name="trackPitSettings" class="track-pit-controls">
                 <ui:VisualElement class="track-player-panel">
                     <ui:VisualElement class="pit-readouts">
                         <ui:VisualElement class="pit-tires">
@@ -77,14 +108,48 @@
                         </ui:VisualElement>
                     </ui:VisualElement>
                     <ui:Button name="requestPitStop" text="Pit Next Time" class="action" />
-                    <ui:Label name="playerPitStatus" class="track-pit-status" />
                 </ui:VisualElement>
             </ui:VisualElement>
         </ui:VisualElement>
-        <ui:VisualElement class="footer">
-            <ui:Label text="DRAG TO PAN  /  CTRL + SCROLL TO ZOOM  /  SHIFT + LEFT-DRAG TO ROTATE  /  SHIFT + RIGHT-DRAG TO TILT  /  MIDDLE-CLICK TO RESET" class="muted" />
-            <ui:Label name="snapshotStatus" class="garage-detail" />
-            <ui:Label name="trackPlayerCarLabel" text="NO. 27" class="brand" />
+        <ui:VisualElement class="footer track-footer">
+            <ui:VisualElement class="track-footer-driving">
+                <ui:VisualElement name="footerThrottle" class="driving-meter track-icon-tooltip-target" tooltip="Throttle 0%">
+                    <ui:VisualElement class="driving-meter-bar"><ui:VisualElement name="footerThrottleFill" class="driving-meter-fill throttle-fill" /></ui:VisualElement>
+                </ui:VisualElement>
+                <ui:VisualElement name="footerBrake" class="driving-meter track-icon-tooltip-target" tooltip="Brake 0%">
+                    <ui:VisualElement class="driving-meter-bar"><ui:VisualElement name="footerBrakeFill" class="driving-meter-fill brake-fill" /></ui:VisualElement>
+                </ui:VisualElement>
+                <ui:VisualElement name="footerFuel" class="driving-meter track-icon-tooltip-target" tooltip="Fuel">
+                    <ui:VisualElement class="driving-meter-bar"><ui:VisualElement name="footerFuelFill" class="driving-meter-fill fuel-fill" /></ui:VisualElement>
+                </ui:VisualElement>
+                <ui:Label name="footerMph" text="0.0 MPH" class="track-footer-mph" />
+                <ui:Label name="footerRpm" text="RPM 900" class="track-footer-engine" />
+                <ui:Label name="footerGear" text="Gear 1" class="track-footer-engine" />
+            </ui:VisualElement>
+            <ui:VisualElement class="track-footer-center">
+                <ui:VisualElement class="track-readouts">
+                    <ui:Label name="trackFpsLabel" text="FPS --" class="muted" />
+                    <ui:Label name="trackWeatherLabel" class="muted" />
+                </ui:VisualElement>
+                <ui:VisualElement class="track-display-controls">
+                    <ui:Button name="trackCarDetailButton" text="Car Detail" tooltip="Change car LOD for the entire field while practice continues. Cars with one model use it at every level." class="track-detail-control track-icon-tooltip-target" style="display: none;" />
+                    <ui:Button name="trackPracticeSkyButton" text="Day Sky" tooltip="Switch between the day and night skies in this Test Practice session." class="track-detail-control track-icon-tooltip-target ui-default-font" style="display: none;" />
+                    <ui:Button name="trackGrandstandsButton" text="Grandstands On" tooltip="Show or hide the grandstands and concrete walkways while practice continues." class="track-detail-control track-icon-tooltip-target ui-default-font" style="display: none;" />
+                    <ui:Button name="requestCautionButton" text="Call Caution" tooltip="Put the field under caution." class="track-detail-control track-icon-tooltip-target ui-default-font" />
+                </ui:VisualElement>
+                <ui:Label name="snapshotStatus" class="garage-detail" style="display: none;" />
+            </ui:VisualElement>
+            <ui:VisualElement class="track-footer-pit">
+                <ui:Label name="trackCameraAngle" text="Player" class="garage-detail" />
+                <ui:Button name="cycleTrackCameraButton" tooltip="Click for the next camera. Hold right-click to choose a camera." class="track-header-icon">
+                    <ui:VisualElement class="track-icon-art" picking-mode="Ignore" />
+                </ui:Button>
+                <ui:Label name="playerPitStatus" class="garage-detail" />
+                <ui:Button name="pitSettingsButton" tooltip="Show pit stop settings" class="track-header-icon pit-settings-button">
+                    <ui:VisualElement class="track-icon-art" picking-mode="Ignore" />
+                </ui:Button>
+            </ui:VisualElement>
         </ui:VisualElement>
+        <ui:Label name="trackIconTooltip" class="track-icon-tooltip" picking-mode="Ignore" />
     </ui:VisualElement>
 </ui:UXML>

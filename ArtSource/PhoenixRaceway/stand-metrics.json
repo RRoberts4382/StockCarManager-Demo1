@@ -1,0 +1,15 @@
+{
+  "sections": 17,
+  "old_height_range_m": [
+    6.00499998126179,
+    10.825000152923167
+  ],
+  "new_height_range_m": [
+    23.70499931368977,
+    25.665000305511057
+  ],
+  "minimum_height_ratio": 2.3709006875700154,
+  "existing_bench_markers": 402,
+  "new_bench_markers": 402,
+  "reopened_and_reimported": true
+}

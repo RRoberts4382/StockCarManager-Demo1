@@ -21,7 +21,10 @@ internal sealed class TrackState001RaceStart
 
     public SessionTrackState State { get; private set; } = SessionTrackState.TrackClosed;
     public int SecondsUntilRelease { get; private set; } = 5;
+    internal bool OneToGo => State == SessionTrackState.Pacing && paceLead >= lightsOffAt;
     public bool LightsVisible => paceLead < lightsOffAt && flashTime % 0.5f < 0.25f;
+    internal bool PaceReturning => returningPaceCar != null;
+    internal float PacePitEntry => peelOffAt;
     public float TimingStartLine { get; }
     public float FormationProgress => progress;
 
@@ -40,8 +43,7 @@ internal sealed class TrackState001RaceStart
         progress = pit.RoadStart + lastRowOffset + rowSpacing;
         parkingDistance = pit.ParkingDistance;
 
-        float firstCrossing = NextAtOrAfter(pit.ExitDistance, startLine, lapLength);
-        lightsOffAt = firstCrossing + lapLength;
+        lightsOffAt = NextAtOrAfter(pit.ExitDistance, startLine, lapLength);
         peelOffAt = NextAtOrAfter(lightsOffAt, pit.EntryDistance, lapLength);
         float restart = zoneStart + (zoneEnd - zoneStart) * (float)random.NextDouble();
         greenAt = NextAtOrAfter(peelOffAt + 0.01f, startLine + restart, lapLength);

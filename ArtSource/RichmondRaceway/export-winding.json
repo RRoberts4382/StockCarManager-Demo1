@@ -1,0 +1,49 @@
+{
+  "upward_triangle_count": 14360,
+  "triangles_by_mesh": {
+    "Apron asphalt": 2416,
+    "Frontstretch grass median": 868,
+    "Pace bay departure asphalt": 70,
+    "Pace bay return asphalt": 82,
+    "Pit entrance asphalt": 154,
+    "Pit exit asphalt": 112,
+    "Pit road asphalt": 966,
+    "Racing surface": 2416,
+    "Restart zone End": 2,
+    "Restart zone Start": 2,
+    "Richmond pit walkway": 966,
+    "Richmond pit work concrete": 886,
+    "Start finish checker Richmond": 80,
+    "Track inner amber line": 2416,
+    "Track inner white line": 2416,
+    "Turn four safety access asphalt": 416,
+    "Turn one safety access asphalt": 92
+  },
+  "reimported_surface_profile": {
+    "Racing surface": {
+      "samples": 3020,
+      "max_height_error_m": 2.7331304428557246e-05,
+      "min_normal_up": 0.9702944159507751
+    },
+    "Apron asphalt": {
+      "samples": 3020,
+      "max_height_error_m": 2.384185791015625e-05,
+      "min_normal_up": 0.9999999403953552
+    },
+    "Pit road asphalt": {
+      "samples": 1935,
+      "max_height_error_m": 2.0545959472656125e-05,
+      "min_normal_up": 0.9999999403953552
+    },
+    "Pit entrance asphalt": {
+      "samples": 315,
+      "max_height_error_m": 1.6731262207031125e-05,
+      "min_normal_up": 0.9999999403953552
+    },
+    "Pit exit asphalt": {
+      "samples": 230,
+      "max_height_error_m": 5.287170410156125e-06,
+      "min_normal_up": 0.9999999403953552
+    }
+  }
+}

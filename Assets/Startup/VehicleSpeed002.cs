@@ -8,6 +8,7 @@ internal sealed class VehicleSpeed002 : IVehicleSpeedModel
 
     public string Id => "vehicle-speed-002";
     public string Name => "VehicleSpeed002";
+    public bool UsesLapSpeedProfile => true;
 
     public float BaseSpeed(CarSimulationContext context, int carIndex, Random random)
     {
@@ -17,7 +18,7 @@ internal sealed class VehicleSpeed002 : IVehicleSpeedModel
         var weights = context.Track.weights;
         var car = carIndex < context.Cars.Count ? context.Cars[carIndex].car : null;
         if (car == null || weights == null)
-            return reference;
+            return VehicleSpeedModels.ApplyEngineAndDriverPerformance(context, carIndex, reference);
 
         float weightedPerformance =
             weights.aerodynamics * (car.GetComponent(CarComponent.Aerodynamics).EffectiveValue - ReferenceEffectiveValue) +
@@ -25,9 +26,10 @@ internal sealed class VehicleSpeed002 : IVehicleSpeedModel
             weights.brakes * (car.GetComponent(CarComponent.Brakes).EffectiveValue - ReferenceEffectiveValue) +
             weights.suspension * (car.GetComponent(CarComponent.Suspension).EffectiveValue - ReferenceEffectiveValue);
 
-        return reference + SpeedPerEffectiveValuePoint * weightedPerformance;
+        return VehicleSpeedModels.ApplyEngineAndDriverPerformance(context, carIndex,
+            reference + SpeedPerEffectiveValuePoint * weightedPerformance);
     }
 
     public float LapSpeedFactor(CarSimulationContext context, int carIndex, Random random) =>
-        0.96f + (float)random.NextDouble() * 0.08f;
+        0.96f + (float)random.NextDouble() * (context.Track.id == TrackPreview.OrangeCountyTrackId ? 0.04f : 0.08f);
 }
