@@ -16,7 +16,11 @@ internal interface IVehicleBehaviorModel
 internal static class VehicleBehaviorModels
 {
     public static IReadOnlyList<IVehicleBehaviorModel> Available { get; } =
-        Array.AsReadOnly(new IVehicleBehaviorModel[] { new VehicleBehavior001(), new VehicleBehavior002(), new VehicleBehavior003() });
+        Array.AsReadOnly(new IVehicleBehaviorModel[]
+        {
+            new VehicleBehavior001(), new VehicleBehavior002(), new VehicleBehavior003(),
+            new VehicleBehavior004(), new VehicleBehavior006()
+        });
 
     public static int IndexForId(string id)
     {
@@ -26,6 +30,6 @@ internal static class VehicleBehaviorModels
                 return i;
         }
 
-        return 2; // VehicleBehavior003 is the default for missing or unknown selections.
+        return Available.Count - 1;
     }
 }

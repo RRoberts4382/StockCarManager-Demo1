@@ -1,7 +1,7 @@
 {
   "id": "tour-modified",
   "name": "Tour Modified Series",
-  "order": 5,
+  "SeriesLevel": 5,
   "carModel": "TourModified",
   "maximumTrackLengthMiles": 1,
   "manufacturers": [

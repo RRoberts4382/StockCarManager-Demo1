@@ -127,12 +127,17 @@ internal static class PracticeRunComparison
             if (sa?.componentNames != null && sb?.componentNames != null)
             {
                 int changed = 0;
-                for (int i = 0; i < sa.componentNames.Length; i++)
+                foreach (var component in CarComponentDisplay.Order)
                 {
-                    int j = Array.IndexOf(sb.componentNames, sa.componentNames[i]);
-                    float? x = At(sa.componentEffectiveValues, i), y = At(sb.componentEffectiveValues, j);
+                    string recordedName = component.ToString();
+                    int leftIndex = Array.IndexOf(sa.componentNames, recordedName);
+                    int rightIndex = Array.IndexOf(sb.componentNames, recordedName);
+                    float? x = At(sa.componentEffectiveValues, leftIndex), y = At(sb.componentEffectiveValues, rightIndex);
                     if (x.HasValue && y.HasValue && Math.Abs(x.Value - y.Value) > 0.0001f)
-                    { Text(changes, $"{sa.componentNames[i]} effective value: {x:0.000} -> {y:0.000}"); changed++; }
+                    {
+                        Text(changes, $"{CarComponentDisplay.Name(component)} effective value: {x:0.000} -> {y:0.000}");
+                        changed++;
+                    }
                 }
                 if (changed == 0) Text(changes, "No changes found in recorded component effective values.");
             }

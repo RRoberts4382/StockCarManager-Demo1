@@ -24,7 +24,7 @@ internal static class ShopComponentPanel
             SettingsFormStyle.StylePanel(rows);
             rows.Add(SettingsFormStyle.Label("Components", "team-home-heading"));
         }
-        foreach (var component in TeamCar.Components)
+        foreach (var component in CarComponentDisplay.Order)
         {
             var condition = car.GetComponent(component);
             var row = AddElement(rows, "shop-component-row");
@@ -59,27 +59,28 @@ internal static class ShopComponentPanel
             if (!showService)
                 continue;
 
+            string componentName = CarComponentDisplay.Name(component);
             var service = AddElement(row, "shop-component-service");
             var repair = car.repairs?.Find(job => job.component == component);
             var buttons = AddElement(row, "shop-component-actions");
             var upgradeLine = AddElement(buttons, "shop-component-action-line");
             if (upgrade != null && repair == null && condition.Level < TeamCar.MaximumComponentLevel)
             {
-                var upgradeButton = AddActionButton(upgradeLine, $"Upgrade {component}", ActionIcon.Upgrade, () => upgrade(component));
+                var upgradeButton = AddActionButton(upgradeLine, $"Upgrade {componentName}", ActionIcon.Upgrade, () => upgrade(component));
                 upgradeButton.SetEnabled(canUpgrade(component));
                 AddLabel(upgradeLine, RaceFinances.Dollars(series.componentUpgradeCost), "shop-component-action-cost");
             }
             var repairLine = AddElement(buttons, "shop-component-action-line");
             if (repair != null && cancelRepair != null)
             {
-                AddActionButton(repairLine, $"Cancel {component} {repair.WorkDescription.ToLowerInvariant()}", ActionIcon.Cancel, () => cancelRepair(repair))
+                AddActionButton(repairLine, $"Cancel {componentName} {repair.WorkDescription.ToLowerInvariant()}", ActionIcon.Cancel, () => cancelRepair(repair))
                     .SetEnabled(date.HasValue);
             }
             else if (repair == null && openRepair != null && condition.Wear > 0f)
             {
                 int repairCost = ComponentRepair.CostForWear(condition.Wear, series.maximumComponentRepairCost);
                 bool affordable = balance >= repairCost;
-                AddActionButton(repairLine, $"Repair {component}", ActionIcon.Repair, () => openRepair(component))
+                AddActionButton(repairLine, $"Repair {componentName}", ActionIcon.Repair, () => openRepair(component))
                     .SetEnabled(affordable);
                 AddLabel(repairLine, RaceFinances.Dollars(repairCost), "shop-component-action-cost");
             }
@@ -100,7 +101,7 @@ internal static class ShopComponentPanel
 
     public static VisualElement ComponentIcon(CarComponent component)
     {
-        var icon = new VisualElement { tooltip = component.ToString() };
+        var icon = new VisualElement { tooltip = CarComponentDisplay.Name(component) };
         icon.AddToClassList("shop-component-icon");
         icon.generateVisualContent += context => DrawIcon(context.painter2D, component);
         return icon;

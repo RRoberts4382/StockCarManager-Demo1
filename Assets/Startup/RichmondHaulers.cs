@@ -7,7 +7,7 @@ public sealed partial class TrackPreview
     private Transform[] venueHaulers;
     private (Color32 HoodAndTrunk, Color32 RoofAndSides)[] venueGuestHaulerPaint;
 
-    private void AddVenueHaulers(string venue)
+    private void AddVenueHaulers(string venue, Vector3? authoredForward = null)
     {
         string stallPrefix = venue + " hauler stall ";
         var markers = GetComponentsInChildren<Transform>(true);
@@ -26,9 +26,9 @@ public sealed partial class TrackPreview
         // The row faces the paddock, away from the adjacent recovery stalls.
         var recovery = markers.FirstOrDefault(item => item.name == "Richmond recovery bay 20");
         var rowCenter = stalls[stalls.Length / 2 - 1];
-        var forward = recovery != null
+        var forward = authoredForward ?? (recovery != null
             ? Vector3.ProjectOnPlane(rowCenter.position - recovery.position, Vector3.up).normalized
-            : rowCenter.forward;
+            : rowCenter.forward);
         var garageBays = definition.id == NorthWilkesboroTrackId
             ? markers.Where(item => item.name.StartsWith(venue + " hauler garage bay ", StringComparison.Ordinal))
                 .ToDictionary(item => item.name, StringComparer.Ordinal)

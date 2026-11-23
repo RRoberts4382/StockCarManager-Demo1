@@ -8,6 +8,7 @@ public sealed partial class TrackPreview
     private string VenueSceneryName => definition.id switch
     {
         PhoenixTrackId => "Phoenix",
+        MichiganTrackId => "Michigan",
         RichmondTrackId => "Richmond",
         NorthWilkesboroTrackId => "North Wilkesboro",
         _ => "Iowa"

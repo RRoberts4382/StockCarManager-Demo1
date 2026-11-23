@@ -1,7 +1,7 @@
 {
   "id": "nascar-cup",
   "name": "NASCAR Cup Series",
-  "order": 30,
+  "SeriesLevel": 1,
   "manufacturers": [
     {
       "manufacturer": 0,

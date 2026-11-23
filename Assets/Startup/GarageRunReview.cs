@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using UnityEngine;
 
 [Serializable]
 internal sealed class GarageLapTemperature
@@ -10,10 +11,22 @@ internal sealed class GarageLapTemperature
 }
 
 [Serializable]
+internal struct GarageRunTimeSample
+{
+    public float elapsedSeconds, steeringAngleDegrees, throttle, brake;
+    public bool hasSteering, hasDynamicLoads, hasPowertrainSample;
+    public float engineRpm, speedMph;
+    public Vector4 temperatures, pressures, dynamicLoads;
+}
+
+[Serializable]
 internal sealed class GarageRunReview
 {
     public List<float> lapTimes = new List<float>();
     public List<GarageLapTemperature> lapTemperatures = new List<GarageLapTemperature>();
+    public List<GarageRunTimeSample> timeSamples;
+    public List<float> lapFinishSeconds;
+    public List<float> startFinishCrossingSeconds;
     public float[] startingTemperatures;
     public float[] endingTemperatures;
     public HandlingPhaseReview[] handling;
@@ -108,6 +121,9 @@ internal sealed class GarageRunRecorder
     private readonly float length;
     private readonly float line;
     private readonly Func<GarageRunDiagnostics> captureDiagnostics;
+    private readonly Func<GarageRunTimeSample> captureTimeSample;
+    private const double SampleInterval = 0.1d;
+    private double runStartTime, nextSampleTime;
     private GarageRunReview current;
     private double previousDistance;
     private double previousTime;
@@ -121,12 +137,14 @@ internal sealed class GarageRunRecorder
     internal int TotalCompletedLaps { get; private set; }
 
     internal GarageRunRecorder(List<GarageRunReview> reviews, float length, float line,
-        Func<GarageRunDiagnostics> captureDiagnostics = null)
+        Func<GarageRunDiagnostics> captureDiagnostics = null,
+        Func<GarageRunTimeSample> captureTimeSample = null)
     {
         this.reviews = reviews;
         this.length = length;
         this.line = line;
         this.captureDiagnostics = captureDiagnostics;
+        this.captureTimeSample = captureTimeSample;
     }
 
     private static float[] Temperatures(TeamCar car)
@@ -147,6 +165,14 @@ internal sealed class GarageRunRecorder
                 startingTemperatures = Temperatures(car),
                 endingTemperatures = Temperatures(car)
             };
+            if (captureTimeSample != null)
+            {
+                current.timeSamples = new List<GarageRunTimeSample>();
+                current.lapFinishSeconds = new List<float>();
+                current.startFinishCrossingSeconds = new List<float>();
+                runStartTime = time;
+                nextSampleTime = 0d;
+            }
             reviews.Add(current);
             lapHandling = EmptyHandling();
             lastCrossing = -1f;
@@ -158,6 +184,18 @@ internal sealed class GarageRunRecorder
         }
         if (current != null)
         {
+            if (captureTimeSample != null)
+            {
+                double elapsed = time - runStartTime;
+                if (elapsed + 1e-6d >= nextSampleTime)
+                {
+                    var sample = captureTimeSample();
+                    sample.elapsedSeconds = (float)elapsed;
+                    current.timeSamples.Add(sample);
+                    // Keep the cadence anchored to run start, even when a step lands late.
+                    nextSampleTime = (Math.Floor((elapsed + 1e-6d) / SampleInterval) + 1d) * SampleInterval;
+                }
+            }
             if (inPit || previousInPit)
             {
                 validLap = false;
@@ -173,9 +211,11 @@ internal sealed class GarageRunRecorder
                     highestCrossing = crossingDistance;
                     double fraction = (crossingDistance - previousDistance) / (distance - previousDistance);
                     double crossingTime = previousTime + (time - previousTime) * (float)fraction;
+                    current.startFinishCrossingSeconds?.Add((float)(crossingTime - runStartTime));
                     if (validLap && lastCrossing >= 0f && crossingTime > lastCrossing)
                     {
                         current.lapTimes.Add((float)(crossingTime - lastCrossing));
+                        current.lapFinishSeconds?.Add((float)(crossingTime - runStartTime));
                         TotalCompletedLaps++;
                         var temperatures = Temperatures(car);
                         for (int tire = 0; tire < 4; tire++)

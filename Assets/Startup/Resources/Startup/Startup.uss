@@ -2778,11 +2778,14 @@
     margin: 0;
 }
 .title-continue-details {
-    width: 320px;
+    align-self: stretch;
     flex-shrink: 0;
-    font-size: 13px;
-    color: #f5f5f5;
+    -unity-font-definition: url("../Fonts/OpenSans/OpenSans-Bold.ttf");
+    font-size: 15px;
+    color: var(--title-accent);
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     margin: 6px 0 0 10px;
     padding: 0;
 }
@@ -3913,6 +3916,169 @@
 #mailPage .mail-inbox { flex-grow: 1; flex-basis: 0; }
 #mailPage .mail-response-actions { flex-direction: row; flex-wrap: wrap; align-items: center; flex-shrink: 0; margin-top: 8px; }
 #mailPage .mail-response-actions > .mail-scenario-choice { flex-grow: 0; flex-shrink: 0; margin: 0 8px 8px 0; align-self: flex-start; }
+
+.mail-race-report {
+    flex-shrink: 0;
+    min-width: 0;
+    color: #f5f5f5;
+}
+.mail-race-intro {
+    margin: 8px 0 5px;
+    padding: 0;
+    font-size: 14px;
+    white-space: normal;
+}
+.mail-race-section.team-home-panel {
+    margin: 12px 0 3px;
+    padding: 14px 8px 8px;
+    flex-shrink: 0;
+}
+.mail-race-section.team-home-panel > .team-home-heading {
+    font-size: 15px;
+    top: -11px;
+}
+.mail-race-track.track-ratings {
+    margin: 6px 0 0;
+}
+.mail-race-track .rating-well {
+    background-color: #263e50;
+}
+.mail-race-track .track-attribute-icon {
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    align-self: center;
+    margin: 2px 0 0;
+}
+.mail-race-track-caption {
+    margin: 0;
+    padding: 0;
+    font-size: 11px;
+    white-space: normal;
+    -unity-text-align: middle-center;
+}
+.mail-race-results.results-grid {
+    margin: 0;
+}
+.mail-race-session-row.results-grid-row {
+    align-items: center;
+    flex-shrink: 0;
+    border-bottom-color: #34495f;
+    min-height: 26px;
+}
+.mail-race-session-row.results-grid-header {
+    background-color: #182634;
+    color: #55c4ef;
+}
+.mail-race-session-row .results-grid-cell {
+    margin: 0;
+    padding: 3px 6px;
+    font-size: 13px;
+}
+.mail-race-session-row .mail-race-stat {
+    flex-grow: 0;
+    flex-shrink: 0;
+    -unity-text-align: middle-center;
+    white-space: nowrap;
+}
+.mail-race-session-row .mail-race-pos {
+    flex-basis: 84px;
+}
+.mail-race-session-row .mail-race-laps {
+    flex-basis: 44px;
+}
+.mail-race-session-row .mail-race-best-lap {
+    flex-basis: 92px;
+}
+.mail-race-session-name,
+.mail-race-session-status {
+    margin: 0;
+    padding: 0;
+    white-space: normal;
+}
+.mail-race-session-status {
+    color: #b7c6d5;
+    font-size: 11px;
+}
+.mail-race-chassis {
+    margin-bottom: 7px;
+    flex-shrink: 0;
+}
+.mail-race-chassis-heading {
+    margin: 1px 0 2px;
+    padding: 0;
+    color: #55c4ef;
+    font-size: 14px;
+    white-space: normal;
+}
+.mail-race-note {
+    margin: 2px 0;
+    padding: 0;
+    color: #b7c6d5;
+    font-size: 12px;
+    white-space: normal;
+}
+.mail-race-components {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: stretch;
+    flex-shrink: 0;
+    margin: 4px -3px 0;
+}
+.mail-race-component-slot {
+    flex-basis: 50%;
+    min-width: 144px;
+    flex-shrink: 0;
+}
+.mail-race-component {
+    flex-grow: 1;
+    margin: 0 3px 6px;
+    padding: 4px 7px;
+    border-width: 2px;
+    border-color: #34495f;
+    border-radius: 7px;
+    background-color: #182634;
+}
+.mail-race-component.mail-race-component-needs-repair {
+    border-color: #ef5b57;
+}
+.mail-race-component-header {
+    flex-direction: row;
+    align-items: center;
+    min-height: 22px;
+}
+.mail-race-component-name {
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    font-size: 13px;
+    white-space: normal;
+}
+.mail-race-wear {
+    flex-direction: row;
+    align-items: center;
+    min-height: 18px;
+    font-size: 12px;
+}
+.mail-race-wear > .car-card-metric {
+    margin: 0;
+}
+.mail-race-wear .car-card-value {
+    width: 48px;
+}
+.mail-race-wear-change,
+.mail-race-repair-label {
+    margin: 1px 0 0;
+    padding: 0;
+    font-size: 11px;
+    white-space: normal;
+}
+.mail-race-wear-change {
+    color: #b7c6d5;
+}
+.mail-race-repair-label {
+    color: #ff8c8c;
+}
 
 /* Hiring views share the current Team/settings control styling. */
 #recruitmentPage { flex-grow: 1; flex-shrink: 1; min-height: 0; padding: 12px 16px; background-color: #10151e; }

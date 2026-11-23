@@ -10,7 +10,7 @@ internal sealed class RacingSeries
 {
     public string id = string.Empty;
     public string name = string.Empty;
-    public int order;
+    public int SeriesLevel = int.MaxValue;
     public string carModel;
     public float maximumTrackLengthMiles;
     public SeriesManufacturer[] manufacturers;
@@ -39,7 +39,7 @@ internal sealed class RacingSeries
     public static RacingSeries[] Catalog => catalog ??= Resources.LoadAll<TextAsset>("RacingSeries")
         .Select(Read).Where(series => series != null)
         .GroupBy(series => series.id, StringComparer.Ordinal).Select(group => group.First())
-        .OrderBy(series => series.order).ThenBy(series => series.name).ToArray();
+        .OrderBy(series => series.SeriesLevel).ThenBy(series => series.name).ToArray();
 
     public static string CanonicalId(string id) =>
         id == "tour-modified-detailed" ? "tour-modified" : id;
@@ -446,6 +446,17 @@ internal sealed class Career
 }
 
 internal enum CarComponent { Engine, Transmission, Brakes, Suspension, Aerodynamics }
+
+internal static class CarComponentDisplay
+{
+    public static IReadOnlyList<CarComponent> Order { get; } = Array.AsReadOnly(new[]
+    {
+        CarComponent.Engine, CarComponent.Transmission, CarComponent.Suspension, CarComponent.Brakes, CarComponent.Aerodynamics
+    });
+
+    public static string Name(CarComponent component) =>
+        component == CarComponent.Aerodynamics ? "Body" : component.ToString();
+}
 
 internal readonly struct ComponentCondition
 {
@@ -1383,15 +1394,7 @@ internal sealed class CareerSetup
         list.AddToClassList("title-career-list");
         list.style.maxHeight = 450;
         dialog.Add(list);
-        var choices = IsSeriesChangeSetup ? series.AsEnumerable() : series.OrderBy(rules => rules.id switch
-        {
-            "nascar-cup" => 0,
-            "oreilly-auto-parts" => 1,
-            "craftsman-truck" => 2,
-            "tour-modified" => 3,
-            _ => 4
-        });
-        foreach (var rules in choices)
+        foreach (var rules in series)
         {
             int index = Array.IndexOf(series, rules);
             var row = new VisualElement();
@@ -1963,9 +1966,9 @@ internal sealed class CareerSetup
                     string.IsNullOrWhiteSpace(entry.teamName) || string.IsNullOrWhiteSpace(entry.seriesId) ||
                     string.IsNullOrWhiteSpace(entry.seriesName))
                     continue;
-                if (entry.seriesId == "tour-modified-detailed")
+                if (entry.seriesId is "tour-modified-detailed" or "cars-tour")
                 {
-                    entry.seriesId = "tour-modified";
+                    entry.seriesId = RacingSeries.CanonicalId(entry.seriesId);
                     entry.seriesName = RacingSeries.ForId(entry.seriesId).name;
                 }
                 entry.Path = file;
@@ -2033,9 +2036,9 @@ internal sealed class CareerSetup
                 }
             }
         }
-        if (career.seriesId == "tour-modified-detailed")
+        if (career.seriesId is "tour-modified-detailed" or "cars-tour")
         {
-            career.seriesId = "tour-modified";
+            career.seriesId = RacingSeries.CanonicalId(career.seriesId);
             career.seriesName = RacingSeries.ForId(career.seriesId).name;
         }
         career.savePath = file;

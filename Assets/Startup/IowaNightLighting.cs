@@ -35,7 +35,7 @@ public sealed partial class TrackPreview
 
     private void AssignTrackLightingLayers()
     {
-        if (definition.id is not (IowaTrackId or PhoenixTrackId or RichmondTrackId or NorthWilkesboroTrackId))
+        if (definition.id is not (IowaTrackId or PhoenixTrackId or RichmondTrackId or NorthWilkesboroTrackId or MichiganTrackId))
         {
             AssignBristolLighting(transform);
             return;

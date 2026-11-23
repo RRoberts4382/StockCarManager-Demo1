@@ -43,8 +43,9 @@ internal static class TeamCarCard
         AddLabel(header, "Level", "car-card-rating-heading");
         AddLabel(header, "Wear", "car-card-rating-heading");
         card.Add(header);
-        foreach (var component in TeamCar.Components)
+        foreach (var component in CarComponentDisplay.Order)
         {
+            string componentName = CarComponentDisplay.Name(component);
             var condition = car.GetComponent(component);
             var row = new VisualElement();
             row.AddToClassList("car-card-rating-row");
@@ -53,7 +54,7 @@ internal static class TeamCarCard
             {
                 var slot = new VisualElement();
                 slot.AddToClassList("home-component-icon-slot");
-                slot.tooltip = component + (repair == null ? "" : $" · {repair.AssigneeDisplay}");
+                slot.tooltip = componentName + (repair == null ? "" : $" · {repair.AssigneeDisplay}");
                 var icon = ShopComponentPanel.ComponentIcon(component);
                 icon.pickingMode = PickingMode.Ignore;
                 slot.Add(icon);
@@ -61,13 +62,13 @@ internal static class TeamCarCard
             }
             else
             {
-                var name = AddLabel(row, component == CarComponent.Aerodynamics ? "Aero" : component.ToString(), "car-card-component");
+                var name = AddLabel(row, componentName, "car-card-component");
                 if (repair != null)
                     name.tooltip = $"{repair.AssigneeDisplay}";
             }
             AddMetric(row, condition.Level / (float)TeamCar.MaximumComponentLevel, $"{condition.Level}/{TeamCar.MaximumComponentLevel}",
                 ShopComponentPanel.ComponentColor(component));
-            AddMetric(row, condition.Wear, $"{condition.Wear:P0}", ComponentWearGradient.ColorAt(condition.Wear), wearMeter: true);
+            AddComponentWear(row, condition.Wear, $"{condition.Wear:P0}");
             card.Add(row);
         }
 
@@ -87,6 +88,9 @@ internal static class TeamCarCard
         AddMetric(row, level / (float)TeamCar.MaximumComponentLevel, $"{level}/{TeamCar.MaximumComponentLevel}",
             ShopComponentPanel.ComponentColor(component));
     }
+
+    internal static void AddComponentWear(VisualElement row, float wear, string wearText) =>
+        AddMetric(row, wear, wearText, ComponentWearGradient.ColorAt(wear), wearMeter: true);
 
     private static void AddMetric(VisualElement row, float fraction, string value, Color color, bool wearMeter = false)
     {

@@ -113,18 +113,19 @@ public sealed partial class TrackPreview
     }
 
     private void AddIowaPitWorkArea(Transform box, Renderer[] boxRenderers, Quaternion facing,
-        int carNumber, int team, int count, Material paint, Material concrete)
+        int carNumber, int team, int count, Material paint, Material concrete, bool compact)
     {
         var worldForward = transform.TransformDirection(facing * Vector3.forward);
         float rear = 0f;
-        foreach (var boxRenderer in boxRenderers)
-            rear = Mathf.Min(rear, Vector3.Dot(boxRenderer.bounds.center - box.position, worldForward) -
-                ProjectPitRendererExtent(boxRenderer, worldForward));
+        foreach (var renderer in boxRenderers)
+            rear = Mathf.Min(rear, Vector3.Dot(renderer.bounds.center - box.position, worldForward) -
+                ProjectPitRendererExtent(renderer, worldForward));
 
-        string venue = VenueSceneryName;
+        string venue = compact ? definition.name : VenueSceneryName;
         var work = CreateObject($"{venue} pit work area No. {carNumber}", teamPitBoxes.transform);
         var point = box.localPosition;
-        point.y = .02f;
+        if (!compact)
+            point.y = .02f;
         work.transform.SetLocalPositionAndRotation(point, facing);
         if (concrete != null)
             AddIowaPitWorkPad(carNumber, point, facing, rear, concrete);
@@ -132,9 +133,12 @@ public sealed partial class TrackPreview
         var random = new System.Random(unchecked(35711 + carNumber * 7919 + team * 101));
         var spots = new Vector3[12];
         int available = spots.Length;
+        float columnSpacing = compact ? .88f : 1.52f;
+        float rowSpacing = compact ? 1.3f : 1.53f;
+        float firstRow = rear - (compact ? 1.85f : .98f);
         for (int i = 0; i < spots.Length; i++)
-            spots[i] = new Vector3((i % 4 - 1.5f) * 1.52f + Offset(.055f), 0f,
-                rear - .98f - (i / 4) * 1.53f + Offset(.055f));
+            spots[i] = new Vector3((i % 4 - 1.5f) * columnSpacing + Offset(.055f), 0f,
+                firstRow - (i / 4) * rowSpacing + Offset(.055f));
 
         Vector3 tires = Take(random.Next(available));
         bool trolley = random.Next(2) == 0;
@@ -143,8 +147,10 @@ public sealed partial class TrackPreview
         mesh.FloorJack(jack, Turn(Offset(48f)));
 
         float swap = random.Next(2) == 0 ? 1f : -1f;
-        Crew(new Vector3(-2.67f * swap, 0f, -.01f + Offset(.27f)), 0, Offset(33f));
-        var helper = new Vector3(2.67f * swap, 0f, -.13f + Offset(.21f));
+        float sideCrewOffset = compact ? 1f : 2.67f;
+        float sideCrewRow = compact ? rear - .8f : 0f;
+        Crew(new Vector3(-sideCrewOffset * swap, 0f, sideCrewRow - .01f + Offset(.27f)), 0, Offset(33f));
+        var helper = new Vector3(sideCrewOffset * swap, 0f, sideCrewRow - .13f + Offset(.21f));
         Crew(helper, 1, Towards(helper, tires));
         Vector3 changer = Near(tires);
         Crew(changer, 2, Towards(changer, tires));
@@ -164,9 +170,9 @@ public sealed partial class TrackPreview
         Mesh combined = mesh.Build(work.name, team, count);
         roadMeshes.Add(combined);
         work.AddComponent<MeshFilter>().sharedMesh = combined;
-        var renderer = work.AddComponent<MeshRenderer>();
-        renderer.sharedMaterial = paint;
-        renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        var workRenderer = work.AddComponent<MeshRenderer>();
+        workRenderer.sharedMaterial = paint;
+        workRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
 
         float Offset(float radius) => ((float)random.NextDouble() * 2f - 1f) * radius;
         Quaternion Turn(float yaw) => Quaternion.Euler(0f, yaw, 0f);

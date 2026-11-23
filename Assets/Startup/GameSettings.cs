@@ -148,6 +148,20 @@ internal sealed class GameSettings
             PlayerPrefs.SetInt(Key + "VehicleBehavior003Enabled", 1);
             PlayerPrefs.Save();
         }
+        // Select 004 once and keep subsequent manual model selections.
+        if (!PlayerPrefs.HasKey(Key + "VehicleBehavior004Enabled"))
+        {
+            PlayerPrefs.SetString(Key + "VehicleBehaviorModel", VehicleBehavior004.ModelId);
+            PlayerPrefs.SetInt(Key + "VehicleBehavior004Enabled", 1);
+            PlayerPrefs.Save();
+        }
+        // Select 006 once and keep subsequent manual model selections.
+        if (!PlayerPrefs.HasKey(Key + "VehicleBehavior006Enabled"))
+        {
+            PlayerPrefs.SetString(Key + "VehicleBehaviorModel", VehicleBehavior006.ModelId);
+            PlayerPrefs.SetInt(Key + "VehicleBehavior006Enabled", 1);
+            PlayerPrefs.Save();
+        }
         savedBehaviorModel = VehicleBehaviorModels.IndexForId(PlayerPrefs.GetString(Key + "VehicleBehaviorModel"));
         savedPaceVehicle = Mathf.Clamp(PlayerPrefs.GetInt(Key + "PaceVehicle"), 0, paceVehicle.choices.Count - 1);
         savedCarLod = Mathf.Clamp(PlayerPrefs.GetInt(Key + "CarLOD", 3), 1, 5);
@@ -210,7 +224,8 @@ internal sealed class GameSettings
             "002 adds a corner-by-corner speed profile in live sessions. 003 also models setup, tire grip and load, and how fuel weight affects acceleration and braking.";
         vehicleBehaviorModel.tooltip = "Changes how cars choose a racing line, follow traffic, and pass in live sessions. " +
             "VehicleBehavior001 uses basic traffic checks. 002 checks closing speeds and clearance through a lane change. " +
-            "003 also adjusts racing lines and passing decisions using track layout, driver aggression, and race progress.";
+            "003 also adjusts racing lines and passing decisions using track layout, driver aggression, and race progress. " +
+            "004 adds sweeping lines on shaped oval frontstretches. 006 anticipates changes in the preferred oval line through corner entry and exit.";
 
         var simulation = AddTab(SettingsTab.Simulation, "Simulation");
         simulation.Add(SettingsFormStyle.Field(simulationModel, simulationModel.value, _ => RefreshRevert()));

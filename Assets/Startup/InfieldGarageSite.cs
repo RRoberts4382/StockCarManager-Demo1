@@ -7,6 +7,11 @@ public sealed partial class TrackPreview
     private const float GarageBuildingDepth = 48f;
     private const float GarageCourtFront = 19f;
     private const float TexasPitSourceLength = 450f;
+    private const float InfieldGarageHalfLength = 55f;
+    private const float InfieldGarageFront = -7.20f;
+    private const float InfieldGarageBack = 7.20f;
+    private const float InfieldGarageFloorFront = InfieldGarageFront + 0.22f;
+    private const float InfieldGarageFloorHeight = 0.22f;
 
     private void AddInfieldGarageSite(TrackPitSpline pit, float width, float roadStart, float roadEnd)
     {
@@ -35,7 +40,15 @@ public sealed partial class TrackPreview
 
         bool reuseTexasYard = texas && Resources.Load<GameObject>("Startup/TexasMotorSpeedway") != null;
         float yardElevation = reuseTexasYard ? 0.05f - origin.y : 0f;
-        if (!reuseTexasYard)
+        const float frontThreshold = 38.7f;
+        const float rearThreshold = 57.3f;
+        const float floorFront = GarageBuildingDepth + InfieldGarageFloorFront;
+        const float floorBack = GarageBuildingDepth + InfieldGarageBack;
+        if (!texas)
+        {
+            AddCharlotteCourt();
+        }
+        else if (!reuseTexasYard)
         {
             AddSurface(venue + " garage motor court", asphalt, new[]
             {
@@ -50,24 +63,56 @@ public sealed partial class TrackPreview
 
         var threshold = MakeMaterial(new Color32(145, 143, 136, 255));
         threshold.SetTexture("_BaseMap", BristolPavementTexture(true));
-        float thresholdHeight = yardElevation + 0.006f;
+        float thresholdHeight = texas ? yardElevation + 0.006f : yardElevation;
         AddSurface(venue + " garage concrete threshold", threshold, new[]
         {
-            (38.7f, 0f, 55f, thresholdHeight),
-            (41.2f, 0f, 55f, thresholdHeight)
+            (frontThreshold, 0f, InfieldGarageHalfLength, thresholdHeight),
+            (texas ? 41.2f : floorFront, 0f, InfieldGarageHalfLength, thresholdHeight)
         });
         AddSurface(venue + " garage rear concrete threshold", threshold, new[]
         {
-            (54.8f, 0f, 55f, thresholdHeight),
-            (57.3f, 0f, 55f, thresholdHeight)
+            (texas ? 54.8f : floorBack, 0f, InfieldGarageHalfLength, thresholdHeight),
+            (rearThreshold, 0f, InfieldGarageHalfLength, thresholdHeight)
         });
 
         var garage = CreateObject(venue + " infield garage", transform).transform;
-        garage.localPosition = Point(0f, GarageBuildingDepth, yardElevation);
+        garage.localPosition = Point(0f, GarageBuildingDepth, texas ? yardElevation : yardElevation - InfieldGarageFloorHeight);
         garage.localRotation = rotation;
         AddInfieldGarageBuilding(garage, texas);
 
         Vector3 Point(float x, float z, float elevation) => origin + rotation * new Vector3(x, elevation, z);
+
+        void AddCharlotteCourt()
+        {
+            // Leave a shared opening for the two concrete thresholds and the garage floor.
+            var depths = new[] { GarageCourtFront, frontThreshold, rearThreshold, 75f, 78f };
+            const int columns = 4;
+            var vertices = new Vector3[depths.Length * columns];
+            var triangles = new System.Collections.Generic.List<int>(66);
+            for (int row = 0; row < depths.Length; row++)
+            {
+                float halfWidth = row == depths.Length - 1 ? 73f : 76f;
+                int vertex = row * columns;
+                vertices[vertex] = Point(-halfWidth, depths[row], 0f);
+                vertices[vertex + 1] = Point(-InfieldGarageHalfLength, depths[row], 0f);
+                vertices[vertex + 2] = Point(InfieldGarageHalfLength, depths[row], 0f);
+                vertices[vertex + 3] = Point(halfWidth, depths[row], 0f);
+                if (row == depths.Length - 1) continue;
+
+                for (int column = 0; column < columns - 1; column++)
+                {
+                    if (row == 1 && column == 1) continue;
+                    int a = vertex + column;
+                    triangles.Add(a);
+                    triangles.Add(a + columns);
+                    triangles.Add(a + 1);
+                    triangles.Add(a + 1);
+                    triangles.Add(a + columns);
+                    triangles.Add(a + columns + 1);
+                }
+            }
+            AddRoadMesh(venue + " garage motor court", asphalt, vertices, triangles.ToArray());
+        }
 
         void AddAccessRoad(string name, float side)
         {

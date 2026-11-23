@@ -49,7 +49,7 @@ internal sealed class GarageSetupEditor
 
     internal GarageSetupEditor(TeamCar car, TrackDefinition track, VisualElement screen, Texture image,
         Func<string, Setup, string> save, Func<GarageRunReview> lastRun, Func<float> fuel,
-        Action<float> setFuel, Func<bool> locked, Func<bool> canFuel, Action<Button> openRunHistory)
+        Action<float> setFuel, Func<bool> locked, Func<bool> canFuel)
     {
         this.car = car;
         this.track = track;
@@ -83,8 +83,6 @@ internal sealed class GarageSetupEditor
             });
         }
         var actions = Group(toolbar, "garage-redesign-buttons");
-        IconButton(actions, "On-track runs", "Review lap times, handling, and tire data from previous runs.", 11,
-            () => openRunHistory(Root.Q<Button>("on-track-runs")));
         revertButton = IconButton(actions, "Revert", "Discard changes since the last save.", 9, Revert);
         IconButton(actions, "Help", "Review crew chief suggestions based on the last run's driver comments.", 10, Help);
         var caption = Group(Root, "garage-redesign-row");
@@ -225,9 +223,17 @@ internal sealed class GarageSetupEditor
         var tracker = slider.Q<VisualElement>("unity-tracker");
         var handle = slider.Q<VisualElement>("unity-dragger");
         if (tracker != null)
+        {
             tracker.style.backgroundColor = Color.Lerp(new Color32(32, 42, 54, 255), accent, .42f);
+            if (vertical)
+                tracker.style.width = 7;
+            else
+                tracker.style.height = 7;
+        }
         if (handle != null)
         {
+            handle.style.width = 22;
+            handle.style.height = 22;
             handle.style.backgroundColor = accent;
             SetBorder(handle, accent);
         }

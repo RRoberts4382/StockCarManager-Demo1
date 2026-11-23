@@ -53,11 +53,12 @@ internal sealed class RaceWheelAnimation
         {
             wheel.Angle = 0f;
             wheel.SteeringAngle = 0f;
+            wheel.FilteredSteering = 0f;
         }
         Present();
     }
 
-    public void Sample(Transform car, bool sliding)
+    public void Sample(Transform car, bool sliding, float steeringBlend = 0f)
     {
         Vector3 position = car.localPosition;
         Quaternion rotation = car.localRotation;
@@ -70,7 +71,10 @@ internal sealed class RaceWheelAnimation
         {
             initialized = true;
             foreach (var wheel in wheels)
+            {
                 wheel.SteeringAngle = 0f;
+                wheel.FilteredSteering = 0f;
+            }
             return;
         }
 
@@ -91,8 +95,13 @@ internal sealed class RaceWheelAnimation
                 float direction = Mathf.Sign(distance);
                 // Sample each front contact patch separately. The inside
                 // wheel takes a tighter arc and needs more steering lock.
-                wheel.SteeringAngle = sliding ? 0f : Mathf.Clamp(
+                float steering = sliding ? 0f : Mathf.Clamp(
                     Mathf.Atan2(travel.x * direction, Mathf.Abs(distance)) * Mathf.Rad2Deg, -40f, 40f);
+                // Filter brief pose changes over traveled distance so playback
+                // speed has no effect on the steering presentation.
+                wheel.FilteredSteering = sliding || steeringBlend <= 0f ? steering :
+                    Mathf.Lerp(wheel.FilteredSteering, steering, 1f - Mathf.Exp(-movement.magnitude / 16f));
+                wheel.SteeringAngle = Mathf.Lerp(steering, wheel.FilteredSteering, steeringBlend);
                 if (!sliding)
                     distance = new Vector2(travel.x, distance).magnitude * direction;
             }
@@ -158,6 +167,7 @@ internal sealed class RaceWheelAnimation
         public readonly bool Front;
         public float Angle;
         public float SteeringAngle;
+        public float FilteredSteering;
         public float PresentedAngle;
         public float PresentedSteering;
 

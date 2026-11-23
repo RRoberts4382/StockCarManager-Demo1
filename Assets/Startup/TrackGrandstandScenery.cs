@@ -291,6 +291,7 @@ internal static class TrackGrandstandScenery
     {
         string importedVenue = trackId switch
         {
+            11 when importedScenery != null => "Michigan",
             27 => "Bristol",
             28 => "Orange County",
             29 => "South Boston",
@@ -310,8 +311,9 @@ internal static class TrackGrandstandScenery
             if (trackId != 27)
             {
                 var importedAttendance = authored.AddComponent<GrandstandAttendance>();
-                importedAttendance.RegisterImportedSeats = () => ImportedGrandstandSeating.Register(trackId,
-                    importedScenery, parent, importedAttendance, lapLength, sampleEdge);
+                if (trackId != 11)
+                    importedAttendance.RegisterImportedSeats = () => ImportedGrandstandSeating.Register(trackId,
+                        importedScenery, parent, importedAttendance, lapLength, sampleEdge);
             }
             // Bristol's FBX already contains the paved connection from its wall to the facade.
             if (trackId == 30)
@@ -405,6 +407,8 @@ internal static class TrackGrandstandScenery
     {
         return trackId switch
         {
+            11 => name.StartsWith("Grandstand ", StringComparison.Ordinal) ||
+                name.StartsWith("Press box", StringComparison.Ordinal),
             27 => name.StartsWith("Seating section", StringComparison.Ordinal) ||
                 name.StartsWith("Concourse and facade", StringComparison.Ordinal) ||
                 name.StartsWith("Suite glazing", StringComparison.Ordinal) ||

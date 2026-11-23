@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-internal sealed class VehicleBehavior003 : IVehicleBehaviorModel
+internal class VehicleBehavior003 : IVehicleBehaviorModel
 {
     // Bound to the active context before each update: registry models are shared.
     internal IReadOnlyList<SessionCarResult> Drivers { get; set; }
@@ -36,8 +36,8 @@ internal sealed class VehicleBehavior003 : IVehicleBehaviorModel
         return CombinedAggression(value, RaceProgressAggression);
     }
 
-    public string Id => "vehicle-behavior-003";
-    public string Name => "VehicleBehavior003";
+    public virtual string Id => "vehicle-behavior-003";
+    public virtual string Name => "VehicleBehavior003";
 
     internal const float MaximumLateralSpeed = 3f;
 
@@ -214,6 +214,11 @@ internal sealed class VehicleBehavior003 : IVehicleBehaviorModel
         }
     }
 
+    protected virtual float StepTowardPreferredLane(int index, float lane, float target, float seconds) =>
+        Mathf.MoveTowards(lane, target, MaximumLateralSpeed * seconds);
+
+    protected virtual float PreferredLaneEdgeClearance(int index, float lane, float inside) => 1.05f;
+
     public void AvoidTraffic(float lapLength, float inside, float seconds, bool allowPassing,
         float[] distances, float[] widths, bool[] onTrack, float[] lanes, float[] targets,
         float[] currentSpeeds, float[] speeds, float brakingLimit, bool[] draftLine = null, bool respondToTraffic = true, float[] brakingFactors = null)
@@ -237,7 +242,7 @@ internal sealed class VehicleBehavior003 : IVehicleBehaviorModel
             float target = targets[i];
             if (!respondToTraffic)
             {
-                lanes[i] = Mathf.MoveTowards(lanes[i], target, MaximumLateralSpeed * seconds);
+                lanes[i] = StepTowardPreferredLane(i, lanes[i], target, seconds);
                 continue;
             }
             float nearest = float.PositiveInfinity;
@@ -270,13 +275,16 @@ internal sealed class VehicleBehavior003 : IVehicleBehaviorModel
             // Move toward the preferred line as soon as the next swept step is safe.
             // Do not wait for the entire lateral corridor to be empty.
 
-            float next = Mathf.MoveTowards(lanes[i], target, MaximumLateralSpeed * seconds);
-            if (LaneClear(next, carSpacing, changingLane: true))
+            float next = target == targets[i]
+                ? StepTowardPreferredLane(i, lanes[i], target, seconds)
+                : Mathf.MoveTowards(lanes[i], target, MaximumLateralSpeed * seconds);
+            if (LaneClear(next, carSpacing, followingPreferred: target == targets[i]))
                 lanes[i] = next;
 
-            bool LaneClear(float candidate, float ahead, bool changingLane = false)
+            bool LaneClear(float candidate, float ahead, bool followingPreferred = false)
             {
-                if (Mathf.Abs(candidate) > Mathf.Max(0f, widths[i] * 0.5f - 1.05f))
+                float clearance = followingPreferred ? PreferredLaneEdgeClearance(i, candidate, inside) : 1.05f;
+                if (Mathf.Abs(candidate) > Mathf.Max(0f, widths[i] * 0.5f - clearance))
                     return false;
                 for (int j = 0; j < lanes.Length; j++)
                 {

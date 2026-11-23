@@ -42,7 +42,6 @@ public sealed class StartupMenu : MonoBehaviour
     private RaceSession activeSession;
     private bool sessionInGarage;
     private bool garageVisitPending;
-    private int playerLapsAtGarageDeparture;
     private bool garageCarParked;
     private double trackFpsWarmupUntil;
     private bool developmentPractice;
@@ -432,7 +431,7 @@ public sealed class StartupMenu : MonoBehaviour
         snapshotButton = trackScreen.Q<Button>("snapshotButton");
         snapshotStatus = trackScreen.Q<Label>("snapshotStatus");
         snapshotButton.clicked += SaveTrackSnapshot;
-        DrawButtonIcon(snapshotButton, DrawSnapshotIcon);
+        DrawSnapshotButtonIcon(snapshotButton);
         returnToGarageButton = trackScreen.Q<Button>("returnToGarageButton");
         returnToGarageButton.clicked += ReturnToGarage;
         DrawButtonIcon(returnToGarageButton, DrawLeaveSessionIcon);
@@ -770,7 +769,6 @@ public sealed class StartupMenu : MonoBehaviour
         OpenEventGarageView(race, definition, car, System.Array.Empty<string>());
         activeSession = session;
         raceEventView.SetRunningSession(session);
-        playerLapsAtGarageDeparture = 0;
         var entries = TrackPreview.CreateTimingEntries(car, career);
         if (testRace)
         {
@@ -2123,24 +2121,26 @@ public sealed class StartupMenu : MonoBehaviour
 
     private void RefreshLoadCareerButton()
     {
+        var details = titleScreen.Q<Label>("continueCareerDetails");
         try
         {
             var latest = careerSetup.ReadSavedCareers().OrderByDescending(entry => entry.LastSaved).FirstOrDefault();
             var visibility = latest == null ? DisplayStyle.None : DisplayStyle.Flex;
             titleScreen.Q("continueCareerControls").style.display = visibility;
+            details.style.display = visibility;
             loadCareerButton.style.display = visibility;
             loadCareerButton.SetEnabled(latest != null);
             continueCareerButton.SetEnabled(latest != null);
-            string carNumber = latest?.cars?.FirstOrDefault()?.number.ToString();
-            titleScreen.Q<Label>("continueCareerDetails").text = latest == null ? string.Empty :
-                string.IsNullOrEmpty(carNumber) ? $"{latest.teamName}\n{latest.seriesName}" :
-                $"{latest.teamName}  #{carNumber}\n{latest.seriesName}";
+            int seasonYear = latest?.SeasonYear ?? 0;
+            string season = seasonYear > 0 ? seasonYear.ToString() : "Season unknown";
+            details.text = latest == null ? string.Empty : $"{latest.teamName} - {season} {latest.seriesName}";
             continueCareerButton.tooltip = latest == null ? "No saved career to continue." :
                 $"Continue {latest.teamName}, your most recently saved career.";
         }
         catch (System.Exception ex) when (ex is IOException || ex is System.UnauthorizedAccessException)
         {
             titleScreen.Q("continueCareerControls").style.display = DisplayStyle.None;
+            details.style.display = DisplayStyle.None;
             loadCareerButton.style.display = DisplayStyle.Flex;
             loadCareerButton.SetEnabled(true);
             continueCareerButton.SetEnabled(false);
@@ -2548,19 +2548,14 @@ public sealed class StartupMenu : MonoBehaviour
 
         AddStaffIdentity(card, employee.FullName, employee.RoleName);
         var skills = AddStaffRatings(card);
-        AddSkill(CarComponent.Brakes, "Brakes");
-        AddSkill(CarComponent.Engine, "Engine");
-        AddSkill(CarComponent.Suspension, "Suspension");
-        AddSkill(CarComponent.Transmission, "Transmission");
-        AddSkill(CarComponent.Aerodynamics, "Aero");
-        AddMoraleRating(skills, employee.EffectiveMorale(activeCareer?.currentDate));
-        AddStaffDetails(card, employee.annualSalary, employee.age, employee.yearsExperience);
-
-        void AddSkill(CarComponent component, string title)
+        foreach (var component in CarComponentDisplay.Order)
         {
             float value = employee.RepairSkill(component);
+            string title = component == CarComponent.Aerodynamics ? "Aero" : component.ToString();
             AddStaffRating(skills, title, value, value.ToString("F2"), ShopComponentPanel.ComponentColor(component));
         }
+        AddMoraleRating(skills, employee.EffectiveMorale(activeCareer?.currentDate));
+        AddStaffDetails(card, employee.annualSalary, employee.age, employee.yearsExperience);
     }
 
     private static void AddArrestStatus(VisualElement card, StaffArrest arrest, string careerDate)
@@ -2925,7 +2920,7 @@ public sealed class StartupMenu : MonoBehaviour
                 candidate.FullName, candidate.age, candidate.hometownCity, candidate.hometownState,
                 candidate.RoleName, skills =>
                 {
-                    foreach (var component in TeamCar.Components)
+                    foreach (var component in CarComponentDisplay.Order)
                     {
                         float value = candidate.RepairSkill(component);
                         string name = component == CarComponent.Aerodynamics ? "Bodywork" : component.ToString();
@@ -3240,7 +3235,7 @@ public sealed class StartupMenu : MonoBehaviour
         dialog.AddToClassList("settings-confirmation-dialog");
         dialog.AddToClassList("used-car-filter-dialog");
         dialog.Add(SettingsFormStyle.Label("Advancing Career Week", "settings-group-heading"));
-        var wheel = TrackAttributeIcon("Tire wear");
+        var wheel = TrackIndicatorIcon(tireWear: false);
         wheel.style.width = wheel.style.height = 40;
         wheel.style.alignSelf = Align.Center;
         dialog.Add(wheel);
@@ -3863,6 +3858,7 @@ public sealed class StartupMenu : MonoBehaviour
     {
         if (!maintenanceComponent.HasValue) return;
         var component = maintenanceComponent.Value;
+        garageScreen.Q<Label>("carMaintenanceTitle").text = $"{CarComponentDisplay.Name(component)} Repair";
         var content = garageScreen.Q("carMaintenanceComponents"); content.Clear();
         var status = garageScreen.Q<Label>("carMaintenanceStatus"); status.text = string.IsNullOrEmpty(message) ? " " : message;
         SettingsFormStyle.SetValidationMessage(status, status.text, message.StartsWith("Could not", System.StringComparison.Ordinal));
@@ -4416,29 +4412,30 @@ public sealed class StartupMenu : MonoBehaviour
         reset.tooltip = "Reset all component levels to 1 and recalculate the total price.";
         reset.SetEnabled(TeamCar.Components.Any(component => newChassisDraft.ComponentLevel(component) > 1));
         components.Add(componentHeading);
-        foreach (var component in TeamCar.Components)
+        foreach (var component in CarComponentDisplay.Order)
         {
+            string componentName = CarComponentDisplay.Name(component);
             var row = new VisualElement(); row.AddToClassList("new-chassis-component-row");
-            var iconSlot = new VisualElement { tooltip = component.ToString() };
+            var iconSlot = new VisualElement { tooltip = componentName };
             iconSlot.AddToClassList("home-component-icon-slot");
             var icon = ShopComponentPanel.ComponentIcon(component); icon.pickingMode = PickingMode.Ignore;
             iconSlot.Add(icon); row.Add(iconSlot);
-            var levelBar = new VisualElement { tooltip = component + " level: " + newChassisDraft.ComponentLevel(component) + "/" + TeamCar.MaximumComponentLevel };
+            var levelBar = new VisualElement { tooltip = componentName + " level: " + newChassisDraft.ComponentLevel(component) + "/" + TeamCar.MaximumComponentLevel };
             levelBar.AddToClassList("new-chassis-level-bar");
             TeamCarCard.AddComponentLevel(levelBar, newChassisDraft, component); row.Add(levelBar);
             int level = newChassisDraft.ComponentLevel(component);
             var minus = SettingsFormStyle.Button("-", () => { newChassisDraft.ComponentLevel(component)--; SaveNewChassisConfiguration(); RefreshNewChassisPanel(); });
-            minus.tooltip = "Decrease " + component + " level and purchase price."; minus.SetEnabled(level > 1);
+            minus.tooltip = "Decrease " + componentName + " level and purchase price."; minus.SetEnabled(level > 1);
             minus.AddToClassList("new-chassis-level-button"); row.Add(minus);
             row.Add(SettingsFormStyle.Label("Level " + level, "new-chassis-level"));
             var plus = SettingsFormStyle.Button("+", () => { newChassisDraft.ComponentLevel(component)++; SaveNewChassisConfiguration(); RefreshNewChassisPanel(); });
-            plus.tooltip = "Increase " + component + " level for " + RaceFinances.Dollars(activeCareer.SeriesRules.componentUpgradeCost) + ".";
+            plus.tooltip = "Increase " + componentName + " level for " + RaceFinances.Dollars(activeCareer.SeriesRules.componentUpgradeCost) + ".";
             plus.SetEnabled(level < TeamCar.MaximumComponentLevel); plus.AddToClassList("new-chassis-level-button"); row.Add(plus);
             long upgrade = (level - 1L) * activeCareer.SeriesRules.componentUpgradeCost;
             var upgradePrice = new TextField
             {
                 value = RaceFinances.Dollars(upgrade), isReadOnly = true,
-                tooltip = component + " upgrade cost above the included level 1 component."
+                tooltip = componentName + " upgrade cost above the included level 1 component."
             };
             SettingsFormStyle.StyleField(upgradePrice);
             upgradePrice.AddToClassList("new-chassis-upgrade-price");
@@ -5057,19 +5054,15 @@ public sealed class StartupMenu : MonoBehaviour
         if (weights == null)
             return;
 
-        AddRatingBar(chart, "Aero", weights.aerodynamics);
-        AddRatingBar(chart, "Brakes", weights.brakes);
-        AddRatingBar(chart, "Transmission", weights.transmission);
-        AddRatingBar(chart, "Tire Wear", weights.surfaceRoughness);
-        AddRatingBar(chart, "Horsepower", weights.horsepower);
-        AddRatingBar(chart, "Suspension", weights.suspension);
+        foreach (var (title, value, component) in TrackRatings.DisplayAttributes(weights))
+            AddRatingBar(chart, title, value, component);
     }
 
-    private static void AddRatingBar(VisualElement chart, string title, float value)
+    private static void AddRatingBar(VisualElement chart, string title, float value, CarComponent? component)
     {
-        string help = title == "Tire Wear"
-            ? $"Tire Wear: {value:F2} out of 1.00. Higher values mean higher tire wear at this track."
-            : $"{title}: {value:F2} out of 1.00. Higher values mean this attribute matters more at this track.";
+        string help = component.HasValue
+            ? $"{title}: {value:F2} out of 1.00. Higher values mean this attribute matters more at this track."
+            : $"{title}: {value:F2} out of 1.00. Higher values mean higher tire wear at this track.";
         var column = new VisualElement { tooltip = help };
         column.AddToClassList("rating-column");
         var number = new Label(value.ToString("F2"));
@@ -5084,33 +5077,25 @@ public sealed class StartupMenu : MonoBehaviour
         ComponentWearGradient.Apply(bar, value, vertical: true);
         well.Add(bar);
         column.Add(well);
-        var icon = TrackAttributeIcon(title);
+        var icon = component.HasValue ? ShopComponentPanel.ComponentIcon(component.Value) : TrackIndicatorIcon(tireWear: true);
         icon.tooltip = help;
         icon.AddToClassList("track-attribute-icon");
         column.Add(icon);
         chart.Add(column);
     }
 
-    private static VisualElement TrackAttributeIcon(string title)
+    private static VisualElement TrackIndicatorIcon(bool tireWear)
     {
-        CarComponent? component = title switch
-        {
-            "Aero" => CarComponent.Aerodynamics,
-            "Brakes" => CarComponent.Brakes,
-            "Transmission" => CarComponent.Transmission,
-            "Horsepower" => CarComponent.Engine,
-            "Suspension" => CarComponent.Suspension,
-            _ => null
-        };
-        if (component.HasValue) return ShopComponentPanel.ComponentIcon(component.Value);
         var icon = new VisualElement();
+        Color32 color = tireWear ? new Color32(228, 235, 242, 255) : new Color32(85, 196, 239, 255);
+        icon.style.color = new StyleColor(color);
         icon.generateVisualContent += context =>
         {
             var painter = context.painter2D;
-            painter.strokeColor = new Color32(85, 196, 239, 255);
+            painter.strokeColor = icon.resolvedStyle.color;
             painter.lineWidth = 2;
             painter.BeginPath();
-            if (title == "Tire Wear")
+            if (tireWear)
             {
                 Circle(20, 20, 17); Circle(20, 20, 12); Circle(20, 20, 4);
                 for (int i = 0; i < 5; i++)
@@ -5119,11 +5104,6 @@ public sealed class StartupMenu : MonoBehaviour
                     Line(20 + Mathf.Cos(angle) * 5, 20 + Mathf.Sin(angle) * 5,
                         20 + Mathf.Cos(angle) * 12, 20 + Mathf.Sin(angle) * 12);
                 }
-            }
-            else if (title == "Handling")
-            {
-                Circle(20, 20, 16); Circle(20, 20, 5);
-                Line(4, 17, 15, 20); Line(25, 20, 36, 17); Line(20, 25, 20, 36);
             }
             else
             {
@@ -5375,7 +5355,7 @@ public sealed class StartupMenu : MonoBehaviour
         var overlay = new VisualElement(); SettingsFormStyle.Apply(overlay); overlay.AddToClassList("settings-confirmation-overlay");
         var dialog = new VisualElement(); dialog.AddToClassList("settings-confirmation-dialog"); dialog.AddToClassList("used-car-filter-dialog");
         dialog.Add(SettingsFormStyle.Label("Generating Season Results", "settings-group-heading"));
-        var wheel = TrackAttributeIcon("Tire wear"); wheel.style.width = wheel.style.height = 40; wheel.style.alignSelf = Align.Center;
+        var wheel = TrackIndicatorIcon(tireWear: false); wheel.style.width = wheel.style.height = 40; wheel.style.alignSelf = Align.Center;
         dialog.Add(wheel);
         var status = SettingsFormStyle.Label("Preparing random results...", "settings-note"); dialog.Add(status);
         var progress = new ProgressBar { lowValue = 0, highValue = 100, value = 0, title = "0%" };
@@ -5449,7 +5429,7 @@ public sealed class StartupMenu : MonoBehaviour
         var trim = new StyleColor(new Color32(0, 155, 221, 255));
         dialog.style.borderTopColor = dialog.style.borderBottomColor = dialog.style.borderLeftColor = dialog.style.borderRightColor = trim;
         dialog.Add(SettingsFormStyle.Label("Simulating Event", "settings-group-heading"));
-        var wheel = TrackAttributeIcon("Tire wear");
+        var wheel = TrackIndicatorIcon(tireWear: false);
         wheel.style.width = wheel.style.height = 40;
         wheel.style.alignSelf = Align.Center;
         wheel.style.marginTop = wheel.style.marginBottom = 14;
@@ -5695,7 +5675,6 @@ public sealed class StartupMenu : MonoBehaviour
             if (!sessionInGarage)
                 return;
         }
-        playerLapsAtGarageDeparture = trackPreview.SessionRun.PlayerLaps;
         trackPreview.SetPlayerSetup(raceEventView.CurrentSetup);
         trackPreview.SessionRun.SetFuel(0, raceEventView.StartingFuelGallons);
         trackPreview.BeginGarageLaps(laps);
@@ -5770,7 +5749,6 @@ public sealed class StartupMenu : MonoBehaviour
         }
 
         activeSession = session;
-        playerLapsAtGarageDeparture = 0;
         raceEventView.SetRunningSession(session);
         activeRace.ConditionFor(car).Apply(car);
         var simulation = new CarSimulationContext(track.Definition, activeRace, session,
@@ -5831,8 +5809,6 @@ public sealed class StartupMenu : MonoBehaviour
         if (sessionInGarage)
         {
             raceEventView.UpdateSessionClock(trackPreview.SessionRun.Elapsed);
-            raceEventView.UpdateWeather(trackPreview.SessionRun.Weather);
-            raceEventView.UpdateSessionLaps(trackPreview.SessionRun.PlayerLaps, playerLapsAtGarageDeparture);
             if (trackPreview.ConsumeGarageRunReport())
             {
                 raceEventView.RefreshGarageParking();
@@ -6593,12 +6569,10 @@ public sealed class StartupMenu : MonoBehaviour
 
             if (!previouslyCompleted && race.completed)
             {
-                var staffBefore = CrewChiefMail.CaptureStaffProgress(activeCareer, track);
                 undoMorale = RaceMorale.Apply(activeCareer, race);
                 undoDriverProgress = DriverRaceProgress.Apply(activeCareer, race, track);
                 undoEmployeeProgress = EmployeeRaceProgress.Apply(activeCareer, race, track);
                 CrewChiefMail.SendRecap(activeCareer, race);
-                CrewChiefMail.SendStaffProgress(activeCareer, race, staffBefore);
                 BroadcastCoverage.SendRecaps(activeCareer, race);
                 ScenarioMail.MaybeSendPostRace(activeCareer, race);
                 long annualPayroll = activeCareer.AnnualPayroll;
@@ -7115,6 +7089,8 @@ public sealed class StartupMenu : MonoBehaviour
         painter.LineTo(new Vector2(16, 15));
     }
 
+    internal static void DrawSnapshotButtonIcon(Button button) => DrawButtonIcon(button, DrawSnapshotIcon);
+
     private static void DrawSnapshotIcon(Painter2D painter)
     {
         painter.MoveTo(new Vector2(2, 18));
@@ -7222,7 +7198,6 @@ public sealed class StartupMenu : MonoBehaviour
         trackScreen.style.display = DisplayStyle.None;
         raceEventView.Screen.style.display = DisplayStyle.Flex;
         raceEventView.ShowGarage();
-        raceEventView.UpdateSessionLaps(trackPreview.SessionRun.PlayerLaps, playerLapsAtGarageDeparture);
         raceEventView.UpdateSessionClock(trackPreview.SessionRun.Elapsed);
     }
 
@@ -7231,7 +7206,6 @@ public sealed class StartupMenu : MonoBehaviour
         trackPreview.CancelGarageLapSimulation();
         if (trackPreview.PlayerParkedForGarage)
             trackPreview.SessionRun.SetFuel(0, raceEventView.StartingFuelGallons);
-        playerLapsAtGarageDeparture = trackPreview.SessionRun.PlayerLaps;
         trackPreview.SetPlayerSetup(raceEventView.CurrentSetup);
         trackPreview.SetPlayerGarageVisit(false);
         sessionInGarage = false;

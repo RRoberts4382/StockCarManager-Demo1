@@ -45,7 +45,7 @@ public sealed class TrackDefinition
     public TrackPitRoad pitRoad;
 
     public static readonly string[] MinorStyles =
-        { "Oval", "Tri-Oval", "Quad Oval", "Triangle", "Rectangle", "Road Course", "Street Course", "Roval" };
+        { "Oval", "Tri-Oval", "Quad Oval", "Triangle", "Rectangle", "D-Oval", "Road Course", "Street Course", "Roval" };
     public static readonly string[] Surfaces = { "Asphalt", "Concrete", "Dirt" };
 
     public float OvalTurnRadius => lengthMiles * MetersPerMile / (4f * (aspectRatio - 1f) + 2f * Mathf.PI);
@@ -61,8 +61,10 @@ public sealed class TrackDefinition
             yield return (TrackValidationSection.Details, "Enter a positive ID and a track name.");
         if (location == null || string.IsNullOrWhiteSpace(location.city) || string.IsNullOrWhiteSpace(location.state))
             yield return (TrackValidationSection.Details, "Enter a city and state.");
-        if (Array.IndexOf(MinorStyles, minorStyle) < 0 || Array.IndexOf(Surfaces, surface) < 0 ||
-            majorStyle != (Array.IndexOf(MinorStyles, minorStyle) < 5 ? "Oval" : "Road"))
+        int styleIndex = Array.IndexOf(MinorStyles, minorStyle);
+        int firstRoadStyle = Array.IndexOf(MinorStyles, "Road Course");
+        if (styleIndex < 0 || Array.IndexOf(Surfaces, surface) < 0 ||
+            majorStyle != (styleIndex < firstRoadStyle ? "Oval" : "Road"))
             yield return (TrackValidationSection.Details, "Choose a valid surface and matching major and minor styles.");
 
         if (!InRange(lengthMiles, .01f, 100f) || !InRange(widthMeters, 3f, 100f))

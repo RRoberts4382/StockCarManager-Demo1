@@ -16,6 +16,10 @@ internal sealed class GarageRunDiagnostics
     public bool collisions, trafficInteractions;
     public int playbackSpeed;
     public float lapSpeedFactor, damagePercent;
+    public bool hasCarControls, hasSteeringAngle;
+    public float steeringAngleDegrees, throttleInput, brakeInput;
+    public bool hasPowertrainSample;
+    public float engineRpm, speedMph;
     public SessionWeatherForecast weatherForecast;
     public bool weatherLocked;
     public float ambientFahrenheit, trackFahrenheit, cloudCover, windMph, trackGripFactor;
@@ -48,22 +52,22 @@ internal static class GarageGraphSnapshot
     [Serializable]
     private sealed class Snapshot
     {
-        public int formatVersion = 14;
+        public int formatVersion = 19;
         public string savedUtc;
         public string unityVersion;
         public string session;
-        public string units = "Lap time: seconds; temperature: Fahrenheit; fuel: US gallons; tire pressure: PSI; weight: pounds (VehicleSpeed003 only); spring/bar rates: lb/in; track bar: inches; tire wear: 0–1.";
-        public string sampleTiming = "Tire temperatures are interpolated at the finish line; diagnostic samples are taken at the end of the simulation step containing that crossing. Null diagnostics indicate older runs.";
+        public string units = "Lap time: seconds; temperature: Fahrenheit; fuel: US gallons; tire pressure: PSI; weight: pounds (VehicleSpeed003 only); spring/bar rates: lb/in; track bar: inches; tire wear: 0–1; engine speed: RPM; vehicle speed: MPH.";
+        public string sampleTiming = "Tire temperatures are interpolated at the finish line; diagnostic samples are taken at the end of the simulation step containing that crossing. Null diagnostics indicate older runs. Run-time samples are taken approximately every 0.1 seconds of simulation time from run start.";
         public TrackDefinition track;
         public bool[] visibleSeries;
-        public string[] series = { "LF temp", "RF temp", "LR temp", "RR temp", "Lap time", "LF pressure", "RF pressure", "LR pressure", "RR pressure" };
+        public string[] series;
         public SavedRun[] runs;
         public List<RivalSetupChange> rivalSetupChanges;
         public List<RivalPracticeTelemetry> rivalPracticeTelemetry;
     }
 
     internal static string Save(TrackDefinition track, RaceSession session,
-        IEnumerable<(GarageRunReview Run, int Number)> selected, bool[] visibleSeries)
+        IEnumerable<(GarageRunReview Run, int Number)> selected, bool[] visibleSeries, string[] series)
     {
         var entries = selected.Select(item => new SavedRun
         {
@@ -84,6 +88,7 @@ internal static class GarageGraphSnapshot
             session = session.name,
             track = track,
             visibleSeries = (bool[])visibleSeries.Clone(),
+            series = series,
             rivalSetupChanges = session.rivalSetupChanges,
             rivalPracticeTelemetry = session.rivalPracticeTelemetry,
             runs = entries

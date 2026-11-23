@@ -7,9 +7,9 @@ public sealed partial class TrackPreview
     // Both facades have bays. The front faces -Z and the rear faces +Z.
     private void AddInfieldGarageBuilding(Transform parent, bool texas = false, int style = 0)
     {
-        const float halfLength = 55f;
-        const float front = -7.20f;
-        const float back = 7.20f;
+        const float halfLength = InfieldGarageHalfLength;
+        const float front = InfieldGarageFront;
+        const float back = InfieldGarageBack;
         const float roof = 5.43f;
         const float sideWall = halfLength - 0.24f;
         const float pitch = 5.25f;
@@ -44,7 +44,7 @@ public sealed partial class TrackPreview
             GarageMaterial(new Color32(204, 162, 64, 255), 0.23f),
         };
 
-        model.Box(-halfLength, 0f, front + 0.22f, halfLength, 0.22f, back, GarageSurface.Foundation);
+        model.Box(-halfLength, 0f, InfieldGarageFloorFront, halfLength, InfieldGarageFloorHeight, back, GarageSurface.Foundation);
         model.Box(-sideWall, 0.20f, front, -sideWall + 0.27f, roof, back, GarageSurface.Concrete);
         model.Box(sideWall - 0.27f, 0.20f, front, sideWall, roof, back, GarageSurface.Concrete);
         BuildFacade(front, -1f);

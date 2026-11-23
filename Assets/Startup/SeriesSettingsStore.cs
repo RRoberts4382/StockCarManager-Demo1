@@ -29,7 +29,7 @@ internal static class SeriesSettingsStore
                 ? defaults.carModel : CarTypeDefinition.CanonicalModel(saved.carModel);
             saved.id = defaults.id;
             saved.name = defaults.name;
-            saved.order = defaults.order;
+            saved.SeriesLevel = defaults.SeriesLevel;
             string originalJson = File.ReadAllText(path);
             var original = JsonUtility.FromJson<RacingSeries>(originalJson);
             if (original.name != CareerSetup.LimitName(original.name))
@@ -57,7 +57,7 @@ internal static class SeriesSettingsStore
         saved.carModel = CarTypeDefinition.CanonicalModel(saved.carModel);
         saved.id = series.id;
         saved.name = CareerSetup.LimitName(series.name);
-        saved.order = series.order;
+        saved.SeriesLevel = series.SeriesLevel;
         string error = Validate(saved);
         if (error != null)
             throw new ArgumentException(error);

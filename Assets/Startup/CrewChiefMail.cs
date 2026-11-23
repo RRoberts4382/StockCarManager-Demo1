@@ -73,9 +73,9 @@ internal static class CrewChiefMail
                 lines.Add("Drafting will matter on this restrictor-plate track.");
             if (track.weights is TrackWeights weights)
             {
-                lines.Add($"Track weights (0–1): Aero {weights.aerodynamics:F2}, Horsepower {weights.horsepower:F2}, " +
-                    $"Brakes {weights.brakes:F2}, Suspension {weights.suspension:F2}, Transmission {weights.transmission:F2}, " +
-                    $"Tire Wear {weights.surfaceRoughness:F2}.");
+                string ratings = string.Join(", ", TrackRatings.DisplayAttributes(weights)
+                    .Select(attribute => $"{attribute.Title} {attribute.Value:F2}"));
+                lines.Add($"Track weights (0–1): {ratings}.");
             }
         }
         else
@@ -87,8 +87,8 @@ internal static class CrewChiefMail
         {
             lines.Add($"Take {best.ChassisDisplayName} ({best.ChassisTypeName}). Of the cars available, it scores best for this track and its current condition.");
             lines.Add($"Current body damage: {best.Damage:0.#}%.");
-            lines.Add("Component wear: " + string.Join(", ", TeamCar.Components.Select(component =>
-                $"{component} {best.ComponentWear(component):P0}")) + ".");
+            lines.Add("Component wear: " + string.Join(", ", CarComponentDisplay.Order.Select(component =>
+                $"{CarComponentDisplay.Name(component)} {best.ComponentWear(component):P0}")) + ".");
             AddServiceNotes(lines, best, best.Damage);
         }
         else
@@ -104,67 +104,6 @@ internal static class CrewChiefMail
         lines.Add("Let's hit our marks from the first lap. The crew is ready to make the most of tomorrow.");
         Send(career, id, career.currentDate, $"Race prep at {race.trackName}", lines);
         return true;
-    }
-
-    internal sealed class StaffProgressSnapshot
-    {
-        private readonly string name;
-        private readonly (string Label, float Before, Func<float> Read)[] values;
-
-        public StaffProgressSnapshot(string name, params (string Label, Func<float> Read)[] attributes)
-        {
-            this.name = name;
-            values = attributes.Select(attribute => (attribute.Label, attribute.Read(), attribute.Read)).ToArray();
-        }
-
-        public string Summary()
-        {
-            var changes = values.Select(value => (value.Label, Change: value.Read() - value.Before))
-                .Where(value => value.Change != 0f)
-                .Select(value => $"{value.Label} {value.Change:+0.000###;-0.000###}");
-            string summary = string.Join(", ", changes);
-            return $"{name} — {(summary.Length == 0 ? "No change" : summary)}";
-        }
-    }
-
-    public static List<StaffProgressSnapshot> CaptureStaffProgress(Career career, TrackDefinition track)
-    {
-        var snapshots = new List<StaffProgressSnapshot>();
-        if (career.Driver is Driver driver)
-        {
-            string name = $"{driver.FullName} · Driver";
-            if (track != null)
-            {
-                var category = track.TrackCategory;
-                snapshots.Add(new StaffProgressSnapshot(name, ($"{TeamCar.DisplayChassisType(category)} XP", () => driver.TrackXp(category)),
-                    ("Morale", () => driver.morale)));
-            }
-            else
-                snapshots.Add(new StaffProgressSnapshot(name, ("Morale", () => driver.morale)));
-        }
-
-        foreach (var employee in career.employees ?? Enumerable.Empty<Employee>())
-        {
-            snapshots.Add(new StaffProgressSnapshot($"{employee.FullName} · {employee.RoleName}",
-                ("Aero", () => employee.bodywork), ("Suspension", () => employee.suspensions),
-                ("Transmission", () => employee.transmissions), ("Engine", () => employee.engines),
-                ("Morale", () => employee.EffectiveMorale(career.currentDate))));
-        }
-        return snapshots;
-    }
-
-    public static void SendStaffProgress(Career career, ScheduledRace race, List<StaffProgressSnapshot> snapshots)
-    {
-        string id = EventId("staff-progress", race);
-        if (AlreadySent(career, id))
-            return;
-
-        var lines = new List<string> { $"Here are the team's skill and morale changes after {race.trackName}.", "" };
-        if (snapshots.Count == 0)
-            lines.Add("There are no staff members to report.");
-        else
-            lines.AddRange(snapshots.Select(snapshot => snapshot.Summary()));
-        Send(career, id, race.date, $"Team progress after {race.trackName}", lines);
     }
 
     public static void SendRecap(Career career, ScheduledRace race)
@@ -206,11 +145,11 @@ internal static class CrewChiefMail
                 ? item.number == last.carNumber : item.chassisNumber == last.chassisNumber);
             float damage = last.damageAtFinish;
             lines.Add($"No. {last.carNumber} · {chassis.Sum(report => report.damageSustained):0.#} damage points sustained across the event · {damage:0.#}% damage at the end of its last session.");
-            for (int i = 0; i < TeamCar.Components.Length; i++)
+            foreach (var component in CarComponentDisplay.Order)
             {
-                var component = TeamCar.Components[i];
-                float added = chassis.Sum(report => report.addedWear[i]);
-                lines.Add($"{component}: +{added * 100f:0.#} percentage points this event · {last.finalWear[i]:P0} wear after the event.");
+                int index = Array.IndexOf(TeamCar.Components, component);
+                float added = chassis.Sum(report => report.addedWear[index]);
+                lines.Add($"{CarComponentDisplay.Name(component)}: +{added * 100f:0.#} percentage points this event · {last.finalWear[index]:P0} wear after the event.");
             }
             lines.Add($"Tire wear at finish: LF {last.tires[0]:P0}, RF {last.tires[1]:P0}, LR {last.tires[2]:P0}, RR {last.tires[3]:P0}.");
             if (last.tires.Any(wear => wear >= 0.75f))
@@ -222,25 +161,29 @@ internal static class CrewChiefMail
 
     private static void AddServiceNotes(List<string> lines, TeamCar car, float damage, float[] finalWear = null)
     {
-        if (damage > 0f)
+        if (finalWear != null && damage >= 100f)
+            lines.Add("Body: repair required before entry (100% reported body damage).");
+        else if (damage > 0f)
             lines.Add($"Inspect and repair the {damage:0.#}% reported body damage before the car races again.");
         bool needsComponentWork = false;
-        for (int i = 0; i < TeamCar.Components.Length; i++)
+        foreach (var component in CarComponentDisplay.Order)
         {
-            var component = TeamCar.Components[i];
-            float wear = finalWear == null ? car.ComponentWear(component) : finalWear[i];
+            var name = CarComponentDisplay.Name(component);
+            float wear = finalWear == null ? car.ComponentWear(component) : finalWear[Array.IndexOf(TeamCar.Components, component)];
             var repair = car?.repairs?.Find(item => item.component == component);
             if (repair != null)
             {
                 needsComponentWork = true;
-                lines.Add($"{component}: repair already scheduled, due {repair.completionDate}.");
+                lines.Add(finalWear != null && wear >= ComponentCondition.RaceBlockingWear
+                    ? $"{name}: repair required before entry ({wear:P0} worn). Repair already scheduled, due {repair.completionDate}."
+                    : $"{name}: repair already scheduled, due {repair.completionDate}.");
             }
             else if (wear >= RecommendedWearLimit)
             {
                 needsComponentWork = true;
                 lines.Add(wear >= ComponentCondition.RaceBlockingWear
-                    ? $"{component}: repair required before entry ({wear:P0} worn)."
-                    : $"{component}: service recommended before the next race ({wear:P0} worn).");
+                    ? $"{name}: repair required before entry ({wear:P0} worn)."
+                    : $"{name}: service recommended before the next race ({wear:P0} worn).");
             }
         }
         if (!needsComponentWork && damage <= 0f)

@@ -1,7 +1,7 @@
 {
   "id": "oreilly-auto-parts",
   "name": "O'Reilly Auto Parts Serie",
-  "order": 20,
+  "SeriesLevel": 2,
   "manufacturers": [
     {
       "manufacturer": 0,

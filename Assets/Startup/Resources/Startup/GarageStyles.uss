@@ -696,30 +696,46 @@
 .garage-redesign-adjust, .garage-redesign-stacked {
     justify-content: center;
     align-items: center;
+    align-self: stretch;
     min-width: 0;
+    min-height: 0;
+    margin: 6px 3px;
 }
 .garage-redesign-adjust { flex-direction: row; }
 .garage-redesign-stacked { flex-grow: 1; flex-basis: 0; }
 .garage-redesign-adjust-label, .garage-redesign-value, .garage-redesign-previous {
     -unity-text-align: middle-center;
-    font-size: 11px;
+    font-size: 13px;
     margin: 0;
 }
 .garage-redesign-adjust-label { white-space: normal; }
 .garage-redesign-value {
-    padding: 2px 3px;
+    padding: 3px 5px;
+    min-height: 24px;
     border-width: 1px;
     border-color: #728195;
     border-radius: 3px;
 }
-.garage-redesign-previous { color: #ff6969; min-height: 15px; }
+.garage-redesign-previous { color: #ff6969; min-height: 18px; }
 .garage-redesign-vertical {
-    width: 19px;
-    height: 47px;
+    width: 30px;
+    min-width: 30px;
     min-height: 0;
-    margin: 1px 2px;
+    flex-shrink: 0;
+    margin: 0 4px;
 }
-.garage-redesign-horizontal { width: 90%; height: 18px; min-height: 0; }
+.garage-redesign-adjust > .garage-redesign-vertical { align-self: stretch; }
+.garage-redesign-stacked > .garage-redesign-vertical {
+    flex-grow: 1;
+    flex-basis: 0;
+}
+.garage-redesign-horizontal {
+    width: 100%;
+    height: 32px;
+    min-height: 32px;
+    flex-shrink: 0;
+    margin: 0;
+}
 .garage-redesign-load-badge { position: absolute; }
 .garage-redesign-corner-load {
     background-color: #06090d;

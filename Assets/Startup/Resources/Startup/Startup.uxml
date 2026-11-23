@@ -10,11 +10,11 @@
                 <ui:VisualElement class="actions title-actions">
                     <ui:VisualElement name="continueCareerControls" class="title-continue-controls" style="display: none;">
                         <ui:Button name="continueCareerButton" text="Continue Career" tooltip="Resume your most recently saved career." class="settings-button title-career-action" />
-                        <ui:Label name="continueCareerDetails" class="title-continue-details" />
                     </ui:VisualElement>
                     <ui:Button name="loadCareerButton" style="display: none;" text="Load Career" tooltip="Show your saved careers." class="settings-button title-career-action" />
                     <ui:Button name="newCareerButton" text="New Career" class="settings-button title-career-action" />
                 </ui:VisualElement>
+                <ui:Label name="continueCareerDetails" class="title-continue-details" style="display: none;" />
                 <ui:ScrollView name="savedCareerList" vertical-scroller-visibility="Hidden" class="title-career-list" style="display: none;" />
 
             </ui:VisualElement>

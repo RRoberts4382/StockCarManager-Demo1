@@ -170,7 +170,7 @@
         </ui:VisualElement>
         <ui:VisualElement name="carMaintenancePage" class="settings-confirmation-overlay" style="display: none;">
             <ui:VisualElement class="settings-confirmation-dialog component-repair-dialog">
-                <ui:Label text="Component Repair" class="settings-group-heading" />
+                <ui:Label name="carMaintenanceTitle" text="Component Repair" class="settings-group-heading" />
                 <ui:VisualElement name="carMaintenanceComponents" class="component-repair-content" />
                 <ui:Label name="carMaintenanceStatus" class="settings-note component-repair-status" />
                 <ui:VisualElement class="settings-footer">

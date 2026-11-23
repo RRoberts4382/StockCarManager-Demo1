@@ -1,7 +1,7 @@
 {
   "id": "cars-tour",
-  "name": "Cars Tour",
-  "order": 40,
+  "name": "Cars Tour Series",
+  "SeriesLevel": 7,
   "carModel": "LateModelStockCar",
   "maximumTrackLengthMiles": 0.7,
   "manufacturers": [

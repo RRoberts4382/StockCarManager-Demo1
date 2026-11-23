@@ -28,6 +28,7 @@
     "brakes": 0.5,
     "suspension": 0.5
   },
+  "smoothLayoutBanking": true,
   "layoutPoints": [
     {
       "x": 0,

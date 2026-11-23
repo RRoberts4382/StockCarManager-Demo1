@@ -193,7 +193,12 @@ internal sealed class TeamMailView
                 message.Add(logo);
             AddLabel(message, selected.subject, "mail-message-title");
             AddLabel(message, $"From {selected.sender} · {DateText(selected.date)}", "mail-meta");
-            AddLabel(message, selected.body, "mail-copy");
+            if (RaceReportMail.TryRead(selected, career, out var report))
+                AddRaceReport(message, report);
+            else if (RacePrepMail.TryRead(selected, out var prep))
+                AddRacePrep(message, prep);
+            else
+                AddLabel(message, selected.body, "mail-copy");
             if (selected.NeedsResponse)
             {
                 var scenario = selected;
@@ -219,6 +224,124 @@ internal sealed class TeamMailView
                 }
             }
         }
+    }
+
+    private static void AddRaceReport(VisualElement parent, RaceReportMail report)
+    {
+        var content = Column(parent, "mail-race-report");
+        content.AddToClassList("ui-default-font");
+        AddReportText(content, report.Introduction, "mail-race-intro");
+
+        var results = AddReportSection(content, "Session results");
+        var grid = Column(results, "mail-race-results");
+        grid.AddToClassList("results-grid");
+        AddReportSession(grid, "Session", "Pos", "Laps", "Best lap", null, header: true);
+        foreach (var session in report.Sessions)
+            AddReportSession(grid, session.Name, session.Position, session.Laps, session.BestLap, session.Status);
+
+        var condition = AddReportSection(content, "Car condition and service");
+        AddReportText(condition, report.ConditionNote, "mail-race-note");
+        foreach (var chassis in report.Chassis)
+        {
+            var group = Column(condition, "mail-race-chassis");
+            AddReportText(group, chassis.Heading, "mail-race-chassis-heading");
+            AddReportText(group, chassis.Summary, "mail-race-note");
+
+            AddReportComponents(group, chassis.Components);
+            foreach (string note in chassis.Notes)
+                AddReportText(group, note, "mail-race-note");
+        }
+    }
+
+    private static void AddRacePrep(VisualElement parent, RacePrepMail prep)
+    {
+        var content = Column(parent, "mail-race-report");
+        content.AddToClassList("mail-race-prep");
+        content.AddToClassList("ui-default-font");
+        AddReportText(content, prep.Introduction, "mail-race-intro");
+
+        var track = AddReportSection(content, "Track brief");
+        foreach (string note in prep.TrackNotes)
+            AddReportText(track, note, "mail-race-note");
+        if (prep.Weights != null)
+        {
+            var chart = Column(track, "track-ratings");
+            chart.AddToClassList("mail-race-track");
+            StartupMenu.DisplayTrackRatings(chart, prep.Weights);
+            foreach (var (column, title) in chart.Children().Zip(TrackRatings.DisplayAttributes(prep.Weights),
+                (column, rating) => (column, rating.Title)))
+                AddLabel(column, title, "mail-race-track-caption");
+        }
+
+        var chassis = AddReportSection(content, "Chassis recommendation");
+        AddReportText(chassis, prep.Recommendation, "mail-race-chassis-heading");
+        AddReportComponents(chassis, prep.Components);
+        foreach (string note in prep.ChassisNotes)
+            AddReportText(chassis, note, "mail-race-note");
+
+        AddReportText(content, prep.Closing, "mail-race-intro");
+    }
+
+    private static void AddReportComponents(VisualElement parent, IReadOnlyList<RaceReportMail.ComponentRow> components)
+    {
+        if (components.Count == 0)
+            return;
+        var cards = Column(parent, "mail-race-components");
+        foreach (var component in components)
+        {
+            var slot = Column(cards, "mail-race-component-slot");
+            var card = Column(slot, "mail-race-component");
+            card.EnableInClassList("mail-race-component-needs-repair", component.RequiresRepair);
+            var heading = Column(card, "mail-race-component-header");
+            var iconSlot = Column(heading, "home-component-icon-slot");
+            iconSlot.Add(ShopComponentPanel.ComponentIcon(component.Component));
+            AddLabel(heading, CarComponentDisplay.Name(component.Component), "mail-race-component-name");
+            var wear = Column(card, "mail-race-wear");
+            TeamCarCard.AddComponentWear(wear, component.Wear, component.WearText);
+            if (!string.IsNullOrWhiteSpace(component.AddedWearText))
+                AddLabel(card, component.AddedWearText + " this event", "mail-race-wear-change");
+            if (component.RequiresRepair)
+                AddLabel(card, "Repair required", "mail-race-repair-label");
+        }
+    }
+
+    private static VisualElement AddReportSection(VisualElement parent, string title)
+    {
+        var section = Column(parent, "mail-race-section");
+        section.AddToClassList("team-home-panel");
+        SettingsFormStyle.StylePanel(section);
+        AddLabel(section, title, "team-home-heading");
+        return section;
+    }
+
+    private static void AddReportSession(VisualElement grid, string session, string position, string laps,
+        string bestLap, string status, bool header = false)
+    {
+        var row = Column(grid, "mail-race-session-row");
+        row.AddToClassList("results-grid-row");
+        row.EnableInClassList("results-grid-header", header);
+        var nameCell = Column(row, "mail-race-session-cell");
+        nameCell.AddToClassList("results-grid-cell");
+        AddLabel(nameCell, session, "mail-race-session-name");
+        AddReportText(nameCell, status, "mail-race-session-status");
+        Stat(position, "mail-race-pos");
+        Stat(laps, "mail-race-laps");
+        Stat(bestLap, "mail-race-best-lap");
+
+        void Stat(string text, string column)
+        {
+            var cell = new Label(string.IsNullOrWhiteSpace(text) ? "\u2014" : text);
+            cell.AddToClassList("results-grid-cell");
+            cell.AddToClassList("mail-race-stat");
+            cell.AddToClassList(column);
+            row.Add(cell);
+        }
+    }
+
+    private static void AddReportText(VisualElement parent, string text, string styleClass)
+    {
+        if (!string.IsNullOrWhiteSpace(text))
+            AddLabel(parent, text, styleClass);
     }
 
     private static VisualElement CreateAvatar(string name, Texture2D portrait)
