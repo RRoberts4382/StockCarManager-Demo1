@@ -19,8 +19,9 @@ internal sealed class RaceEventView
     private int shownElapsedSeconds = -1;
     private readonly Button[] tabs;
     private readonly Button next;
-    private readonly Button options;
-    private readonly Button simulate;
+    private readonly Button startSessionOption;
+    private readonly Button simulateSessionOption;
+    private readonly VisualElement sessionOptions = new VisualElement();
     private readonly Button leaveButton;
     private readonly Label status = new Label();
     private readonly Action repaint;
@@ -110,41 +111,69 @@ internal sealed class RaceEventView
             var selected = (Page)i;
             tabs[i] = Button(names[i], () => Show(selected));
             tabs[i].tooltip = "Show the " + names[i] + " page.";
-            footer.Add(tabs[i]);
+            AddFooterButton(tabs[i]);
         }
-        var sessionMenu = new VisualElement();
-        sessionMenu.AddToClassList("event-session-control");
-        next = Button("Next Session", () =>
+        startSessionOption = Button(string.Empty, () =>
         {
             CloseSessionOptions();
             startSession();
         });
-        next.AddToClassList("event-next-session");
-        sessionMenu.Add(next);
-        options = Button("▴", () =>
-        {
-            simulate.style.display = simulate.style.display == DisplayStyle.None ? DisplayStyle.Flex : DisplayStyle.None;
-        });
-        next.tooltip = "Open or return to the next on-track session.";
-        options.tooltip = "Show the session simulation option.";
-        options.AddToClassList("event-session-options");
-        sessionMenu.Add(options);
-        simulate = Button("Simulate Session", () =>
+        startSessionOption.tooltip = "Open the next session in Track View.";
+        simulateSessionOption = Button(string.Empty, () =>
         {
             CloseSessionOptions();
             simulateSession();
         });
-        simulate.tooltip = "Simulate the next session without opening the track view.";
-        simulate.AddToClassList("event-simulate-session");
-        sessionMenu.Add(simulate);
-        footer.Add(sessionMenu);
+        simulateSessionOption.name = "simulateSessionButton";
+        simulateSessionOption.tooltip = "Simulate the next session without opening Track View.";
+        next = Button("Next Session ▴", () =>
+        {
+            if (runningSession != null)
+                startSession();
+            else if (sessionOptions.style.display == DisplayStyle.Flex)
+                CloseSessionOptions();
+            else
+            {
+                sessionOptions.style.display = DisplayStyle.Flex;
+                startSessionOption.Focus();
+            }
+        });
+        var sessionMenu = AddFooterButton(next);
+        sessionOptions.AddToClassList("event-session-options");
+        sessionOptions.Add(startSessionOption);
+        sessionOptions.Add(simulateSessionOption);
+        CloseSessionOptions();
+        sessionMenu.Add(sessionOptions);
+        Screen.RegisterCallback<PointerDownEvent>(evt =>
+        {
+            if (sessionOptions.style.display == DisplayStyle.Flex && evt.target is VisualElement target &&
+                target != sessionMenu && !sessionMenu.Contains(target))
+                CloseSessionOptions();
+        }, TrickleDown.TrickleDown);
+        Screen.RegisterCallback<KeyDownEvent>(evt =>
+        {
+            if (evt.keyCode != KeyCode.Escape || sessionOptions.style.display != DisplayStyle.Flex)
+                return;
+            CloseSessionOptions();
+            next.Focus();
+            evt.StopPropagation();
+        }, TrickleDown.TrickleDown);
         leaveButton = Button("Return To Shop", leave);
         leaveButton.tooltip = "Leave this garage and return to the team or startup screen.";
-        footer.Add(leaveButton);
+        AddFooterButton(leaveButton);
         Screen.Add(footer);
         var controls = Resources.Load<StyleSheet>("Settings/SettingsControls");
         if (controls != null) Screen.styleSheets.Add(controls);
         SettingsFormStyle.AddHoverTooltips(Screen);
+    }
+
+    private VisualElement AddFooterButton(Button button)
+    {
+        var slot = new VisualElement();
+        slot.AddToClassList("event-footer-slot");
+        slot.Add(button);
+        footer.Add(slot);
+        return slot;
     }
 
     public void Open(ScheduledRace eventRace, TrackDefinition definition, TeamCar enteredCar, Texture thumbnail,
@@ -268,7 +297,7 @@ internal sealed class RaceEventView
         status.style.display = string.IsNullOrEmpty(message) ? DisplayStyle.None : DisplayStyle.Flex;
     }
 
-    private void CloseSessionOptions() => simulate.style.display = DisplayStyle.None;
+    private void CloseSessionOptions() => sessionOptions.style.display = DisplayStyle.None;
 
     private void Show(Page selected)
     {
@@ -298,12 +327,17 @@ internal sealed class RaceEventView
             tabs[i].EnableInClassList("nav-button-selected", (Page)i == (page == Page.SetupEditor ? Page.Garage : page));
         CloseSessionOptions();
         SetStatus(null);
-        bool canStart = !race.completed && race.sessions.Any(session => !session.Completed) && runningSession == null;
-        next.text = runningSession == null ? "Next Session" : "Return To Session";
+        var pendingSession = race.sessions.FirstOrDefault(session => !session.Completed);
+        bool canStart = !race.completed && pendingSession != null && runningSession == null;
+        if (canStart)
+        {
+            string sessionName = string.IsNullOrWhiteSpace(pendingSession.name) ? pendingSession.kind.ToString() : pendingSession.name;
+            startSessionOption.text = $"Go To {sessionName}";
+            simulateSessionOption.text = $"Simulate {sessionName}";
+        }
+        next.text = runningSession == null ? "Next Session ▴" : "Return To Session";
+        next.tooltip = runningSession == null ? "Choose how to run the next session." : "Return to the current on-track session.";
         next.SetEnabled(canStart || runningSession != null);
-        options.style.display = runningSession == null ? DisplayStyle.Flex : DisplayStyle.None;
-        options.SetEnabled(canStart);
-        simulate.SetEnabled(canStart);
 
         switch (page)
         {

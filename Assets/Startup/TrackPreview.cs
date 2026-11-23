@@ -80,7 +80,7 @@ public sealed partial class TrackPreview : MonoBehaviour
 
     private readonly RaceWheelAnimation[] raceWheels = new RaceWheelAnimation[CarCount];
     private RaceWheelAnimation paceWheels;
-    internal enum CameraAngle { Player, Chase, Hood, InCar, TV, Spotter, PitBox, Cycle }
+    internal enum CameraAngle { Player, Chase, Hood, InCar, TV, Spotter, PitBox, Cycle, RearChase, Leader }
 
     private Camera raceCamera;
     private TrackEngineAudio engineAudio;
@@ -109,6 +109,7 @@ public sealed partial class TrackPreview : MonoBehaviour
     {
         CameraAngle.InCar => "In-Car",
         CameraAngle.PitBox => "Pit Box",
+        CameraAngle.RearChase => "Rear Chase",
         _ => angle.ToString()
     };
     private Transform grassGround;
@@ -144,6 +145,25 @@ public sealed partial class TrackPreview : MonoBehaviour
     internal RaceSessionRun SessionRun { get; private set; }
     private RaceSessionRun previewTiming;
     internal RaceSessionRun TimingRun => SessionRun ?? previewTiming;
+    private readonly CarPaintStyle?[] scoringPaint = new CarPaintStyle?[CarCount];
+
+    internal void StyleScoringNumber(UnityEngine.UIElements.Label label, int index)
+    {
+        var paint = scoringPaint[index];
+        var colors = renderedCarPaint[index];
+        Color body = colors.RoofAndSides;
+        label.style.backgroundColor = body;
+        label.style.borderLeftColor = colors.HoodAndTrunk;
+        label.style.color = paint?.NumberColor is Color32 numberColor ? (Color)numberColor :
+            0.213f * body.r + 0.715f * body.g + 0.072f * body.b > 0.52f ? Color.black : Color.white;
+        var font = CarNumberFonts.Load(paint?.NumberFont, paint?.NumberBold ?? true, paint?.NumberItalic ?? false);
+        if (font != null)
+            label.style.unityFontDefinition = UnityEngine.UIElements.FontDefinition.FromFont(font);
+        bool bold = paint?.NumberBold ?? true;
+        bool italic = paint?.NumberItalic ?? false;
+        label.style.unityFontStyleAndWeight = paint?.NumberFont == "Open Sans" ? FontStyle.Normal :
+            bold ? (italic ? FontStyle.BoldAndItalic : FontStyle.Bold) : (italic ? FontStyle.Italic : FontStyle.Normal);
+    }
     private TrackPitTraffic pitTraffic;
     private TrackPitTraffic.Car[] trafficCars;
     private TrackPitSpline[] pitRoute;
@@ -192,17 +212,6 @@ public sealed partial class TrackPreview : MonoBehaviour
         bool pending = garageRunReportPending;
         garageRunReportPending = false;
         return pending;
-    }
-    private bool automaticSessionService;
-    internal void EnableAutomaticSessionService()
-    {
-        automaticSessionService = true;
-        garagePreviousOdometer = trafficCars?[0]?.Odometer ?? 0;
-        for (int i = 0; i < 4; i++)
-        {
-            garagePreviousWear[i] = SessionRun.Vehicle(0)?.GetTire(i)?.wear ?? 0;
-            garageWearPerMeter[i] = 0;
-        }
     }
     internal bool SimulatingGarageLaps => requestedGarageLaps > 0;
     internal void CancelGarageLapSimulation() => requestedGarageLaps = 0;
@@ -410,8 +419,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             garageSimulationReturning = true;
             SetPlayerGarageVisit(true);
         }
-        if ((SimulatingGarageLaps && !garageSimulationReturning) ||
-            (automaticSessionService && !isQualifying && !playerGarageVisit && !SessionRun.Finished(0)))
+        if (SimulatingGarageLaps && !garageSimulationReturning)
             ServiceGarageSimulation(player);
         if (SimulatingGarageLaps && (PlayerParkedForGarage || SessionComplete || SessionRun.Retired(0)))
         {
@@ -551,7 +559,9 @@ public sealed partial class TrackPreview : MonoBehaviour
     private float yawAngle;
     private Transform followedCar;
     private Transform CameraSubject => followedCar != null ? followedCar : cars[0];
-    internal int SelectedCarIndex => followedCar == null ? 0 : Mathf.Max(0, System.Array.IndexOf(cars, followedCar));
+    internal int SelectedCarIndex => ViewAngle == CameraAngle.Leader
+        ? (SessionRun?.IsRace == true ? SessionRun.RaceLeaderIndex() : 0)
+        : followedCar == null ? 0 : Mathf.Max(0, System.Array.IndexOf(cars, followedCar));
     internal float SteeringWheelAngle =>
         (raceWheels[SelectedCarIndex]?.FrontSteeringAngle ?? 0f) * CarType.steeringWheelRatio;
 
@@ -761,6 +771,7 @@ public sealed partial class TrackPreview : MonoBehaviour
                 bodyPaint = MakeMaterial(paint.Secondary);
             }
             renderedCarPaint[i] = (hoodAndTrunkPaint.color, bodyPaint.color);
+            scoringPaint[i] = playerPaint;
             int firstPaintTexture = carPaintTextures.Count;
             BuildCar(cars[i], gridNumbers[i],
                 hoodAndTrunkPaint, bodyPaint, glass, rubber, i == 0 ? sponsorNames : null, playerPaint, carPaintTextures.Add,
@@ -1105,7 +1116,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         bool available = System.Enum.IsDefined(typeof(CameraAngle), angle) && angle != CameraAngle.Cycle &&
             (angle != CameraAngle.PitBox || CanUsePitBoxCamera);
         ViewAngle = available ? angle : CameraAngle.Player;
-        if (tvCameraPositions == null && ViewAngle is CameraAngle.TV or CameraAngle.Spotter)
+        if (tvCameraPositions == null && ViewAngle is CameraAngle.TV or CameraAngle.Leader or CameraAngle.Spotter)
             ConfigureTracksideCameras();
         activeTvCamera = -1;
         raceCamera.orthographic = ViewAngle == CameraAngle.Player;
@@ -1114,7 +1125,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         {
             CameraAngle.Hood => 62f,
             CameraAngle.InCar => 72f,
-            CameraAngle.TV => 33f,
+            CameraAngle.TV or CameraAngle.Leader => 33f,
             CameraAngle.Spotter => spotterZoomFieldOfView,
             CameraAngle.PitBox => 42f,
             _ => 55f
@@ -1166,35 +1177,39 @@ public sealed partial class TrackPreview : MonoBehaviour
     private void ApplyCameraPose()
     {
         var cameraTransform = raceCamera.transform;
-        var subject = CameraSubject;
+        int leaderIndex = ViewAngle == CameraAngle.Leader ? SelectedCarIndex : 0;
+        var subject = ViewAngle == CameraAngle.Leader ? cars[leaderIndex] : CameraSubject;
         if (subject != null && ViewAngle is CameraAngle.Hood or CameraAngle.InCar)
         {
             Vector3 offset = ViewAngle == CameraAngle.Hood ? hoodCameraOffset : driverEyeOffset;
             cameraTransform.localPosition = subject.localPosition + subject.localRotation * offset;
             cameraTransform.localRotation = subject.localRotation;
         }
-        else if (subject != null && ViewAngle == CameraAngle.Chase)
+        else if (subject != null && ViewAngle is CameraAngle.Chase or CameraAngle.RearChase)
         {
-            Vector3 forward = subject.localRotation * Vector3.forward;
-            forward.y = 0f;
-            forward.Normalize();
-            Vector3 position = subject.localPosition - forward * 5.5f + Vector3.up * 3f;
-            Vector3 lookAt = subject.localPosition + forward * 6f + Vector3.up * 0.65f;
+            Vector3 viewDirection = subject.localRotation * Vector3.forward;
+            viewDirection.y = 0f;
+            viewDirection.Normalize();
+            if (ViewAngle == CameraAngle.RearChase)
+                viewDirection = -viewDirection;
+            Vector3 position = subject.localPosition - viewDirection * 5.5f + Vector3.up * 2.65f;
+            Vector3 lookAt = subject.localPosition + viewDirection * 6f + Vector3.up * 0.65f;
             cameraTransform.localPosition = position;
             cameraTransform.localRotation = Quaternion.LookRotation(lookAt - position);
         }
-        else if (subject != null && ViewAngle is CameraAngle.TV or CameraAngle.Spotter or CameraAngle.PitBox)
+        else if (subject != null && ViewAngle is CameraAngle.TV or CameraAngle.Leader or CameraAngle.Spotter or CameraAngle.PitBox)
         {
             Vector3 position = ViewAngle switch
             {
-                CameraAngle.TV => TvCameraPosition(),
+                CameraAngle.TV => TvCameraPosition(SelectedCarIndex),
+                CameraAngle.Leader => TvCameraPosition(leaderIndex),
                 CameraAngle.Spotter => spotterPosition,
                 _ => playerPitBoxCameraPosition ?? (practiceStallPositions[0] + Vector3.up * 3.2f)
             };
             Vector3 target = subject.localPosition + Vector3.up * 0.55f;
             cameraTransform.localPosition = position;
             cameraTransform.localRotation = Quaternion.LookRotation(target - position);
-            if (ViewAngle == CameraAngle.TV)
+            if (ViewAngle is CameraAngle.TV or CameraAngle.Leader)
                 raceCamera.fieldOfView = TvFieldOfView(Vector3.Distance(position, target));
             else if (ViewAngle == CameraAngle.Spotter)
                 cameraTransform.localRotation *= spotterAimOffset;
@@ -1309,7 +1324,6 @@ public sealed partial class TrackPreview : MonoBehaviour
         ResetIowaFlagStandTiming();
         ResetIowaWreckResponse();
         this.simulation = simulation;
-        automaticSessionService = false;
         simulation.PrepareEqualConditions();
         RaceSessionRun.ResetVehiclesForSession(simulation.Cars, simulation.PreservePlayerCondition);
         if (definition.id == BristolTrackId)
@@ -2040,6 +2054,8 @@ public sealed partial class TrackPreview : MonoBehaviour
 
     private void AdvanceSimulation(float seconds)
     {
+        bool scoringCaution = TrackState is SessionTrackState.Caution or SessionTrackState.StageEndingUnderCaution
+            or SessionTrackState.FinishUnderCaution or SessionTrackState.Pacing or SessionTrackState.StageComplete;
         bool pitMembershipChanged = false;
         float previousElapsed = elapsed;
         elapsed += seconds;
@@ -2152,7 +2168,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         if (checkTraffic)
             ResolveTrackCollisions(seconds);
         AdvanceNorthWilkesboroGarageTravel(seconds);
-        TimingRun?.AdvanceClock(seconds);
+        TimingRun?.AdvanceClock(seconds, raceLapUnderCaution: scoringCaution);
         if (stages != null)
             HandleStoppedCars(seconds);
         if (pitMembershipChanged && stages?.ReducedFuelBurn == true && stages.ControlsField)

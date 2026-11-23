@@ -24,7 +24,11 @@ public sealed class StartupMenu : MonoBehaviour
     private const double CameraCycleIntervalSeconds = 8d;
     private const long CameraMenuHoldMs = 350;
     private static readonly TrackPreview.CameraAngle[] TrackCameraChoices =
-        (TrackPreview.CameraAngle[])System.Enum.GetValues(typeof(TrackPreview.CameraAngle));
+    {
+        TrackPreview.CameraAngle.Player, TrackPreview.CameraAngle.Chase, TrackPreview.CameraAngle.RearChase,
+        TrackPreview.CameraAngle.Hood, TrackPreview.CameraAngle.InCar, TrackPreview.CameraAngle.TV,
+        TrackPreview.CameraAngle.Leader, TrackPreview.CameraAngle.Spotter, TrackPreview.CameraAngle.PitBox, TrackPreview.CameraAngle.Cycle
+    };
     private PanelSettings panel;
     private GameSettings settings;
     private Coroutine displayChange;
@@ -125,7 +129,13 @@ public sealed class StartupMenu : MonoBehaviour
     private ScrollView trackTimingRows;
     private VisualElement trackStandings;
     private Button toggleTrackStandingsButton;
-    private Button toggleStandingsLapSpeedsButton;
+    private Label scoringSession, scoringSessionRemaining, scoringRaceLap, scoringRaceRemaining;
+    private VisualElement scoringRaceLine, scoringRaceProgress, scoringFlag;
+    private RaceSessionRun scoringProgressRun;
+    private int scoringProgressLaps, scoringProgressTarget;
+    private SessionTrackState? scoringFlagState;
+    private static readonly Color ScoringGreen = new Color32(66, 199, 100, 255);
+    private static readonly Color ScoringYellow = new Color32(255, 215, 53, 255);
     private Button pitSettingsButton;
     private Button cycleTrackCameraButton;
     private Label trackCameraAngle;
@@ -139,11 +149,15 @@ public sealed class StartupMenu : MonoBehaviour
     private IVisualElementScheduledItem pendingTrackIconTooltip;
     private VisualElement trackPitSettings;
     private bool trackStandingsExpanded = true;
-    private bool showStandingsLapSpeeds;
     private int displayedTimingRevision = -1;
     private float nextStandingsRefresh;
-    private readonly List<(VisualElement Row, Label Position, Label Car, Label Driver, Label BestMph, Label LastMph, VisualElement Status)> timingCells =
-        new List<(VisualElement, Label, Label, Label, Label, Label, VisualElement)>();
+    private readonly Dictionary<SessionCarResult, string> scoringDriverNames = new Dictionary<SessionCarResult, string>();
+    private float scoringStandingsWidth;
+    private const float ScoringPositionArrowDuration = 1.5f;
+    private readonly Dictionary<SessionCarResult, (int Position, int Direction, float Until)> scoringPositions =
+        new Dictionary<SessionCarResult, (int, int, float)>();
+    private readonly List<(VisualElement Row, Label Position, Label Car, Label Driver, Label Gap)> timingCells =
+        new List<(VisualElement, Label, Label, Label, Label)>();
     private Button quitButton;
     private Button backButton;
     private Button garageQuitButton;
@@ -276,8 +290,14 @@ public sealed class StartupMenu : MonoBehaviour
         trackStandings = trackScreen.Q("trackStandings");
         toggleTrackStandingsButton = trackScreen.Q<Button>("toggleTrackStandings");
         toggleTrackStandingsButton.clicked += ToggleTrackStandings;
-        toggleStandingsLapSpeedsButton = trackScreen.Q<Button>("toggleStandingsLapSpeeds");
-        toggleStandingsLapSpeedsButton.clicked += ToggleStandingsLapSpeeds;
+        scoringSession = trackScreen.Q<Label>("scoringSession");
+        scoringSessionRemaining = trackScreen.Q<Label>("scoringSessionRemaining");
+        scoringRaceLine = trackScreen.Q("scoringRaceLine");
+        scoringRaceLap = trackScreen.Q<Label>("scoringRaceLap");
+        scoringRaceRemaining = trackScreen.Q<Label>("scoringRaceRemaining");
+        scoringRaceProgress = trackScreen.Q("scoringRaceProgress");
+        scoringRaceProgress.generateVisualContent += DrawScoringProgress;
+        scoringFlag = trackScreen.Q("scoringFlag");
         pitSettingsButton = trackScreen.Q<Button>("pitSettingsButton");
         trackPitSettings = trackScreen.Q("trackPitSettings");
         pitSettingsButton.clicked += TogglePitSettings;
@@ -885,8 +905,8 @@ public sealed class StartupMenu : MonoBehaviour
         if (requestCautionButton != null) requestCautionButton.clicked -= CallCaution;
         if (toggleTrackStandingsButton != null)
             toggleTrackStandingsButton.clicked -= ToggleTrackStandings;
-        if (toggleStandingsLapSpeedsButton != null)
-            toggleStandingsLapSpeedsButton.clicked -= ToggleStandingsLapSpeeds;
+        if (scoringRaceProgress != null)
+            scoringRaceProgress.generateVisualContent -= DrawScoringProgress;
         if (pitSettingsButton != null)
             pitSettingsButton.clicked -= TogglePitSettings;
         if (cycleTrackCameraButton != null)
@@ -5413,6 +5433,15 @@ public sealed class StartupMenu : MonoBehaviour
         else garageScreen.Q<Label>("scheduleStatus").text = cancelled ? "Season generation cancelled. No changes were saved." : error;
     }
 
+    private static VisualElement CreateSimulationActivityIcon()
+    {
+        var wheel = TrackIndicatorIcon(tireWear: true);
+        wheel.style.width = wheel.style.height = 40;
+        wheel.style.alignSelf = Align.Center;
+        wheel.style.marginTop = wheel.style.marginBottom = 14;
+        return wheel;
+    }
+
     private async void SimulateEvent()
     {
         var race = selectedEvent;
@@ -5429,10 +5458,7 @@ public sealed class StartupMenu : MonoBehaviour
         var trim = new StyleColor(new Color32(0, 155, 221, 255));
         dialog.style.borderTopColor = dialog.style.borderBottomColor = dialog.style.borderLeftColor = dialog.style.borderRightColor = trim;
         dialog.Add(SettingsFormStyle.Label("Simulating Event", "settings-group-heading"));
-        var wheel = TrackIndicatorIcon(tireWear: false);
-        wheel.style.width = wheel.style.height = 40;
-        wheel.style.alignSelf = Align.Center;
-        wheel.style.marginTop = wheel.style.marginBottom = 14;
+        var wheel = CreateSimulationActivityIcon();
         dialog.Add(wheel);
         dialog.Add(SettingsFormStyle.Label(race.trackName, "settings-note"));
         var progress = SettingsFormStyle.Label("Current session: Preparing...", "settings-operation-session");
@@ -5634,22 +5660,139 @@ public sealed class StartupMenu : MonoBehaviour
         completed(true, null);
     }
 
-    private List<SessionCarResult> SimulateSession(ScheduledRace race, RaceSession session, TrackCatalog.Entry track, TeamCar car,
-        System.Random random, bool rivalsOnly = false, int[] qualifyingOrder = null, EventCarCondition condition = null)
-    {
-        var entries = TrackPreview.CreateTimingEntries(car, activeCareer);
-        if (rivalsOnly)
-            entries = entries.Skip(1).ToArray();
-        else
-            (condition ?? race.ConditionFor(car)).Apply(car);
+    private bool simulatingGarageSession;
 
-        var simulation = new CarSimulationContext(track.Definition, race, session, entries, isInstant: true,
-            preservePlayerCondition: !rivalsOnly);
-        if (!rivalsOnly && activeRace == race) simulation.PlayerSetup = raceEventView.CurrentSetup;
-        var results = RaceSessionRun.Simulate(simulation, settings.SpeedModel, random, qualifyingOrder, includesPlayer: !rivalsOnly);
-        if (!rivalsOnly && results.Find(result => result.car == car) is SessionCarResult player)
-            player.trackCondition = EventCarCondition.Capture(car, player.damageAtFinish);
-        return results;
+    private async void SimulateGarageSession(ScheduledRace race, RaceSession session, TrackCatalog.Entry track, TeamCar car)
+    {
+        var screen = raceEventView.Screen;
+        var overlay = new VisualElement();
+        SettingsFormStyle.Apply(overlay);
+        overlay.AddToClassList("settings-confirmation-overlay");
+        var dialog = new VisualElement();
+        dialog.AddToClassList("settings-confirmation-dialog");
+        var trim = new StyleColor(new Color32(0, 155, 221, 255));
+        dialog.style.borderTopColor = dialog.style.borderBottomColor = dialog.style.borderLeftColor = dialog.style.borderRightColor = trim;
+        dialog.style.backgroundColor = (Color)new Color32(16, 21, 30, 255);
+        dialog.Add(SettingsFormStyle.Label($"Simulating {session.name}", "settings-group-heading"));
+        var wheel = CreateSimulationActivityIcon();
+        dialog.Add(wheel);
+        var status = SettingsFormStyle.Label("Preparing session...", "settings-note");
+        dialog.Add(status);
+        var progress = new ProgressBar { lowValue = 0, highValue = 100, title = "0%" };
+        progress.AddToClassList("settings-operation-progress");
+        dialog.Add(progress);
+        var footer = new VisualElement();
+        footer.AddToClassList("settings-footer");
+        footer.style.justifyContent = Justify.FlexEnd;
+        bool cancelled = false;
+        var cancel = SettingsFormStyle.Button("Cancel", null);
+        cancel.tooltip = "Cancel this simulation without saving a result.";
+        void Cancel()
+        {
+            cancelled = true;
+            cancel.SetEnabled(false);
+            status.text = "Cancelling...";
+        }
+        cancel.clicked += Cancel;
+        overlay.RegisterCallback<KeyDownEvent>(evt =>
+        {
+            if (evt.keyCode != KeyCode.Escape) return;
+            Cancel();
+            evt.StopPropagation();
+        });
+        footer.Add(cancel);
+        dialog.Add(footer);
+        overlay.Add(dialog);
+        screen.parent.Add(overlay);
+        screen.SetEnabled(false);
+        cancel.Focus();
+
+        simulatingGarageSession = true;
+        bool saved = false;
+        string error = null;
+        string sessionCheckpoint = null;
+        ScheduledRace raceCheckpoint = null;
+        (TeamCar Car, string Json)[] carCheckpoints = null;
+        float rotation = 0f;
+        void Report(float fraction)
+        {
+            progress.value = 100f * Mathf.Clamp01(fraction);
+            progress.title = $"{progress.value:0}%";
+        }
+        void Animate()
+        {
+            rotation = (rotation + 12f) % 360f;
+            wheel.style.rotate = new Rotate(new Angle(rotation));
+        }
+
+        try
+        {
+            await Awaitable.NextFrameAsync(destroyCancellationToken);
+            if (cancelled) return;
+
+            sessionCheckpoint = JsonUtility.ToJson(session);
+            raceCheckpoint = JsonUtility.FromJson<ScheduledRace>(JsonUtility.ToJson(race));
+            var entries = TrackPreview.CreateTimingEntries(car, activeCareer);
+            carCheckpoints = entries.Where(entry => entry.car != null).Select(entry => entry.car).Distinct()
+                .Select(vehicle => (vehicle, JsonUtility.ToJson(vehicle))).ToArray();
+
+            race.carNumber = car.number;
+            race.carChassisNumber = car.chassisNumber;
+            race.ConditionFor(car).Apply(car);
+            var simulation = new CarSimulationContext(track.Definition, race, session, entries, isInstant: true,
+                preservePlayerCondition: true)
+            {
+                PlayerSetup = raceEventView.CurrentSetup
+            };
+            List<SessionCarResult> results = null;
+            status.text = "Running session...";
+            var steps = RaceSessionRun.SimulateIncremental(simulation, settings.SpeedModel, new System.Random(),
+                QualifyingOrder(race), true, value => results = value, () => cancelled,
+                fraction => Report(0.95f * fraction));
+            while (!cancelled && steps.MoveNext())
+            {
+                Animate();
+                await Awaitable.NextFrameAsync(destroyCancellationToken);
+            }
+            if (cancelled) return;
+            if (results.Find(result => result.car == car) is SessionCarResult player)
+                player.trackCondition = EventCarCondition.Capture(car, player.damageAtFinish);
+
+            status.text = "Saving results...";
+            Report(0.95f);
+            await Awaitable.NextFrameAsync(destroyCancellationToken);
+            if (!cancelled)
+            {
+                SaveSessionResults(race, new[] { (Session: session, Results: results) });
+                saved = true;
+                ShowCompletedSessionResults(session);
+            }
+        }
+        catch (System.OperationCanceledException) { cancelled = true; }
+        catch (System.Exception ex)
+        {
+            Debug.LogException(ex);
+            error = "Could not simulate the session. " + ex.Message;
+        }
+        finally
+        {
+            if (!saved && raceCheckpoint != null)
+            {
+                race.carNumber = raceCheckpoint.carNumber;
+                race.carChassisNumber = raceCheckpoint.carChassisNumber;
+                race.setupLocked = raceCheckpoint.setupLocked;
+                race.eventSetups = raceCheckpoint.eventSetups;
+                JsonUtility.FromJsonOverwrite(sessionCheckpoint, session);
+                if (carCheckpoints != null)
+                    foreach (var checkpoint in carCheckpoints)
+                        JsonUtility.FromJsonOverwrite(checkpoint.Json, checkpoint.Car);
+            }
+            overlay.RemoveFromHierarchy();
+            screen.SetEnabled(true);
+            simulatingGarageSession = false;
+            if (this != null && (cancelled || error != null))
+                raceEventView.RefreshGarage(cancelled ? "Session simulation cancelled." : error);
+        }
     }
 
     private static int[] QualifyingOrder(ScheduledRace race) =>
@@ -5684,6 +5827,8 @@ public sealed class StartupMenu : MonoBehaviour
 
     private void StartNextSession(bool simulate)
     {
+        if (simulatingGarageSession)
+            return;
         if (!developmentPractice && !CanFieldDriver(activeCareer))
         { raceEventView.ShowEvent(DriverEntryMessage(activeCareer)); return; }
         if (sessionInGarage)
@@ -5721,16 +5866,14 @@ public sealed class StartupMenu : MonoBehaviour
             return;
         }
 
-        activeRace.carNumber = car.number;
-        activeRace.carChassisNumber = car.chassisNumber;
-        // TrackState001 must use the actual session loop, including flags and pit transit.
-        // Basic Simulation retains the instant results shortcut for comparison.
-        if (simulate && !(settings.SimulationModel is TrackState001))
+        if (simulate)
         {
-            CompleteSession(session, SimulateSession(activeRace, session, track, car, new System.Random(), qualifyingOrder: QualifyingOrder(activeRace)));
+            SimulateGarageSession(activeRace, session, track, car);
             return;
         }
 
+        activeRace.carNumber = car.number;
+        activeRace.carChassisNumber = car.chassisNumber;
         raceEventView.Screen.style.display = DisplayStyle.None;
         var forecast = SessionWeatherForecast.Ensure(session, track.Definition, activeRace);
         bool night = SessionWeatherForecast.IsNightAt(forecast.startHour);
@@ -5764,10 +5907,9 @@ public sealed class StartupMenu : MonoBehaviour
         raceEventView.EqualConditionTesting = trackPreview.EqualConditionTesting;
         trackPreview.SessionRun.SetFuel(0, raceEventView.StartingFuelGallons);
         RefreshTrackTiming();
-        sessionPlaybackSpeed = simulate ? 200 : 1;
+        sessionPlaybackSpeed = 1;
         sessionPaused = false;
         ApplySessionPlayback();
-        if (simulate) trackPreview.EnableAutomaticSessionService();
         ConfigureGarageVisitButton();
         UpdateSessionLabel();
     }
@@ -5911,21 +6053,17 @@ public sealed class StartupMenu : MonoBehaviour
     {
         trackStandingsExpanded = !trackStandingsExpanded;
         trackStandings.EnableInClassList("standings-collapsed", !trackStandingsExpanded);
+        trackStandings.style.minWidth = trackStandingsExpanded && scoringStandingsWidth > 0f
+            ? new StyleLength(scoringStandingsWidth) : new StyleLength(StyleKeyword.Null);
         toggleTrackStandingsButton.text = trackStandingsExpanded ? "<" : ">";
-        toggleTrackStandingsButton.tooltip = trackStandingsExpanded ? "Collapse standings" : "Expand standings";
+        toggleTrackStandingsButton.tooltip = trackStandingsExpanded ? "Collapse Scoring Bug" : "Expand Scoring Bug";
+        scoringPositions.Clear();
         if (trackStandingsExpanded)
         {
+            displayedTimingRevision = -1;
             nextStandingsRefresh = 0f;
             RefreshTrackTiming();
         }
-    }
-
-    private void ToggleStandingsLapSpeeds()
-    {
-        showStandingsLapSpeeds = !showStandingsLapSpeeds;
-        trackStandings.EnableInClassList("standings-lap-speeds", showStandingsLapSpeeds);
-        toggleStandingsLapSpeedsButton.text = showStandingsLapSpeeds ? "\u2212" : "+";
-        toggleStandingsLapSpeedsButton.tooltip = showStandingsLapSpeeds ? "Hide lap speeds" : "Show lap speeds";
     }
 
     private bool PitSettingsOpen => trackPitSettings.ClassListContains("pit-settings-open");
@@ -5946,84 +6084,276 @@ public sealed class StartupMenu : MonoBehaviour
     private void RefreshTrackTiming()
     {
         var timing = trackPreview?.TimingRun;
-        if (!trackStandingsExpanded || timing == null)
+        if (timing == null)
             return;
 
         if (Time.unscaledTime < nextStandingsRefresh && timing.TimingRevision == displayedTimingRevision)
             return;
-        nextStandingsRefresh = Time.unscaledTime + 0.15f;
 
-        if (!timing.IsRace && timing.TimingRevision == displayedTimingRevision && timingCells.Count > 0)
+        nextStandingsRefresh = Time.unscaledTime + 0.15f;
+        bool changed = timing.TimingRevision != displayedTimingRevision;
+        displayedTimingRevision = timing.TimingRevision;
+        UpdateScoringHeader(timing);
+        if (!trackStandingsExpanded)
+            return;
+        if (!timing.IsRace && !changed && timingCells.Count > 0)
         {
-            foreach (var row in timingCells)
-                UpdateTimingStatus(row.Status, timing.IndexOfCar((SessionCarResult)row.Row.userData));
+            for (int positionIndex = 0; positionIndex < timingCells.Count; positionIndex++)
+            {
+                var cell = timingCells[positionIndex];
+                UpdateScoringPosition(cell.Position, (SessionCarResult)cell.Row.userData, positionIndex);
+            }
             return;
         }
 
-        displayedTimingRevision = timing.TimingRevision;
-        var ordered = timing.IsRace ? timing.RunningOrder().Select(standing => standing.Car) : timing.FastestLaps();
-        int index = 0;
-        foreach (var result in ordered)
-            SetTimingRow(index++, timing.IndexOfCar(result), result, timing.LapLength);
+        int position = 0;
+        if (timing.IsRace)
+        {
+            foreach (var standing in timing.RunningOrder(compareToLeader: true))
+            {
+                string gap = standing.LapsBehind > 0 ? $"-{standing.LapsBehind}L" : FormatScoringGap(standing.SecondsBehind);
+                SetTimingRow(position++, timing.IndexOfCar(standing.Car), standing.Car, gap);
+            }
+            return;
+        }
+
+        float leadingLap = float.PositiveInfinity;
+        foreach (var result in timing.FastestLaps())
+        {
+            if (position == 0)
+                leadingLap = result.FastestLap;
+            float gap = position == 0 ? float.NaN : result.FastestLap - leadingLap;
+            SetTimingRow(position++, timing.IndexOfCar(result), result, FormatScoringGap(gap));
+        }
     }
 
-    private void SetTimingRow(int position, int carIndex, SessionCarResult result, float lapLengthMeters)
+    private static string FormatScoringGap(float seconds) =>
+        float.IsNaN(seconds) || float.IsInfinity(seconds) ? "—" : $"+{seconds:0.00}";
+
+    private void UpdateScoringHeader(RaceSessionRun timing)
+    {
+        var state = trackPreview.TrackState;
+        if (state != scoringFlagState)
+        {
+            scoringFlagState = state;
+            scoringFlag.style.backgroundColor = state switch
+            {
+                SessionTrackState.TrackOpen => ScoringGreen,
+                SessionTrackState.Pacing or SessionTrackState.Caution or SessionTrackState.StageEndingUnderCaution
+                    or SessionTrackState.FinishUnderCaution => ScoringYellow,
+                SessionTrackState.WhiteFlag or SessionTrackState.Checkered => Color.white,
+                SessionTrackState.StageComplete => ScoringGreen,
+                SessionTrackState.TrackClosed => (Color)new Color32(65, 143, 255, 255),
+                _ => (Color)new Color32(100, 118, 139, 255)
+            };
+            scoringFlag.tooltip = state switch
+            {
+                SessionTrackState.TrackOpen => "Green flag",
+                SessionTrackState.Pacing => "Pace laps",
+                SessionTrackState.Caution or SessionTrackState.StageEndingUnderCaution
+                    or SessionTrackState.FinishUnderCaution => "Yellow flag",
+                SessionTrackState.WhiteFlag => "White flag",
+                SessionTrackState.Checkered => "Checkered flag",
+                SessionTrackState.StageComplete => "Stage complete",
+                SessionTrackState.TrackClosed => "Track closed",
+                _ => string.Empty
+            };
+        }
+
+        var raceDisplay = timing.IsRace ? DisplayStyle.Flex : DisplayStyle.None;
+        scoringRaceLine.style.display = raceDisplay;
+        scoringRaceProgress.style.display = raceDisplay;
+        if (!timing.IsRace)
+        {
+            scoringSession.text = activeSession?.name ?? "Practice";
+            scoringSession.tooltip = scoringSession.text;
+            scoringSessionRemaining.text = activeSession?.kind == RaceSessionKind.Practice && activeSession.minutes > 0
+                ? FormatScoringClock(Mathf.CeilToInt(timing.Remaining))
+                : string.Empty;
+            return;
+        }
+
+        int laps = timing.RaceLapCautions.Count;
+        int target = timing.TargetLaps;
+        bool staged = timing.BonusStageCount > 0;
+        scoringSession.text = staged ? $"Stage {timing.CurrentStage}" : activeSession?.name ?? "Race";
+        scoringSession.tooltip = scoringSession.text;
+        scoringSessionRemaining.text = staged ? $"{Mathf.Max(0, timing.StageEnd - laps)} to go" : string.Empty;
+        scoringRaceLap.text = $"Lap {Mathf.Clamp(laps + 1, 1, Mathf.Max(target, laps))} / {target}";
+        scoringRaceRemaining.text = timing.FinishSuspended ? "Overtime pending" : $"{Mathf.Max(0, target - laps)} to go";
+        if (scoringProgressRun != timing || scoringProgressLaps != laps || scoringProgressTarget != target)
+        {
+            scoringProgressRun = timing;
+            scoringProgressLaps = laps;
+            scoringProgressTarget = target;
+            scoringRaceProgress.MarkDirtyRepaint();
+        }
+    }
+
+    private static string FormatScoringClock(int seconds) =>
+        $"{seconds / 60}:{seconds % 60:00} left";
+
+    private void DrawScoringProgress(MeshGenerationContext context)
+    {
+        if (scoringProgressRun == null || scoringProgressTarget <= 0)
+            return;
+
+        var bounds = context.visualElement.contentRect;
+        float tickWidth = bounds.width / Mathf.Max(scoringProgressTarget, scoringProgressLaps);
+        float gap = tickWidth >= 2f ? 0.6f : 0f;
+        var painter = context.painter2D;
+        var cautions = scoringProgressRun.RaceLapCautions;
+        for (int flag = 0; flag < 2; flag++)
+        {
+            bool caution = flag == 1;
+            painter.fillColor = caution ? ScoringYellow : ScoringGreen;
+            painter.BeginPath();
+            bool drawn = false;
+            for (int lap = 0; lap < cautions.Count; lap++)
+            {
+                if (cautions[lap] != caution)
+                    continue;
+
+                float left = bounds.xMin + lap * tickWidth;
+                float right = left + tickWidth - gap;
+                painter.MoveTo(new Vector2(left, bounds.yMin));
+                painter.LineTo(new Vector2(right, bounds.yMin));
+                painter.LineTo(new Vector2(right, bounds.yMax));
+                painter.LineTo(new Vector2(left, bounds.yMax));
+                painter.ClosePath();
+                drawn = true;
+            }
+            if (drawn)
+                painter.Fill();
+        }
+    }
+
+    private void SetTimingRow(int position, int carIndex, SessionCarResult result, string gap)
     {
         if (position >= timingCells.Count)
         {
             var row = new VisualElement();
             row.AddToClassList("timing-row");
-            row.AddToClassList("timing-data-row");
             row.RegisterCallback<ClickEvent>(evt =>
             {
                 if (evt.button == 0 && evt.clickCount == 2 && row.userData is SessionCarResult car)
                     trackPreview?.SelectTimingCar(car);
             });
-            var status = new VisualElement();
-            status.AddToClassList("timing-status");
-            status.AddToClassList("track-icon-tooltip-target");
-            var icon = new VisualElement { pickingMode = PickingMode.Ignore };
-            icon.AddToClassList("timing-status-icon");
-            status.Add(icon);
-            var cells = (Row: row, Position: TimingCell((position + 1).ToString(), "timing-position"),
+            var cells = (Row: row, Position: TimingCell(string.Empty, "timing-position"),
                 Car: TimingCell(string.Empty, "timing-car"), Driver: TimingCell(string.Empty, "timing-driver-name"),
-                BestMph: TimingCell(string.Empty, "timing-lap-mph"), LastMph: TimingCell(string.Empty, "timing-lap-mph"),
-                Status: status);
+                Gap: TimingCell(string.Empty, "timing-gap"));
+            cells.Position.generateVisualContent += DrawScoringPositionTriangle;
+            if (position == 0)
+                cells.Driver.RegisterCallback<GeometryChangedEvent>(_ => FitScoringDriverNames(cells.Driver));
             timingCells.Add(cells);
             row.Add(cells.Position);
             row.Add(cells.Car);
-            var driverCell = new VisualElement();
-            driverCell.AddToClassList("timing-driver");
-            driverCell.Add(cells.Driver);
-            driverCell.Add(cells.Status);
-            row.Add(driverCell);
-            row.Add(cells.BestMph);
-            row.Add(cells.LastMph);
+            row.Add(cells.Driver);
+            row.Add(cells.Gap);
             trackTimingRows.Add(row);
         }
 
         var cell = timingCells[position];
-        cell.Row.userData = result;
-        cell.Row.EnableInClassList("timing-player", carIndex == 0);
-        cell.Car.text = result.carNumber.ToString();
-        cell.Driver.text = result.driverName?.Trim() ?? string.Empty;
-        cell.Driver.tooltip = cell.Driver.text;
-        cell.BestMph.text = FormatLapMph(lapLengthMeters, result.FastestLap);
-        cell.LastMph.text = FormatLapMph(lapLengthMeters, result.lapTimes.LastOrDefault());
-        UpdateTimingStatus(cell.Status, carIndex);
+        if (!ReferenceEquals(cell.Row.userData, result))
+        {
+            cell.Row.userData = result;
+            cell.Row.EnableInClassList("timing-player", carIndex == 0);
+            cell.Car.text = result.carNumber.ToString();
+            trackPreview.StyleScoringNumber(cell.Car, carIndex);
+            cell.Driver.tooltip = result.driverName?.Trim() ?? string.Empty;
+            cell.Driver.text = scoringDriverNames.TryGetValue(result, out string displayName)
+                ? displayName : cell.Driver.tooltip;
+            cell.Gap.tooltip = trackPreview.TimingRun.IsRace ? "Gap to the race leader" : "Gap to the fastest lap";
+        }
+        cell.Gap.text = gap;
+        UpdateScoringPosition(cell.Position, result, position);
     }
 
-    private static string FormatLapMph(float lapLengthMeters, float lapTime) =>
-        lapTime > 0f && !float.IsInfinity(lapTime)
-            ? (lapLengthMeters * 3600f / (TrackDefinition.MetersPerMile * lapTime)).ToString("F1")
-            : "\u2014";
-
-    private void UpdateTimingStatus(VisualElement status, int carIndex)
+    private void FitScoringDriverNames(Label sample)
     {
-        bool? inPit = trackPreview.TimingCarPitStatus(carIndex);
-        status[0].EnableInClassList("timing-in-pits", inPit == true);
-        status[0].EnableInClassList("timing-off-track", !inPit.HasValue);
-        status.tooltip = inPit == true ? "In the pits" : inPit == false ? "On the track" : "Off track";
+        if (!trackStandingsExpanded || scoringStandingsWidth > 0f || sample.contentRect.width <= 0f)
+            return;
+
+        float available = sample.contentRect.width;
+        float nameWidth = available;
+        foreach (var cell in timingCells)
+        {
+            var car = (SessionCarResult)cell.Row.userData;
+            string fullName = cell.Driver.tooltip;
+            string shortName = AbbreviateScoringDriverName(car, fullName);
+            scoringDriverNames[car] = shortName;
+            nameWidth = Mathf.Max(nameWidth, Mathf.Ceil(MeasureScoringName(sample, shortName)) + 2f);
+        }
+
+        scoringStandingsWidth = trackStandings.layout.width + nameWidth - available;
+        trackStandings.style.minWidth = scoringStandingsWidth;
+        foreach (var cell in timingCells)
+        {
+            var car = (SessionCarResult)cell.Row.userData;
+            string fullName = cell.Driver.tooltip;
+            if (MeasureScoringName(sample, fullName) <= nameWidth)
+                scoringDriverNames[car] = fullName;
+            cell.Driver.text = scoringDriverNames[car];
+        }
+    }
+
+    private static float MeasureScoringName(Label sample, string name) =>
+        sample.MeasureTextSize(name, 0f, VisualElement.MeasureMode.Undefined, 0f, VisualElement.MeasureMode.Undefined).x;
+
+    private static string AbbreviateScoringDriverName(SessionCarResult car, string fullName)
+    {
+        string[] parts = fullName.Split((char[])null, System.StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 2)
+            return fullName;
+
+        string surname = car.driver?.lastName?.Trim();
+        if (string.IsNullOrEmpty(surname))
+            surname = parts[parts.Length - 1];
+        return $"{StringInfo.GetNextTextElement(parts[0])}. {surname}";
+    }
+
+    private void UpdateScoringPosition(Label label, SessionCarResult car, int position)
+    {
+        float now = Time.unscaledTime;
+        if (!scoringPositions.TryGetValue(car, out var previous))
+            scoringPositions[car] = previous = (position, 0, 0f);
+        else if (previous.Position != position)
+            scoringPositions[car] = previous = (position, previous.Position > position ? 1 : -1,
+                now + ScoringPositionArrowDuration);
+
+        int direction = now < previous.Until ? previous.Direction : 0;
+        bool directionChanged = label.ClassListContains("scoring-position-up") != (direction > 0) ||
+            label.ClassListContains("scoring-position-down") != (direction < 0);
+        label.text = direction == 0 ? (position + 1).ToString() : string.Empty;
+        label.tooltip = direction == 0 ? string.Empty : $"Position {position + 1}";
+        label.EnableInClassList("scoring-position-up", direction > 0);
+        label.EnableInClassList("scoring-position-down", direction < 0);
+        if (directionChanged)
+            label.MarkDirtyRepaint();
+    }
+
+    private static void DrawScoringPositionTriangle(MeshGenerationContext context)
+    {
+        var position = context.visualElement;
+        bool up = position.ClassListContains("scoring-position-up");
+        if (!up && !position.ClassListContains("scoring-position-down"))
+            return;
+
+        Rect bounds = position.contentRect;
+        if (bounds.width <= 2f || bounds.height <= 4f)
+            return;
+
+        float top = bounds.yMin + 2f;
+        float bottom = bounds.yMax - 2f;
+        float baseY = up ? bottom : top;
+        var painter = context.painter2D;
+        painter.fillColor = position.resolvedStyle.color;
+        painter.BeginPath();
+        painter.MoveTo(new Vector2(bounds.center.x, up ? top : bottom));
+        painter.LineTo(new Vector2(bounds.xMin + 1f, baseY));
+        painter.LineTo(new Vector2(bounds.xMax - 1f, baseY));
+        painter.ClosePath();
+        painter.Fill();
     }
 
     private static Label TimingCell(string text, string className)
@@ -6465,6 +6795,11 @@ public sealed class StartupMenu : MonoBehaviour
             return;
         }
 
+        ShowCompletedSessionResults(session);
+    }
+
+    private void ShowCompletedSessionResults(RaceSession session)
+    {
         RefreshTeamBalance();
         raceEventView.ShowResults(session);
     }
@@ -6745,6 +7080,10 @@ public sealed class StartupMenu : MonoBehaviour
             displayedTimingRevision = -1;
             nextStandingsRefresh = 0f;
             timingCells.Clear();
+            scoringPositions.Clear();
+            scoringDriverNames.Clear();
+            scoringStandingsWidth = 0f;
+            trackStandings.style.minWidth = StyleKeyword.Null;
             trackTimingRows.Clear();
             trackPreview = preview.AddComponent<TrackPreview>();
             trackPreview.SetCollisionsEnabled(trackCollisionsEnabled);
@@ -6902,12 +7241,13 @@ public sealed class StartupMenu : MonoBehaviour
 
     private TrackPreview.CameraAngle NextAvailableCamera(TrackPreview.CameraAngle angle, bool includeCycle)
     {
-        int count = includeCycle ? TrackCameraChoices.Length : (int)TrackPreview.CameraAngle.Cycle;
+        int index = System.Array.IndexOf(TrackCameraChoices, angle);
         do
         {
-            angle = (TrackPreview.CameraAngle)(((int)angle + 1) % count);
+            index = (index + 1) % TrackCameraChoices.Length;
+            angle = TrackCameraChoices[index];
         }
-        while (!IsTrackCameraAvailable(angle));
+        while ((!includeCycle && angle == TrackPreview.CameraAngle.Cycle) || !IsTrackCameraAvailable(angle));
         return angle;
     }
 

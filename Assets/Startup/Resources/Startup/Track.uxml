@@ -1,9 +1,10 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements">
     <Style src="Startup.uss" />
+    <Style src="../Settings/SettingsControls.uss" />
     <Style src="../Fonts/GoogleSans/SettingsTypography.uss" />
     <ui:VisualElement name="trackScreen" class="screen">
         <ui:VisualElement name="raceViewport" class="race-viewport" />
-        <ui:VisualElement class="header track-header">
+        <ui:VisualElement class="header track-header ui-default-font">
             <ui:VisualElement class="track-header-left">
                 <ui:VisualElement class="track-heading-labels">
                     <ui:Label name="selectedTrackName" class="brand track-name" />
@@ -22,7 +23,7 @@
             </ui:VisualElement>
             <ui:VisualElement class="track-playback">
                 <ui:Button name="playbackSpeedButton" text="1x &#x25BE;" tooltip="Playback speed" class="track-header-icon playback-speed-button" />
-                <ui:Button name="playSessionButton" text="&#x25B6;" tooltip="Play" class="track-header-icon playback-play-button" />
+                <ui:Button name="playSessionButton" text="&#x25B6;" tooltip="Play" class="track-header-icon" />
                 <ui:Button name="pauseSessionButton" text="&#x2161;" tooltip="Pause" class="track-header-icon" />
             </ui:VisualElement>
             <ui:VisualElement class="track-header-right">
@@ -48,70 +49,76 @@
                 </ui:VisualElement>
                 <ui:VisualElement name="cockpitDashboard" class="cockpit-dashboard" picking-mode="Ignore" />
             </ui:VisualElement>
-            <ui:VisualElement name="trackStandings" class="track-standings" picking-mode="Ignore">
-                <ui:VisualElement class="timing-row timing-header">
-                    <ui:Label text="Pos" class="timing-position" />
-                    <ui:Label text="Car" class="timing-car" />
-                    <ui:Label text="Driver" class="timing-driver" />
-                    <ui:Label text="Best MPH" tooltip="Average speed on the fastest completed lap" class="timing-lap-mph" />
-                    <ui:Label text="Last MPH" tooltip="Average speed on the most recent completed lap" class="timing-lap-mph" />
-                    <ui:Button name="toggleTrackStandings" text="&lt;" tooltip="Collapse standings" class="standings-toggle track-icon-tooltip-target" />
-                    <ui:Button name="toggleStandingsLapSpeeds" text="+" tooltip="Show lap speeds" class="standings-toggle standings-laps-toggle track-icon-tooltip-target" />
+            <ui:VisualElement name="trackStandings" class="track-standings ui-default-font" picking-mode="Ignore">
+                <ui:VisualElement class="scoring-header">
+                    <ui:VisualElement name="scoringFlag" class="scoring-flag track-icon-tooltip-target" />
+                    <ui:VisualElement class="scoring-header-content">
+                        <ui:VisualElement class="scoring-header-line scoring-header-top">
+                            <ui:Label name="scoringSession" class="scoring-session" />
+                            <ui:Label name="scoringSessionRemaining" class="scoring-remaining" />
+                        </ui:VisualElement>
+                        <ui:VisualElement name="scoringRaceLine" class="scoring-header-line">
+                            <ui:Label name="scoringRaceLap" class="scoring-session" />
+                            <ui:Label name="scoringRaceRemaining" class="scoring-remaining" />
+                        </ui:VisualElement>
+                        <ui:VisualElement name="scoringRaceProgress" class="scoring-race-progress" picking-mode="Ignore" />
+                    </ui:VisualElement>
+                    <ui:Button name="toggleTrackStandings" text="&lt;" tooltip="Collapse Scoring Bug" class="scoring-toggle track-icon-tooltip-target" />
                 </ui:VisualElement>
                 <ui:ScrollView name="trackTimingRows" class="timing-rows" horizontal-scroller-visibility="Hidden" vertical-scroller-visibility="Hidden" />
             </ui:VisualElement>
-        </ui:VisualElement>
-        <ui:VisualElement class="track-right-dock" picking-mode="Ignore">
-            <ui:VisualElement name="trackMapWidget" class="track-map-widget" picking-mode="Ignore">
-                <ui:VisualElement name="trackSessionMap" class="track-session-map" picking-mode="Ignore" />
-                <ui:Button name="toggleTrackMap" text="&gt;" tooltip="Collapse track map" class="standings-toggle track-map-toggle track-icon-tooltip-target" />
-            </ui:VisualElement>
-            <ui:VisualElement name="trackPitSettings" class="track-pit-controls">
-                <ui:VisualElement class="track-player-panel">
-                    <ui:VisualElement class="pit-readouts">
-                        <ui:VisualElement class="pit-tires">
-                            <ui:VisualElement class="pit-tire">
-                                <ui:Label text="LF" />
-                                <ui:Toggle name="pitTire0" tooltip="Replace LF tire" />
-                                <ui:VisualElement class="pit-tire-bar"><ui:VisualElement name="pitTireFill0" class="pit-meter-fill" /></ui:VisualElement>
-                                <ui:Label name="pitTireWear0" />
+            <ui:VisualElement class="track-right-dock" picking-mode="Ignore">
+                <ui:VisualElement name="trackMapWidget" class="track-map-widget" picking-mode="Ignore">
+                    <ui:VisualElement name="trackSessionMap" class="track-session-map" picking-mode="Ignore" />
+                    <ui:Button name="toggleTrackMap" text="&gt;" tooltip="Collapse track map" class="standings-toggle track-map-toggle track-icon-tooltip-target" />
+                </ui:VisualElement>
+                <ui:VisualElement name="trackPitSettings" class="track-pit-controls ui-default-font">
+                    <ui:VisualElement class="track-player-panel">
+                        <ui:VisualElement class="pit-readouts">
+                            <ui:VisualElement class="pit-tires">
+                                <ui:VisualElement class="pit-tire">
+                                    <ui:Label text="LF" />
+                                    <ui:Toggle name="pitTire0" tooltip="Replace LF tire" />
+                                    <ui:VisualElement class="pit-tire-bar"><ui:VisualElement name="pitTireFill0" class="pit-meter-fill" /></ui:VisualElement>
+                                    <ui:Label name="pitTireWear0" />
+                                </ui:VisualElement>
+                                <ui:VisualElement class="pit-tire">
+                                    <ui:Label text="RF" />
+                                    <ui:Toggle name="pitTire1" tooltip="Replace RF tire" />
+                                    <ui:VisualElement class="pit-tire-bar"><ui:VisualElement name="pitTireFill1" class="pit-meter-fill" /></ui:VisualElement>
+                                    <ui:Label name="pitTireWear1" />
+                                </ui:VisualElement>
+                                <ui:VisualElement class="pit-tire">
+                                    <ui:Label text="LR" />
+                                    <ui:Toggle name="pitTire2" tooltip="Replace LR tire" />
+                                    <ui:VisualElement class="pit-tire-bar"><ui:VisualElement name="pitTireFill2" class="pit-meter-fill" /></ui:VisualElement>
+                                    <ui:Label name="pitTireWear2" />
+                                </ui:VisualElement>
+                                <ui:VisualElement class="pit-tire">
+                                    <ui:Label text="RR" />
+                                    <ui:Toggle name="pitTire3" tooltip="Replace RR tire" />
+                                    <ui:VisualElement class="pit-tire-bar"><ui:VisualElement name="pitTireFill3" class="pit-meter-fill" /></ui:VisualElement>
+                                    <ui:Label name="pitTireWear3" />
+                                </ui:VisualElement>
                             </ui:VisualElement>
-                            <ui:VisualElement class="pit-tire">
-                                <ui:Label text="RF" />
-                                <ui:Toggle name="pitTire1" tooltip="Replace RF tire" />
-                                <ui:VisualElement class="pit-tire-bar"><ui:VisualElement name="pitTireFill1" class="pit-meter-fill" /></ui:VisualElement>
-                                <ui:Label name="pitTireWear1" />
-                            </ui:VisualElement>
-                            <ui:VisualElement class="pit-tire">
-                                <ui:Label text="LR" />
-                                <ui:Toggle name="pitTire2" tooltip="Replace LR tire" />
-                                <ui:VisualElement class="pit-tire-bar"><ui:VisualElement name="pitTireFill2" class="pit-meter-fill" /></ui:VisualElement>
-                                <ui:Label name="pitTireWear2" />
-                            </ui:VisualElement>
-                            <ui:VisualElement class="pit-tire">
-                                <ui:Label text="RR" />
-                                <ui:Toggle name="pitTire3" tooltip="Replace RR tire" />
-                                <ui:VisualElement class="pit-tire-bar"><ui:VisualElement name="pitTireFill3" class="pit-meter-fill" /></ui:VisualElement>
-                                <ui:Label name="pitTireWear3" />
+                            <ui:VisualElement class="pit-levels">
+                                <ui:Label name="playerCarStatus" />
+                                <ui:VisualElement class="pit-level-bar"><ui:VisualElement name="pitFuelFill" class="pit-meter-fill" /></ui:VisualElement>
+                                <ui:Toggle name="refuelAtStop" tooltip="Add fuel at the next pit stop" value="true" />
+                                <ui:Slider name="pitFuelAmount" low-value="0" high-value="18" value="18" />
+                                <ui:Label name="pitFuelAmountLabel" />
+                                <ui:Label name="pitDamageLabel" />
+                                <ui:VisualElement class="pit-level-bar"><ui:VisualElement name="pitDamageFill" class="pit-meter-fill pit-damage-fill" /></ui:VisualElement>
+                                <ui:Slider name="pitRepairAmount" low-value="0" high-value="100" value="0" />
+                                <ui:Label name="pitRepairAmountLabel" />
                             </ui:VisualElement>
                         </ui:VisualElement>
-                        <ui:VisualElement class="pit-levels">
-                            <ui:Label name="playerCarStatus" />
-                            <ui:VisualElement class="pit-level-bar"><ui:VisualElement name="pitFuelFill" class="pit-meter-fill" /></ui:VisualElement>
-                            <ui:Toggle name="refuelAtStop" tooltip="Add fuel at the next pit stop" value="true" />
-                            <ui:Slider name="pitFuelAmount" low-value="0" high-value="18" value="18" />
-                            <ui:Label name="pitFuelAmountLabel" />
-                            <ui:Label name="pitDamageLabel" />
-                            <ui:VisualElement class="pit-level-bar"><ui:VisualElement name="pitDamageFill" class="pit-meter-fill pit-damage-fill" /></ui:VisualElement>
-                            <ui:Slider name="pitRepairAmount" low-value="0" high-value="100" value="0" />
-                            <ui:Label name="pitRepairAmountLabel" />
-                        </ui:VisualElement>
+                        <ui:Button name="requestPitStop" text="Pit Next Time" tooltip="Request a pit stop on the next lap" class="settings-button" />
                     </ui:VisualElement>
-                    <ui:Button name="requestPitStop" text="Pit Next Time" class="action" />
                 </ui:VisualElement>
             </ui:VisualElement>
         </ui:VisualElement>
-        <ui:VisualElement class="footer track-footer">
+        <ui:VisualElement class="footer track-footer ui-default-font">
             <ui:VisualElement class="track-footer-driving">
                 <ui:VisualElement name="footerThrottle" class="driving-meter track-icon-tooltip-target" tooltip="Throttle 0%">
                     <ui:VisualElement class="driving-meter-bar"><ui:VisualElement name="footerThrottleFill" class="driving-meter-fill throttle-fill" /></ui:VisualElement>
@@ -150,6 +157,6 @@
                 </ui:Button>
             </ui:VisualElement>
         </ui:VisualElement>
-        <ui:Label name="trackIconTooltip" class="track-icon-tooltip" picking-mode="Ignore" />
+        <ui:Label name="trackIconTooltip" class="track-icon-tooltip ui-default-font" picking-mode="Ignore" />
     </ui:VisualElement>
 </ui:UXML>
