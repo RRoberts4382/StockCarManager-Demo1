@@ -2423,7 +2423,6 @@ public sealed class StartupMenu : MonoBehaviour
         largeCarPreviews.Dispose();
         var random = new System.Random();
         bool careerChanged = career.InitializeCars(random);
-        ApplyCareerCarModels(career);
         careerChanged |= career.InitializeEmployees(random);
         careerChanged |= career.AllCars.Any(car => string.IsNullOrEmpty(car.chassisNumber));
         careerSetup.View.style.display = DisplayStyle.None;
@@ -2433,8 +2432,11 @@ public sealed class StartupMenu : MonoBehaviour
         RefreshDriverLabel(career);
         activeCareer = career;
         careerChanged |= ScenarioMail.RefreshSeriesChangeChoices(career);
-        careerChanged |= ChampionshipStandings.MigrateResultIdentities(career.schedule,
+        // Capture legacy result manufacturers before changing the active roster.
+        careerChanged |= career.schedule != null && ChampionshipStandings.MigrateResultIdentities(career.schedule,
             TrackPreview.CreateTimingEntries(career.cars[0], career));
+        careerChanged |= career.AssignRivalManufacturers(random);
+        ApplyCareerCarModels(career);
         careerChanged |= career.MigrateSponsorship();
         DisplayEmployees(career);
         catalog.Refresh();

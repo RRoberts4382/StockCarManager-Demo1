@@ -396,6 +396,41 @@ internal sealed class Career
         return (randomizeRivals ? RandomizeRivalEntries(random) : AssignRivalLiveries(random)) || changed;
     }
 
+    internal bool AssignRivalManufacturers(System.Random random, bool enteringSeries = false)
+    {
+        var choices = SeriesRules.ManufacturerChoices;
+        var remaining = new List<CarManufacturer>();
+        var teams = (rivalCars ?? Enumerable.Empty<TeamCar>())
+            .Where(car => car.number >= 1 && car.number < TrackPreview.CarCount)
+            .GroupBy(car => (car.number - 1) / TrackPreview.RivalCarsPerTeam);
+        bool changed = false;
+        foreach (var team in teams)
+        {
+            var assigned = enteringSeries ? null : team.FirstOrDefault(car =>
+                car.rivalManufacturerAssigned && choices.Contains(car.manufacturer));
+            CarManufacturer manufacturer;
+            if (assigned != null)
+            {
+                manufacturer = assigned.manufacturer;
+            }
+            else
+            {
+                // Draw each eligible make once per round so a new field represents the series.
+                if (remaining.Count == 0)
+                    remaining.AddRange(choices);
+                manufacturer = TakeRandom(remaining, random);
+            }
+
+            foreach (var car in team)
+            {
+                changed |= !car.rivalManufacturerAssigned || car.manufacturer != manufacturer;
+                car.manufacturer = manufacturer;
+                car.rivalManufacturerAssigned = true;
+            }
+        }
+        return changed;
+    }
+
     internal bool RandomizeRivalEntries(System.Random random)
     {
         var reserved = cars.Select(car => car.number).ToHashSet();
@@ -650,6 +685,7 @@ internal sealed class TeamCar
 
     // The rival's number field continues to identify its stable roster slot.
     public int rivalRaceNumber;
+    public bool rivalManufacturerAssigned;
     public bool rivalLiveryAssigned;
     public string primaryPaint;
     public string secondaryPaint;
@@ -1704,6 +1740,7 @@ internal sealed class CareerSetup
             catalog.Refresh();
             var random = new System.Random();
             career.InitializeCars(random, randomizeRivals: true);
+            career.AssignRivalManufacturers(random);
             career.InitializeEmployees(random);
             career.schedule = GenerateSeason(career, DateTime.Today.Year);
             career.SetSeasonStartDate();
@@ -1789,6 +1826,7 @@ internal sealed class CareerSetup
                 updated.newChassisConfiguration = null; updated.usedCarManufacturerFilter = null;
                 updated.usedCarTypeFilter = null; updated.usedCarMaxPriceFilter = null;
                 ScenarioMail.ResetSeasonSponsorship(updated);
+                updated.AssignRivalManufacturers(new System.Random(), enteringSeries: true);
                 SaveProgress(updated);
                 transitionSource = updated; savedDraft = DraftState(); Close(); ClosePreview();
                 start(updated); afterSave?.Invoke(updated);
