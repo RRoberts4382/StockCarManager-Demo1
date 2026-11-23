@@ -173,6 +173,8 @@ internal sealed class RaceSessionRun
     private readonly float[] thermalDistances;
     private readonly bool[] thermalOnTrack;
     private int scoredStages;
+    private readonly List<bool> raceLapCautions = new List<bool>();
+    internal IReadOnlyList<bool> RaceLapCautions => raceLapCautions;
     private float leaderProgress;
     private readonly bool finishOnCheckered;
     private int? stageEndOverride;
@@ -888,7 +890,7 @@ internal sealed class RaceSessionRun
         return speed * UnityEngine.Mathf.Lerp(VehicleSpeed003.PressureStraightSpeed(setup, cars[index].Result.car), factor, cornerLoad);
     }
 
-    public void AdvanceClock(float seconds)
+    public void AdvanceClock(float seconds, bool? raceLapUnderCaution = null)
     {
         for (int i = 0; i < cars.Length; i++)
         {
@@ -938,32 +940,58 @@ internal sealed class RaceSessionRun
                 car.StepStartProgress = car.Progress;
             }
             leaderProgress = cars.Max(car => car.Progress);
+            if (raceLapUnderCaution.HasValue)
+            {
+                int completed = LeaderLaps;
+                while (raceLapCautions.Count < completed)
+                    raceLapCautions.Add(raceLapUnderCaution.Value);
+            }
         }
         PreciseElapsed += seconds;
         Weather.Advance(seconds, PreciseElapsed);
     }
 
-    public IEnumerable<(SessionCarResult Car, int LapsBehind, float SecondsBehind)> RunningOrder()
+    private (int Status, int Laps, float FinishTime, float Distance, int Number) RaceOrderKey(CarTiming car) =>
+        (car.Retired ? 2 : car.Finished ? 0 : 1,
+            finishOnCheckered && car.Finished ? -car.Result.lapTimes.Count : 0,
+            car.Finished ? car.FinishTime : float.PositiveInfinity,
+            -car.Progress, car.Result.carNumber);
+
+    internal int RaceLeaderIndex()
     {
-        var ordered = cars.OrderBy(car => car.Retired ? 2 : car.Finished ? 0 : 1)
-            .ThenByDescending(car => finishOnCheckered && car.Finished ? car.Result.lapTimes.Count : 0)
-            .ThenBy(car => car.Finished ? car.FinishTime : float.PositiveInfinity)
-            .ThenByDescending(car => car.Progress).ThenBy(car => car.Result.carNumber);
+        int leader = 0;
+        var best = RaceOrderKey(cars[leader]);
+        for (int i = 1; i < cars.Length; i++)
+        {
+            var key = RaceOrderKey(cars[i]);
+            if (key.CompareTo(best) < 0)
+            {
+                leader = i;
+                best = key;
+            }
+        }
+        return leader;
+    }
+
+    public IEnumerable<(SessionCarResult Car, int LapsBehind, float SecondsBehind)> RunningOrder(bool compareToLeader = false)
+    {
+        var ordered = cars.OrderBy(RaceOrderKey);
         CarTiming ahead = null;
-        float leaderDistance = 0f;
+        CarTiming leader = null;
         foreach (var car in ordered)
         {
             if (ahead == null)
             {
-                leaderDistance = car.Progress;
+                leader = car;
                 yield return (car.Result, 0, float.NaN);
             }
             else
             {
-                float gap = Math.Max(0f, ahead.Progress - car.Progress);
-                int laps = (int)(Math.Max(0f, leaderDistance - car.Progress) / lapLength);
+                var reference = compareToLeader ? leader : ahead;
+                float gap = Math.Max(0f, reference.Progress - car.Progress);
+                int laps = (int)(Math.Max(0f, leader.Progress - car.Progress) / lapLength);
                 float time = car.Finished && !car.Retired ? car.FinishTime : Elapsed;
-                float seconds = laps > 0 ? 0f : TimeGap(ahead, car.Progress, gap, time);
+                float seconds = laps > 0 ? 0f : TimeGap(reference, car.Progress, gap, time);
                 yield return (car.Result, laps, seconds);
             }
             ahead = car;

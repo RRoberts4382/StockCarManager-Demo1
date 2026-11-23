@@ -43,9 +43,29 @@
     padding-right: 6px;
 }
 
-.event-garage-screen .garage-footer > .settings-button {
+.event-garage-screen .garage-footer > .event-footer-slot {
+    position: relative;
     flex-grow: 1;
-    flex-basis: auto;
+    flex-basis: 0;
+    min-width: 0;
+    margin: 0 2px;
+}
+
+.event-garage-screen .garage-footer .event-footer-slot > Button,
+.event-garage-screen .garage-footer .event-session-options > Button {
+    margin: 0;
+}
+
+.event-session-options {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 100%;
+    padding: 2px;
+    border-width: 1px;
+    border-color: #009bdd;
+    border-radius: 7px;
+    background-color: #10151e;
 }
 
 .event-garage-screen .garage-footer .nav-button-selected {

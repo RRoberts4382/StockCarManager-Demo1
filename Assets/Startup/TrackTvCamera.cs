@@ -24,9 +24,9 @@ public sealed partial class TrackPreview
         }
     }
 
-    private Vector3 TvCameraPosition()
+    private Vector3 TvCameraPosition(int subjectIndex)
     {
-        float progress = Mathf.Repeat(TvSubjectStation() - tvFirstStation, lapLength);
+        float progress = Mathf.Repeat(TvSubjectStation(subjectIndex) - tvFirstStation, lapLength);
         // Track progress chooses the shot even where two parts of the course pass close together.
         // Hold a little beyond each midpoint so small position changes cannot bounce between shots.
         if (activeTvCamera < 0 ||
@@ -37,9 +37,8 @@ public sealed partial class TrackPreview
         return tvCameraPositions[activeTvCamera];
     }
 
-    private float TvSubjectStation()
+    private float TvSubjectStation(int index)
     {
-        int index = SelectedCarIndex;
         if (raceStart != null && !raceReleased)
         {
             var grid = raceStart.GridPosition(index, 0f);

@@ -52,6 +52,14 @@ internal sealed class RacingSeries
         ? manufacturers.Select(make => make.manufacturer).Distinct().ToArray()
         : (CarManufacturer[])Enum.GetValues(typeof(CarManufacturer));
 
+    public string ModelFor(CarManufacturer manufacturer)
+    {
+        string model = manufacturers?.FirstOrDefault(make => make.manufacturer == manufacturer)?.carModel;
+        if (!string.IsNullOrWhiteSpace(model))
+            return model;
+        return string.IsNullOrWhiteSpace(carModel) ? "Impala" : carModel;
+    }
+
     public EmployeeRole[] StaffRoles => employeeRoles?.Length > 0
         ? employeeRoles.Select(role => role.role).Where(role => role != EmployeeRole.Driver).Distinct().ToArray()
         : employeeRoles != null ? Array.Empty<EmployeeRole>() :
@@ -104,6 +112,7 @@ internal sealed class RacingSeries
 internal sealed class SeriesManufacturer
 {
     public CarManufacturer manufacturer;
+    public string carModel;
     public SeriesEngine[] engineSuppliers;
 }
 
@@ -1409,10 +1418,13 @@ internal sealed class CareerSetup
             });
             choose.AddToClassList("title-career-load");
             choose.tooltip = $"Start a career in {rules.name}.";
+            var make = rules.ManufacturerChoices[0];
+            string modelResource = rules.ModelFor(make);
             var car = new TeamCar
             {
                 number = 27,
-                modelResource = rules.carModel,
+                manufacturer = make,
+                modelResource = modelResource,
                 primaryPaint = "#009BDD",
                 secondaryPaint = "#F5F5F5",
                 trimPaint = "#202833",
@@ -1432,7 +1444,7 @@ internal sealed class CareerSetup
             name.pickingMode = PickingMode.Ignore;
             details.Add(name);
             var model = SettingsFormStyle.Label(
-                CarTypeDefinition.ForModel(rules.carModel).displayName, "title-career-detail");
+                CarTypeDefinition.ForModel(modelResource).displayName, "title-career-detail");
             model.pickingMode = PickingMode.Ignore;
             details.Add(model);
             choose.Add(details);
@@ -1518,8 +1530,6 @@ internal sealed class CareerSetup
 
     public string SeriesName(Career career) =>
         series.FirstOrDefault(item => item.id == RacingSeries.CanonicalId(career.seriesId))?.name ?? career.seriesName;
-
-    public string CarModel(Career career) => series.FirstOrDefault(item => item.id == RacingSeries.CanonicalId(career.seriesId))?.carModel;
 
     private void ShowTeamForm(bool show)
     {
@@ -1790,7 +1800,7 @@ internal sealed class CareerSetup
         {
             number = Mathf.Clamp(carNumber.value, 1, 99),
             manufacturer = manufacturers[manufacturer.index],
-            modelResource = selectedSeries >= 0 ? series[selectedSeries].carModel : null
+            modelResource = selectedSeries >= 0 ? series[selectedSeries].ModelFor(manufacturers[manufacturer.index]) : null
         };
         draftPaint.ApplyTo(car);
         return car;

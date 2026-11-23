@@ -122,6 +122,11 @@
     background-color: #477096;
     border-color: #c6e1f7;
 }
+.settings-button.series-model-choice:hover,
+.settings-button.series-model-choice:focus {
+    background-color: #477096;
+    border-color: var(--settings-trim);
+}
 .settings-button-primary {
     color: #142436;
     background-color: #a9d1f3;

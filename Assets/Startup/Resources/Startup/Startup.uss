@@ -110,6 +110,7 @@
     min-height: 54px;
     padding: 6px 12px;
     background-color: rgba(16, 21, 30, 0.9);
+    border-bottom-color: #009bdd;
 }
 .track-header-left, .track-header-right {
     flex-direction: row;
@@ -128,25 +129,21 @@
     margin: 0 10px;
 }
 .track-playback > .track-header-icon {
-    margin: 0;
+    margin: 0 2px;
     font-size: 19px;
 }
 .track-playback > .playback-speed-button {
-    width: 48px;
+    width: 56px;
     font-size: 14px;
-    -unity-text-align: middle-right;
-}
-.track-playback > .playback-play-button {
-    width: 24px;
-    padding-left: 2px;
-    -unity-text-align: middle-left;
 }
 .track-heading-labels {
     flex-shrink: 1;
     min-width: 0;
 }
 .track-name {
+    color: #009bdd;
     font-size: 24px;
+    -unity-font-style: normal;
 }
 .track-heading-labels > Label,
 .track-session > Label {
@@ -166,14 +163,16 @@
     height: 32px;
     margin: 0 0 0 8px;
     padding: 0;
-    border-width: 0;
-    background-color: transparent;
-    color: #ffbb79;
+    border-width: 1px;
+    border-color: #009bdd;
+    border-radius: 7px;
+    background-color: #10151e;
+    color: #f5f5f5;
     font-size: 23px;
 }
 .track-header-icon:hover, .track-header-icon:focus, .track-header-icon:active {
-    background-color: transparent;
-    color: #fff4e8;
+    background-color: #263e50;
+    border-color: #55c4ef;
 }
 .track-header-icon:disabled {
     opacity: 0.5;
@@ -184,6 +183,7 @@
 }
 .track-footer-center {
     align-items: center;
+    max-width: 48%;
 }
 .track-readouts {
     flex-direction: row;
@@ -194,9 +194,11 @@
     margin: 0 6px;
 }
 .track-footer.footer {
-    height: 54px;
-    padding: 0 12px;
+    height: auto;
+    min-height: 54px;
+    padding: 4px 12px;
     background-color: rgba(16, 21, 30, 0.9);
+    border-top-color: #009bdd;
 }
 .track-footer-driving, .track-footer-pit {
     flex-direction: row;
@@ -750,29 +752,6 @@
     margin: 0 2px;
     padding-left: 1px;
     padding-right: 1px;
-}
-.event-session-control {
-    position: relative;
-    flex-direction: row;
-    flex-grow: 1;
-    flex-basis: 0;
-    min-width: 0;
-    margin: 0 2px;
-}
-.garage-footer .event-session-control .event-next-session {
-    margin: 0;
-}
-.garage-footer .event-session-control .event-session-options {
-    flex-grow: 0;
-    flex-basis: 27px;
-    margin: 0;
-}
-.garage-footer .event-session-control .event-simulate-session {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 100%;
-    margin: 0;
 }
 .event-overview {
     flex-direction: row;
@@ -1363,28 +1342,89 @@
     margin-bottom: 152px;
 }
 .track-standings {
-    width: 248px;
+    width: 220px;
     min-height: 0;
     flex-shrink: 0;
     margin-bottom: 10px;
 }
-.track-standings.standings-lap-speeds {
-    width: 370px;
-}
 .track-standings.standings-collapsed {
-    width: 31px;
+    width: 34px;
 }
-.standings-collapsed .timing-header {
-    justify-content: center;
-    padding: 0;
-    border-bottom-width: 0;
-    border-radius: 3px;
-    background-color: #10151e;
-}
-.standings-collapsed .timing-header > Label,
-.standings-collapsed .timing-rows,
-.standings-collapsed .standings-laps-toggle {
+.standings-collapsed .scoring-header-content,
+.standings-collapsed .timing-rows {
     display: none;
+}
+.scoring-header {
+    min-height: 26px;
+    flex-direction: row;
+    flex-shrink: 0;
+    align-items: center;
+    border-width: 1px;
+    border-left-width: 0;
+    border-color: #009bdd;
+    border-top-left-radius: 7px;
+    border-top-right-radius: 7px;
+    overflow: hidden;
+    background-color: rgba(16, 21, 30, 0.96);
+    color: #f5f5f5;
+}
+.scoring-header-content {
+    flex-grow: 1;
+    min-width: 0;
+    padding: 3px 5px 4px 7px;
+}
+.scoring-header-line {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+}
+.scoring-header-line > Label {
+    margin: 0;
+    padding: 0;
+    font-size: 12px;
+    white-space: nowrap;
+}
+.scoring-header-top > Label {
+    color: #009bdd;
+    font-size: 13px;
+}
+.scoring-session {
+    min-width: 0;
+    flex-shrink: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.scoring-header-line > .scoring-remaining {
+    flex-shrink: 0;
+    margin-left: 6px;
+}
+.scoring-race-progress {
+    height: 6px;
+    margin-top: 3px;
+    background-color: #34495f;
+}
+.scoring-toggle {
+    width: 20px;
+    height: 18px;
+    flex-shrink: 0;
+    margin: 2px;
+    padding: 0;
+    font-size: 12px;
+    border-width: 1px;
+    border-color: #009bdd;
+    border-radius: 4px;
+    background-color: #10151e;
+    color: #f5f5f5;
+}
+.scoring-toggle:hover, .scoring-toggle:focus {
+    background-color: #263e50;
+    border-color: #55c4ef;
+}
+.scoring-flag {
+    width: 7px;
+    flex-shrink: 0;
+    align-self: stretch;
+    background-color: #64768b;
 }
 .standings-toggle {
     flex-shrink: 0;
@@ -1398,9 +1438,6 @@
     font-size: 14px;
     -unity-font-style: bold;
 }
-.standings-laps-toggle {
-    margin-left: 3px;
-}
 .standings-toggle:hover, .standings-toggle:focus {
     background-color: #ffd2a7;
     border-color: #ffffff;
@@ -1408,7 +1445,7 @@
 .track-right-dock {
     position: absolute;
     right: 12px;
-    bottom: 60px;
+    bottom: 6px;
     width: 26%;
     min-width: 232px;
     max-width: 352px;
@@ -1418,6 +1455,10 @@
 .track-map-widget {
     min-height: 0;
     flex-shrink: 1;
+    border-width: 1px;
+    border-color: #009bdd;
+    border-radius: 7px;
+    background-color: rgba(16, 21, 30, 0.9);
 }
 .track-map-widget.track-map-collapsed {
     align-self: flex-end;
@@ -1441,7 +1482,6 @@
     flex-shrink: 1;
     overflow: hidden;
     border-radius: 6px;
-    background-color: rgba(16, 21, 30, 0.88);
 }
 .track-map-car {
     position: absolute;
@@ -1469,7 +1509,11 @@
     display: none;
     flex-shrink: 0;
     margin-top: 6px;
-    background-color: rgba(28, 38, 51, 0.98);
+    border-width: 1px;
+    border-color: #009bdd;
+    border-radius: 8px;
+    background-color: rgba(16, 21, 30, 0.98);
+    color: #f5f5f5;
 }
 .track-pit-controls.pit-settings-open {
     display: flex;
@@ -1477,90 +1521,63 @@
 .timing-rows {
     flex-grow: 1;
     min-height: 0;
-    background-color: rgba(28, 38, 51, 0.94);
+    background-color: rgba(16, 21, 30, 0.82);
 }
 .timing-row {
     flex-direction: row;
     align-items: center;
-    height: 20px;
+    height: 19px;
     flex-shrink: 0;
-    padding: 0 6px;
+    padding: 0 5px;
     border-bottom-width: 1px;
     border-bottom-color: #394350;
+    color: #f5f5f5;
 }
-.timing-data-row {
-    padding-right: 47px;
-}
-.timing-header {
-    height: 24px;
-    background-color: #253448;
-    -unity-font-style: bold;
-}
-.timing-player {
-    background-color: #2c5065;
-    border-left-color: #73d5ff;
+.timing-row.timing-player {
+    background-color: #23485e;
+    border-left-color: #009bdd;
     border-left-width: 3px;
-    padding-left: 3px;
-    -unity-font-style: bold;
+    padding-left: 2px;
 }
-.timing-position, .timing-car {
-    width: 29px;
-    flex-shrink: 0;
-}
-.timing-driver {
-    flex-direction: row;
-    align-items: center;
-    flex-grow: 1;
-    flex-basis: 0;
-    min-width: 0;
-}
-.timing-driver-name {
-    flex-shrink: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-.timing-row > Label, .timing-driver > Label {
+.timing-row > Label {
     margin: 0;
+    padding: 0;
     font-size: 12px;
     white-space: nowrap;
 }
-.timing-lap-mph {
-    display: none;
-    width: 61px;
-    padding-right: 6px;
+.timing-position, .timing-car, .timing-gap {
     flex-shrink: 0;
+}
+.timing-position {
+    width: 24px;
+    align-self: stretch;
+    -unity-text-align: middle-center;
+}
+.timing-row > .timing-position.scoring-position-up {
+    color: #57d568;
+}
+.timing-row > .timing-position.scoring-position-down {
+    color: #ff6868;
+}
+.timing-row > .timing-car {
+    width: 34px;
+    height: 17px;
+    padding-left: 3px;
+    border-left-width: 3px;
+    border-radius: 3px;
+    -unity-text-align: middle-center;
+}
+.timing-row > .timing-driver-name {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-width: 0;
+    padding-left: 6px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.timing-gap {
+    width: 58px;
     -unity-text-align: middle-right;
-}
-.standings-lap-speeds .timing-lap-mph {
-    display: flex;
-}
-.timing-status {
-    width: 14px;
-    margin-left: 4px;
-    flex-shrink: 0;
-    align-items: center;
-    justify-content: center;
-}
-.timing-status-icon {
-    width: 10px;
-    height: 7px;
-    border-width: 2px;
-    border-color: #73d9a2;
-    border-radius: 4px;
-}
-.timing-status-icon.timing-in-pits {
-    width: 8px;
-    height: 8px;
-    border-width: 0;
-    border-radius: 0;
-    rotate: 45deg;
-    background-color: #ffcf75;
-}
-.timing-status-icon.timing-off-track {
-    height: 2px;
-    border-width: 0;
-    background-color: #a3adb9;
 }
 
 .track-ratings {
@@ -2112,8 +2129,6 @@
 .track-player-panel {
     flex-shrink: 0;
     padding: 6px;
-    border-top-width: 1px;
-    border-color: #394350;
     font-size: 12px;
 }
 .pit-readouts {
@@ -2165,10 +2180,11 @@
 .pit-levels > Label {
     white-space: normal;
 }
-.track-player-panel .action {
+.track-player-panel .settings-button {
     align-self: stretch;
     min-width: 0;
-    height: 28px;
+    min-height: 28px;
+    margin: 4px 0 0;
     font-size: 13px;
 }
 .practice-run-report {
@@ -2634,6 +2650,8 @@
 
 .track-display-controls {
     flex-direction: row;
+    flex-wrap: wrap;
+    align-self: stretch;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;

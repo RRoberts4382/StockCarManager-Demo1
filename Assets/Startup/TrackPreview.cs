@@ -76,11 +76,12 @@ public sealed partial class TrackPreview : MonoBehaviour
     internal bool SupportsGrandstands => grandstandScenery != null;
     internal bool GrandstandsVisible => SupportsGrandstands && grandstandScenery.activeSelf;
     internal int CarDetailIndex { get; private set; }
-    private string renderCarTypeResource;
+    private readonly string[] renderCarTypeResources = new string[CarCount];
+    private readonly CarTypeDefinition[] carTypes = new CarTypeDefinition[CarCount];
 
     private readonly RaceWheelAnimation[] raceWheels = new RaceWheelAnimation[CarCount];
     private RaceWheelAnimation paceWheels;
-    internal enum CameraAngle { Player, Chase, Hood, InCar, TV, Spotter, PitBox, Cycle }
+    internal enum CameraAngle { Player, Chase, Hood, InCar, TV, Spotter, PitBox, Cycle, RearChase, Leader }
 
     private Camera raceCamera;
     private TrackEngineAudio engineAudio;
@@ -93,9 +94,10 @@ public sealed partial class TrackPreview : MonoBehaviour
     private float spotterFieldOfView;
     private float spotterZoomFieldOfView;
     private Quaternion spotterAimOffset = Quaternion.identity;
-    private Vector3 hoodCameraOffset = new Vector3(0f, 0.8f, 0.975f);
-    private Vector3 driverEyeOffset;
-    internal CarTypeDefinition CarType { get; private set; }
+    private readonly (Vector3 Hood, Vector3 DriverEye)[] onboardCameraOffsets =
+        new (Vector3, Vector3)[CarCount];
+    internal CarTypeDefinition CarType => carTypes[0];
+    internal CarTypeDefinition SelectedCarType => carTypes[SelectedCarIndex];
     private Material carGlass;
     private Transform cockpitGlassCar;
     private readonly List<MeshRenderer> hiddenCockpitGlass = new List<MeshRenderer>();
@@ -109,6 +111,7 @@ public sealed partial class TrackPreview : MonoBehaviour
     {
         CameraAngle.InCar => "In-Car",
         CameraAngle.PitBox => "Pit Box",
+        CameraAngle.RearChase => "Rear Chase",
         _ => angle.ToString()
     };
     private Transform grassGround;
@@ -144,6 +147,25 @@ public sealed partial class TrackPreview : MonoBehaviour
     internal RaceSessionRun SessionRun { get; private set; }
     private RaceSessionRun previewTiming;
     internal RaceSessionRun TimingRun => SessionRun ?? previewTiming;
+    private readonly CarPaintStyle?[] scoringPaint = new CarPaintStyle?[CarCount];
+
+    internal void StyleScoringNumber(UnityEngine.UIElements.Label label, int index)
+    {
+        var paint = scoringPaint[index];
+        var colors = renderedCarPaint[index];
+        Color body = colors.RoofAndSides;
+        label.style.backgroundColor = body;
+        label.style.borderLeftColor = colors.HoodAndTrunk;
+        label.style.color = paint?.NumberColor is Color32 numberColor ? (Color)numberColor :
+            0.213f * body.r + 0.715f * body.g + 0.072f * body.b > 0.52f ? Color.black : Color.white;
+        var font = CarNumberFonts.Load(paint?.NumberFont, paint?.NumberBold ?? true, paint?.NumberItalic ?? false);
+        if (font != null)
+            label.style.unityFontDefinition = UnityEngine.UIElements.FontDefinition.FromFont(font);
+        bool bold = paint?.NumberBold ?? true;
+        bool italic = paint?.NumberItalic ?? false;
+        label.style.unityFontStyleAndWeight = paint?.NumberFont == "Open Sans" ? FontStyle.Normal :
+            bold ? (italic ? FontStyle.BoldAndItalic : FontStyle.Bold) : (italic ? FontStyle.Italic : FontStyle.Normal);
+    }
     private TrackPitTraffic pitTraffic;
     private TrackPitTraffic.Car[] trafficCars;
     private TrackPitSpline[] pitRoute;
@@ -192,17 +214,6 @@ public sealed partial class TrackPreview : MonoBehaviour
         bool pending = garageRunReportPending;
         garageRunReportPending = false;
         return pending;
-    }
-    private bool automaticSessionService;
-    internal void EnableAutomaticSessionService()
-    {
-        automaticSessionService = true;
-        garagePreviousOdometer = trafficCars?[0]?.Odometer ?? 0;
-        for (int i = 0; i < 4; i++)
-        {
-            garagePreviousWear[i] = SessionRun.Vehicle(0)?.GetTire(i)?.wear ?? 0;
-            garageWearPerMeter[i] = 0;
-        }
     }
     internal bool SimulatingGarageLaps => requestedGarageLaps > 0;
     internal void CancelGarageLapSimulation() => requestedGarageLaps = 0;
@@ -410,8 +421,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             garageSimulationReturning = true;
             SetPlayerGarageVisit(true);
         }
-        if ((SimulatingGarageLaps && !garageSimulationReturning) ||
-            (automaticSessionService && !isQualifying && !playerGarageVisit && !SessionRun.Finished(0)))
+        if (SimulatingGarageLaps && !garageSimulationReturning)
             ServiceGarageSimulation(player);
         if (SimulatingGarageLaps && (PlayerParkedForGarage || SessionComplete || SessionRun.Retired(0)))
         {
@@ -551,9 +561,11 @@ public sealed partial class TrackPreview : MonoBehaviour
     private float yawAngle;
     private Transform followedCar;
     private Transform CameraSubject => followedCar != null ? followedCar : cars[0];
-    internal int SelectedCarIndex => followedCar == null ? 0 : Mathf.Max(0, System.Array.IndexOf(cars, followedCar));
+    internal int SelectedCarIndex => ViewAngle == CameraAngle.Leader
+        ? (SessionRun?.IsRace == true ? SessionRun.RaceLeaderIndex() : 0)
+        : followedCar == null ? 0 : Mathf.Max(0, System.Array.IndexOf(cars, followedCar));
     internal float SteeringWheelAngle =>
-        (raceWheels[SelectedCarIndex]?.FrontSteeringAngle ?? 0f) * CarType.steeringWheelRatio;
+        (raceWheels[SelectedCarIndex]?.FrontSteeringAngle ?? 0f) * SelectedCarType.steeringWheelRatio;
 
     private static readonly (Color32 HoodAndTrunk, Color32 RoofAndSides)[] Liveries =
     {
@@ -587,9 +599,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         }
 
         definition = track;
-        CarType = CarTypeDefinition.ForModel(playerCar?.modelResource);
         SupportsCarDetail = true;
-        renderCarTypeResource = playerCar?.modelResource;
         CarDetailIndex = SupportsCarDetail ? Mathf.Clamp(PlayerPrefs.GetInt("StockCarManager.Settings.CarLOD", 3), 1, 5) - 1 : 0;
         detailRebuilders.Clear();
         bool bristolNight = night && track.id == BristolTrackId;
@@ -753,6 +763,10 @@ public sealed partial class TrackPreview : MonoBehaviour
             var bodyPaint = bodyPaints[(paintIndex + paintGroup) % Liveries.Length];
             CarPaintStyle? playerPaint = null;
             var liveryCar = i == 0 ? playerCar : rivalCars?.FirstOrDefault(car => car.number == i);
+            string modelResource = liveryCar?.modelResource ?? playerCar?.modelResource;
+            var carType = CarTypeDefinition.ForModel(modelResource);
+            renderCarTypeResources[i] = modelResource;
+            carTypes[i] = carType;
             if (liveryCar != null)
             {
                 var paint = liveryCar.PaintStyle;
@@ -761,10 +775,11 @@ public sealed partial class TrackPreview : MonoBehaviour
                 bodyPaint = MakeMaterial(paint.Secondary);
             }
             renderedCarPaint[i] = (hoodAndTrunkPaint.color, bodyPaint.color);
+            scoringPaint[i] = playerPaint;
             int firstPaintTexture = carPaintTextures.Count;
             BuildCar(cars[i], gridNumbers[i],
                 hoodAndTrunkPaint, bodyPaint, glass, rubber, i == 0 ? sponsorNames : null, playerPaint, carPaintTextures.Add,
-                playerCar?.modelResource, carLodLevel: CarDetailIndex + 1,
+                modelResource, carLodLevel: CarDetailIndex + 1,
                 measureHalfWidth: halfWidth => raceCarHalfWidths[i] = halfWidth);
             raceWheels[i] = RaceWheelAnimation.Bind(cars[i]);
             if (SupportsCarDetail)
@@ -772,14 +787,14 @@ public sealed partial class TrackPreview : MonoBehaviour
                 int carIndex = i;
                 int number = gridNumbers[i];
                 var sponsors = i == 0 ? sponsorNames : null;
-                string currentVisualResource = CarType.ModelForLod(playerCar?.modelResource, CarDetailIndex + 1);
+                string currentVisualResource = carType.ModelForLod(modelResource, CarDetailIndex + 1);
                 var visualTextures = carPaintTextures.GetRange(firstPaintTexture, carPaintTextures.Count - firstPaintTexture);
                 var visualChildren = new List<Transform>();
                 foreach (Transform child in cars[i])
                     visualChildren.Add(child);
                 detailRebuilders.Add(level =>
                 {
-                    string resource = CarType.ModelForLod(playerCar?.modelResource, level);
+                    string resource = carType.ModelForLod(modelResource, level);
                     if (resource == currentVisualResource)
                         return;
                     bool wasActive = cars[carIndex].gameObject.activeSelf;
@@ -808,7 +823,7 @@ public sealed partial class TrackPreview : MonoBehaviour
                             {
                                 carPaintTextures.Add(texture);
                                 visualTextures.Add(texture);
-                            }, playerCar?.modelResource, carLodLevel: level,
+                            }, modelResource, carLodLevel: level,
                             measureHalfWidth: halfWidth => raceCarHalfWidths[carIndex] = halfWidth);
                         currentVisualResource = resource;
                         raceWheels[carIndex] = RaceWheelAnimation.Bind(cars[carIndex]);
@@ -876,8 +891,8 @@ public sealed partial class TrackPreview : MonoBehaviour
             return false;
         if (index == CarDetailIndex)
             return true;
-        string resource = CarType.ModelForLod(renderCarTypeResource, index + 1);
-        if (Resources.Load<GameObject>("Startup/" + resource) == null)
+        var resources = renderCarTypeResources.Select((model, car) => carTypes[car].ModelForLod(model, index + 1)).Distinct();
+        if (resources.Any(resource => Resources.Load<GameObject>("Startup/" + resource) == null))
             return false;
 
         foreach (var renderer in hiddenCockpitGlass)
@@ -1045,13 +1060,15 @@ public sealed partial class TrackPreview : MonoBehaviour
     private void ConfigureOnboardCameras(Material glass)
     {
         carGlass = glass;
-        var player = cars[0];
-        var anchors = player.GetComponentsInChildren<Transform>();
-        var hood = System.Array.Find(anchors, child => child.name == "HoodSponsor");
-        if (hood != null)
-            hoodCameraOffset = player.InverseTransformPoint(hood.position) + Vector3.up * 0.12f;
-
-        driverEyeOffset = CarType.inCarCamera.Resolve(player, anchors);
+        for (int i = 0; i < cars.Length; i++)
+        {
+            var car = cars[i];
+            var anchors = car.GetComponentsInChildren<Transform>(true);
+            var hood = System.Array.Find(anchors, child => child.name == "HoodSponsor");
+            Vector3 hoodOffset = hood == null ? new Vector3(0f, 0.8f, 0.975f) :
+                car.InverseTransformPoint(hood.position) + Vector3.up * 0.12f;
+            onboardCameraOffsets[i] = (hoodOffset, carTypes[i].inCarCamera.Resolve(car, anchors));
+        }
     }
 
     private void UpdateCockpitGlass()
@@ -1105,7 +1122,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         bool available = System.Enum.IsDefined(typeof(CameraAngle), angle) && angle != CameraAngle.Cycle &&
             (angle != CameraAngle.PitBox || CanUsePitBoxCamera);
         ViewAngle = available ? angle : CameraAngle.Player;
-        if (tvCameraPositions == null && ViewAngle is CameraAngle.TV or CameraAngle.Spotter)
+        if (tvCameraPositions == null && ViewAngle is CameraAngle.TV or CameraAngle.Leader or CameraAngle.Spotter)
             ConfigureTracksideCameras();
         activeTvCamera = -1;
         raceCamera.orthographic = ViewAngle == CameraAngle.Player;
@@ -1114,7 +1131,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         {
             CameraAngle.Hood => 62f,
             CameraAngle.InCar => 72f,
-            CameraAngle.TV => 33f,
+            CameraAngle.TV or CameraAngle.Leader => 33f,
             CameraAngle.Spotter => spotterZoomFieldOfView,
             CameraAngle.PitBox => 42f,
             _ => 55f
@@ -1166,35 +1183,40 @@ public sealed partial class TrackPreview : MonoBehaviour
     private void ApplyCameraPose()
     {
         var cameraTransform = raceCamera.transform;
-        var subject = CameraSubject;
+        int leaderIndex = ViewAngle == CameraAngle.Leader ? SelectedCarIndex : 0;
+        var subject = ViewAngle == CameraAngle.Leader ? cars[leaderIndex] : CameraSubject;
         if (subject != null && ViewAngle is CameraAngle.Hood or CameraAngle.InCar)
         {
-            Vector3 offset = ViewAngle == CameraAngle.Hood ? hoodCameraOffset : driverEyeOffset;
+            var offsets = onboardCameraOffsets[SelectedCarIndex];
+            Vector3 offset = ViewAngle == CameraAngle.Hood ? offsets.Hood : offsets.DriverEye;
             cameraTransform.localPosition = subject.localPosition + subject.localRotation * offset;
             cameraTransform.localRotation = subject.localRotation;
         }
-        else if (subject != null && ViewAngle == CameraAngle.Chase)
+        else if (subject != null && ViewAngle is CameraAngle.Chase or CameraAngle.RearChase)
         {
-            Vector3 forward = subject.localRotation * Vector3.forward;
-            forward.y = 0f;
-            forward.Normalize();
-            Vector3 position = subject.localPosition - forward * 5.5f + Vector3.up * 3f;
-            Vector3 lookAt = subject.localPosition + forward * 6f + Vector3.up * 0.65f;
+            Vector3 viewDirection = subject.localRotation * Vector3.forward;
+            viewDirection.y = 0f;
+            viewDirection.Normalize();
+            if (ViewAngle == CameraAngle.RearChase)
+                viewDirection = -viewDirection;
+            Vector3 position = subject.localPosition - viewDirection * 5.5f + Vector3.up * 2.65f;
+            Vector3 lookAt = subject.localPosition + viewDirection * 6f + Vector3.up * 0.65f;
             cameraTransform.localPosition = position;
             cameraTransform.localRotation = Quaternion.LookRotation(lookAt - position);
         }
-        else if (subject != null && ViewAngle is CameraAngle.TV or CameraAngle.Spotter or CameraAngle.PitBox)
+        else if (subject != null && ViewAngle is CameraAngle.TV or CameraAngle.Leader or CameraAngle.Spotter or CameraAngle.PitBox)
         {
             Vector3 position = ViewAngle switch
             {
-                CameraAngle.TV => TvCameraPosition(),
+                CameraAngle.TV => TvCameraPosition(SelectedCarIndex),
+                CameraAngle.Leader => TvCameraPosition(leaderIndex),
                 CameraAngle.Spotter => spotterPosition,
                 _ => playerPitBoxCameraPosition ?? (practiceStallPositions[0] + Vector3.up * 3.2f)
             };
             Vector3 target = subject.localPosition + Vector3.up * 0.55f;
             cameraTransform.localPosition = position;
             cameraTransform.localRotation = Quaternion.LookRotation(target - position);
-            if (ViewAngle == CameraAngle.TV)
+            if (ViewAngle is CameraAngle.TV or CameraAngle.Leader)
                 raceCamera.fieldOfView = TvFieldOfView(Vector3.Distance(position, target));
             else if (ViewAngle == CameraAngle.Spotter)
                 cameraTransform.localRotation *= spotterAimOffset;
@@ -1212,7 +1234,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         {
             // Looking from just past the rear bumper keeps the followed car out of the mirror.
             var mirror = rearViewCamera.transform;
-            mirror.localPosition = subject.localPosition + subject.localRotation * CarType.rearviewCamera;
+            mirror.localPosition = subject.localPosition + subject.localRotation * SelectedCarType.rearviewCamera;
             mirror.localRotation = subject.localRotation * Quaternion.Euler(0f, 180f, 0f);
         }
 
@@ -1309,7 +1331,6 @@ public sealed partial class TrackPreview : MonoBehaviour
         ResetIowaFlagStandTiming();
         ResetIowaWreckResponse();
         this.simulation = simulation;
-        automaticSessionService = false;
         simulation.PrepareEqualConditions();
         RaceSessionRun.ResetVehiclesForSession(simulation.Cars, simulation.PreservePlayerCondition);
         if (definition.id == BristolTrackId)
@@ -2040,6 +2061,8 @@ public sealed partial class TrackPreview : MonoBehaviour
 
     private void AdvanceSimulation(float seconds)
     {
+        bool scoringCaution = TrackState is SessionTrackState.Caution or SessionTrackState.StageEndingUnderCaution
+            or SessionTrackState.FinishUnderCaution or SessionTrackState.Pacing or SessionTrackState.StageComplete;
         bool pitMembershipChanged = false;
         float previousElapsed = elapsed;
         elapsed += seconds;
@@ -2152,7 +2175,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         if (checkTraffic)
             ResolveTrackCollisions(seconds);
         AdvanceNorthWilkesboroGarageTravel(seconds);
-        TimingRun?.AdvanceClock(seconds);
+        TimingRun?.AdvanceClock(seconds, raceLapUnderCaution: scoringCaution);
         if (stages != null)
             HandleStoppedCars(seconds);
         if (pitMembershipChanged && stages?.ReducedFuelBurn == true && stages.ControlsField)
