@@ -996,7 +996,7 @@ internal sealed class RaceEventView
                 car = preview;
             }
             var image = thumbnails.Get(car, Array.Empty<string>(), cacheScope: result.teamName ?? "result",
-                transparentBackground: true, displayNumber: result.carNumber);
+                transparentBackground: true, displayNumber: result.carNumber, track: resultTrack);
             var row = ResultRow(false, cells, image, lapColumns: !isRace);
             if (!string.IsNullOrEmpty(result.mechanicalFailure))
                 row.tooltip = result.mechanicalFailure;

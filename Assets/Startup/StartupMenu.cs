@@ -5257,12 +5257,12 @@ public sealed class StartupMenu : MonoBehaviour
     {
         raceEventView.SimulateGarageLaps = SimulateGarageRun;
         raceEventView.CanSimulateGarageLaps = CanSimulateGarageRun;
-        raceEventView.Open(race, track, car, largeCarPreviews.Get(car, sponsors),
+        raceEventView.Open(race, track, car, largeCarPreviews.Get(car, sponsors, track: track),
             () => EventServiceCareer.teamBalance,
             () => ServiceEventCondition(race, car, changeTires: true),
             () => ServiceEventCondition(race, car, changeTires: false),
             (name, setup) => SaveTrackSetup(car, track.id, name, setup),
-            () => largeCarPreviews.Get(car, sponsors, overhead: true),
+            () => largeCarPreviews.Get(car, sponsors, overhead: true, track: track),
             () => ReadEventCondition(race, car), CanServiceInGarage, developmentPractice, EventServiceCareer);
     }
 

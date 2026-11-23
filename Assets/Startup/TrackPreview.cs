@@ -777,24 +777,25 @@ public sealed partial class TrackPreview : MonoBehaviour
             renderedCarPaint[i] = (hoodAndTrunkPaint.color, bodyPaint.color);
             scoringPaint[i] = playerPaint;
             int firstPaintTexture = carPaintTextures.Count;
+            string visualModelResource = track.CarModelForTrack(modelResource, CarDetailIndex + 1);
             BuildCar(cars[i], gridNumbers[i],
                 hoodAndTrunkPaint, bodyPaint, glass, rubber, i == 0 ? sponsorNames : null, playerPaint, carPaintTextures.Add,
                 modelResource, carLodLevel: CarDetailIndex + 1,
-                measureHalfWidth: halfWidth => raceCarHalfWidths[i] = halfWidth);
+                measureHalfWidth: halfWidth => raceCarHalfWidths[i] = halfWidth, visualModelResource: visualModelResource);
             raceWheels[i] = RaceWheelAnimation.Bind(cars[i]);
             if (SupportsCarDetail)
             {
                 int carIndex = i;
                 int number = gridNumbers[i];
                 var sponsors = i == 0 ? sponsorNames : null;
-                string currentVisualResource = carType.ModelForLod(modelResource, CarDetailIndex + 1);
+                string currentVisualResource = visualModelResource;
                 var visualTextures = carPaintTextures.GetRange(firstPaintTexture, carPaintTextures.Count - firstPaintTexture);
                 var visualChildren = new List<Transform>();
                 foreach (Transform child in cars[i])
                     visualChildren.Add(child);
                 detailRebuilders.Add(level =>
                 {
-                    string resource = carType.ModelForLod(modelResource, level);
+                    string resource = track.CarModelForTrack(modelResource, level);
                     if (resource == currentVisualResource)
                         return;
                     bool wasActive = cars[carIndex].gameObject.activeSelf;
@@ -824,7 +825,7 @@ public sealed partial class TrackPreview : MonoBehaviour
                                 carPaintTextures.Add(texture);
                                 visualTextures.Add(texture);
                             }, modelResource, carLodLevel: level,
-                            measureHalfWidth: halfWidth => raceCarHalfWidths[carIndex] = halfWidth);
+                            measureHalfWidth: halfWidth => raceCarHalfWidths[carIndex] = halfWidth, visualModelResource: resource);
                         currentVisualResource = resource;
                         raceWheels[carIndex] = RaceWheelAnimation.Bind(cars[carIndex]);
                         foreach (Transform child in cars[carIndex])
@@ -891,7 +892,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             return false;
         if (index == CarDetailIndex)
             return true;
-        var resources = renderCarTypeResources.Select((model, car) => carTypes[car].ModelForLod(model, index + 1)).Distinct();
+        var resources = renderCarTypeResources.Distinct().Select(model => definition.CarModelForTrack(model, index + 1)).Distinct();
         if (resources.Any(resource => Resources.Load<GameObject>("Startup/" + resource) == null))
             return false;
 
@@ -1089,7 +1090,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             var materials = renderer.sharedMaterials;
             if (materials.Length == 0 || !System.Array.TrueForAll(materials, material =>
                     material == carGlass || material != null &&
-                    (material.name is "RaceTruck_Windows" or "RaceTruck_RearSideWindows" or "LateModel_Glass")))
+                    (material.name is "RaceTruck_Windows" or "RaceTruck_RearSideWindows" or "LateModel_Glass" or "FordMustang_Glass")))
                 continue;
 
             renderer.forceRenderingOff = true;
@@ -5139,11 +5140,12 @@ public sealed partial class TrackPreview : MonoBehaviour
     internal static void BuildCar(Transform car, int number, Material hoodAndTrunkPaint, Material bodyPaint,
         Material glass, Material rubber, string[] sponsorNames = null,
         CarPaintStyle? paintStyle = null, System.Action<Texture2D> retainPaint = null, string modelResource = null,
-        string carTypeModelResource = null, int? carLodLevel = null, System.Action<float> measureHalfWidth = null)
+        string carTypeModelResource = null, int? carLodLevel = null, System.Action<float> measureHalfWidth = null,
+        string visualModelResource = null)
     {
         string typeResource = carTypeModelResource ?? modelResource;
         var carType = CarTypeDefinition.ForModel(typeResource);
-        string visualResource = carType.ModelForLod(typeResource, carLodLevel ?? 5);
+        string visualResource = visualModelResource ?? carType.ModelForLod(typeResource, carLodLevel ?? 5);
         var model = CreateRaceCarModel(car, hoodAndTrunkPaint, bodyPaint, glass, rubber, visualResource, out float halfWidth);
         measureHalfWidth?.Invoke(halfWidth);
         if (model == null)
@@ -5361,6 +5363,8 @@ public sealed partial class TrackPreview : MonoBehaviour
                     "ModifiedMetal" => Resources.Load<Material>("Startup/ModifiedMetal") ?? rubber,
                     string materialName when materialName.StartsWith("RaceTruck_", System.StringComparison.Ordinal) => materials[i],
                     string materialName when materialName.StartsWith("LateModel_", System.StringComparison.Ordinal) => materials[i],
+                    string materialName when materialName.StartsWith("FordMustang_", System.StringComparison.Ordinal) =>
+                        FordMustangPanelPaint.Apply(renderer, i, materials[i], body),
                     _ => body
                 };
             }

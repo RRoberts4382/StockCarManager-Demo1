@@ -14,6 +14,7 @@ internal sealed class RacingSeries
     public string carModel;
     public float maximumTrackLengthMiles;
     public SeriesManufacturer[] manufacturers;
+    public SeriesManufacturerModel[] manufacturerDefaultModels;
     public SeriesEngine[] sharedEngineSuppliers;
     public long newChassisCost = UsedCarListing.NewChassisPrice;
     public SeriesEmployeeRole[] employeeRoles;
@@ -55,6 +56,14 @@ internal sealed class RacingSeries
     public string ModelFor(CarManufacturer manufacturer)
     {
         string model = manufacturers?.FirstOrDefault(make => make.manufacturer == manufacturer)?.carModel;
+        if (!string.IsNullOrWhiteSpace(model))
+            return model;
+        return DefaultModelFor(manufacturer);
+    }
+
+    public string DefaultModelFor(CarManufacturer manufacturer)
+    {
+        string model = manufacturerDefaultModels?.FirstOrDefault(make => make.manufacturer == manufacturer)?.carModel;
         if (!string.IsNullOrWhiteSpace(model))
             return model;
         return string.IsNullOrWhiteSpace(carModel) ? "Impala" : carModel;
@@ -114,6 +123,13 @@ internal sealed class SeriesManufacturer
     public CarManufacturer manufacturer;
     public string carModel;
     public SeriesEngine[] engineSuppliers;
+}
+
+[Serializable]
+internal sealed class SeriesManufacturerModel
+{
+    public CarManufacturer manufacturer;
+    public string carModel;
 }
 
 [Serializable]

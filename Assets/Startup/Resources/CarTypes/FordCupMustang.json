@@ -1,0 +1,51 @@
+{
+  "displayName": "2026 Ford Mustang Cup",
+  "superspeedwayModel": "FordCupMustangSuperspeedway",
+  "shortTrackModel": "FordCupMustangShortTrack",
+  "roadCourseLeftModel": "FordCupMustangRoadLeft",
+  "roadCourseRightModel": "FordCupMustangRoadRight",
+  "inCarCamera": {
+    "anchor": "DriverEye",
+    "position": {
+      "x": -0.25,
+      "y": 0.66,
+      "z": 0.1
+    }
+  },
+  "rearviewCamera": {
+    "x": 0,
+    "y": 0.85,
+    "z": -1.52
+  },
+  "roofNumber": {
+    "anchor": "RoofNumber",
+    "position": {
+      "x": 0,
+      "y": 0.76,
+      "z": 0.0
+    }
+  },
+  "leftNumber": {
+    "anchor": "LeftNumber",
+    "position": {
+      "x": -0.58,
+      "y": 0.38,
+      "z": 0.05
+    }
+  },
+  "rightNumber": {
+    "anchor": "RightNumber",
+    "position": {
+      "x": 0.58,
+      "y": 0.38,
+      "z": 0.05
+    }
+  },
+  "lodModels": [
+    "FordCupMustang",
+    "FordCupMustang",
+    "FordCupMustang",
+    "FordCupMustang",
+    "FordCupMustang"
+  ]
+}

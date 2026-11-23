@@ -2,6 +2,9 @@
   "id": "nascar-cup",
   "name": "NASCAR Cup Series",
   "SeriesLevel": 1,
+  "manufacturerDefaultModels": [
+    { "manufacturer": 1, "carModel": "FordCupMustang" }
+  ],
   "manufacturers": [
     {
       "manufacturer": 0,

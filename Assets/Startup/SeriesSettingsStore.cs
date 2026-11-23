@@ -26,6 +26,8 @@ internal static class SeriesSettingsStore
 
             var saved = Clone(defaults);
             JsonUtility.FromJsonOverwrite(File.ReadAllText(path), saved);
+            // Catalog defaults still apply to manufacturers with no saved override.
+            saved.manufacturerDefaultModels = defaults.manufacturerDefaultModels;
             saved.carModel = defaults.id == "craftsman-truck" && string.IsNullOrWhiteSpace(saved.carModel)
                 ? defaults.carModel : CarTypeDefinition.CanonicalModel(saved.carModel);
             NormalizeManufacturerModels(saved);

@@ -424,6 +424,7 @@
   ],
   "pitRoad": {
     "enabled": true,
+    "fuelFillSide": 1,
     "widthMeters": 12.192,
     "speedLimitMph": 45,
     "speedLimitStart": 0.055,

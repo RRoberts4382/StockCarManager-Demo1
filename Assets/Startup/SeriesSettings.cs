@@ -317,7 +317,7 @@ internal sealed class SeriesSettings
             model => rules.carModel = model);
 
         var manufacturerChoices = new List<(string Model, string Name)>(choices);
-        manufacturerChoices.Insert(0, ("", "Use series default"));
+        manufacturerChoices.Insert(0, ("", "Use default model"));
         var modelsRow = Row(Group("Manufacturer models"));
         foreach (var make in rules.manufacturers)
         {
@@ -326,7 +326,7 @@ internal sealed class SeriesSettings
             if (string.IsNullOrWhiteSpace(make.carModel))
                 currentName += " (default)";
             AddSelector(modelsRow, name, "seriesCarModel" + name, $"Choose a model for {name}",
-                manufacturerChoices, make.carModel ?? "", defaultModel, currentName,
+                manufacturerChoices, make.carModel ?? "", rules.DefaultModelFor(make.manufacturer), currentName,
                 model => make.carModel = string.IsNullOrEmpty(model) ? null : model);
         }
 

@@ -5,6 +5,7 @@ using System.Linq;
 using UnityEngine;
 
 internal enum TrackValidationSection { Details, Layout, Race, Pit, Ratings }
+public enum TrackFuelFillSide { Automatic, Left, Right }
 
 [Serializable]
 public sealed class TrackDefinition
@@ -53,6 +54,58 @@ public sealed class TrackDefinition
     public float StartFinishFraction => raceMarkers?.hasStartFinish == true ? raceMarkers.startFinish
         : (layoutPoints?.Length ?? 0) > 0 ? 0f : OvalStraightLength * 0.5f / (lengthMiles * MetersPerMile);
 
+    internal string CarModelForTrack(string modelResource, int lod = 5)
+    {
+        var car = CarTypeDefinition.ForModel(modelResource);
+        string variant = TrackCategory switch
+        {
+            ChassisType.SuperSpeedway => car.superspeedwayModel,
+            ChassisType.ShortTrack => car.shortTrackModel,
+            ChassisType.RoadCourse when !string.IsNullOrWhiteSpace(car.roadCourseLeftModel) ||
+                !string.IsNullOrWhiteSpace(car.roadCourseRightModel) =>
+                RoadCourseFuelFillSide() == TrackFuelFillSide.Right ? car.roadCourseRightModel : car.roadCourseLeftModel,
+            _ => null
+        };
+        return string.IsNullOrWhiteSpace(variant) ? car.ModelForLod(modelResource, lod) : variant;
+    }
+
+    internal TrackFuelFillSide RoadCourseFuelFillSide()
+    {
+        if (pitRoad?.fuelFillSide is TrackFuelFillSide.Left or TrackFuelFillSide.Right)
+            return pitRoad.fuelFillSide;
+        if (pitRoad?.enabled != true || pitRoad.points?.Length < 2 || pitRoad.points == null)
+            return TrackFuelFillSide.Left;
+
+        var route = new TrackPitSpline(pitRoad.points);
+        float side = 0f;
+        foreach (var marker in pitRoad.stalls ?? Array.Empty<TrackPitPoint>())
+        {
+            if (marker == null)
+                continue;
+            Vector3 stall = TrackPitSpline.Position(marker);
+            float fraction = route.ClosestFraction(stall);
+            side += Vector3.Dot(stall - route.Sample(fraction), RightOfPitLane(fraction));
+        }
+
+        if (Mathf.Abs(side) <= 0.1f && layoutPoints?.Length >= 3)
+        {
+            // Unmarked stalls are generated on the outside edge of pit road, away from the track.
+            float lap = lengthMiles * MetersPerMile;
+            var layout = new TrackLayout(layoutPoints, lap, widthMeters);
+            Vector3 pitCenter = layout.ToTrackSpace(route.Sample(0.5f));
+            float attachment = TrackUtilityGeometry.ClosestMainDistance(layout, lap, pitCenter);
+            side = Vector3.Dot(pitCenter - layout.Sample(attachment, out _, out _), RightOfPitLane(0.5f));
+        }
+
+        return side > 0.1f ? TrackFuelFillSide.Right : TrackFuelFillSide.Left;
+
+        Vector3 RightOfPitLane(float fraction)
+        {
+            Vector3 forward = route.Sample(fraction + 0.001f) - route.Sample(fraction - 0.001f);
+            return Vector3.Cross(Vector3.up, forward).normalized;
+        }
+    }
+
     public string Validate() => ValidationErrors().FirstOrDefault().Error;
 
     internal IEnumerable<(TrackValidationSection Section, string Error)> ValidationErrors()
@@ -97,6 +150,8 @@ public sealed class TrackDefinition
 
         if (pitStalls < 0)
             yield return (TrackValidationSection.Pit, "Enter a nonnegative pit stall count.");
+        if (pitRoad != null && !Enum.IsDefined(typeof(TrackFuelFillSide), pitRoad.fuelFillSide))
+            yield return (TrackValidationSection.Pit, "Choose automatic, left, or right for the pit fuel-fill side.");
         string pits = TrackUtilityGeometry.ValidatePitRoad(this);
         if (pits != null)
             yield return (TrackValidationSection.Pit, pits);
@@ -229,6 +284,7 @@ public sealed class TrackPitPoint
 public sealed class TrackPitRoad
 {
     public bool enabled;
+    public TrackFuelFillSide fuelFillSide;
     public float widthMeters = 8f;
     public float speedLimitMph = 45f;
     public float speedLimitStart = 0.10f;

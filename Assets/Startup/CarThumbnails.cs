@@ -26,7 +26,8 @@ internal sealed class CarThumbnails : IDisposable
         this.highQuality = highQuality;
     }
 
-    public RenderTexture Get(TeamCar car, string[] sponsorNames, CarPaintStyle? preview = null, bool overhead = false, string cacheScope = null, bool transparentBackground = false, bool retainOrbitScene = true, int? displayNumber = null)
+    public RenderTexture Get(TeamCar car, string[] sponsorNames, CarPaintStyle? preview = null, bool overhead = false, string cacheScope = null,
+        bool transparentBackground = false, bool retainOrbitScene = true, int? displayNumber = null, TrackDefinition track = null)
     {
         int number = displayNumber ?? car.number;
         string key = car.chassisNumber ?? number.ToString();
@@ -36,7 +37,8 @@ internal sealed class CarThumbnails : IDisposable
             key += ":overhead";
         if (transparentBackground)
             key += ":transparent";
-        string highestModel = CarTypeDefinition.ForModel(car.modelResource).ModelForLod(car.modelResource, 5);
+        string highestModel = track?.CarModelForTrack(car.modelResource) ??
+            CarTypeDefinition.ForModel(car.modelResource).ModelForLod(car.modelResource, 5);
         var livery = preview ?? car.PaintStyle;
         string liveryKey = $"{car.modelResource}|{highestModel}|{number}|{livery.Scheme}|{livery.Primary}|{livery.Secondary}|{livery.Trim}|{livery.HasTrim}|{livery.NumberColor}|{livery.NumberFont}|{livery.NumberBold}|{livery.NumberItalic}|{string.Join("|", sponsorNames)}";
         if (images.TryGetValue(key, out var cached))
@@ -83,7 +85,7 @@ internal sealed class CarThumbnails : IDisposable
 
             TrackPreview.BuildCar(root.transform, number, Paint(livery.Primary), Paint(livery.Secondary),
                 Paint(new Color32(43, 66, 87, 255)), Paint(new Color32(24, 25, 30, 255)), sponsorNames, livery, paintTextures.Add,
-                car.modelResource);
+                car.modelResource, visualModelResource: highestModel);
             foreach (var child in root.GetComponentsInChildren<Transform>())
                 child.gameObject.layer = Layer;
 

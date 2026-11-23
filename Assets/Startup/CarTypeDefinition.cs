@@ -10,6 +10,10 @@ internal sealed class CarTypeDefinition
     public string displayName;
     // Model resources ordered from lowest to highest detail. An empty list uses this car type's own model.
     public string[] lodModels = Array.Empty<string>();
+    public string superspeedwayModel;
+    public string shortTrackModel;
+    public string roadCourseLeftModel;
+    public string roadCourseRightModel;
     public string cockpitStyle;
     public bool darkDashboardDials;
     public float steeringWheelRatio = 14f;
