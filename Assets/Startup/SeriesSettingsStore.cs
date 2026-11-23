@@ -17,6 +17,7 @@ internal static class SeriesSettingsStore
     {
         defaults.name = CareerSetup.LimitName(defaults.name);
         defaults.carModel = CarTypeDefinition.CanonicalModel(defaults.carModel);
+        NormalizeManufacturerModels(defaults);
         try
         {
             string path = SettingsPath(defaults.id);
@@ -27,6 +28,7 @@ internal static class SeriesSettingsStore
             JsonUtility.FromJsonOverwrite(File.ReadAllText(path), saved);
             saved.carModel = defaults.id == "craftsman-truck" && string.IsNullOrWhiteSpace(saved.carModel)
                 ? defaults.carModel : CarTypeDefinition.CanonicalModel(saved.carModel);
+            NormalizeManufacturerModels(saved);
             saved.id = defaults.id;
             saved.name = defaults.name;
             saved.SeriesLevel = defaults.SeriesLevel;
@@ -55,6 +57,7 @@ internal static class SeriesSettingsStore
     {
         var saved = Clone(draft);
         saved.carModel = CarTypeDefinition.CanonicalModel(saved.carModel);
+        NormalizeManufacturerModels(saved);
         saved.id = series.id;
         saved.name = CareerSetup.LimitName(series.name);
         saved.SeriesLevel = series.SeriesLevel;
@@ -70,6 +73,18 @@ internal static class SeriesSettingsStore
         AtomicWrite(SettingsPath(series.id), temporary => File.WriteAllText(temporary, json));
         // Career setup keeps a reference to each catalog entry.
         JsonUtility.FromJsonOverwrite(json, series);
+    }
+
+    private static void NormalizeManufacturerModels(RacingSeries series)
+    {
+        foreach (var make in series.manufacturers ?? Array.Empty<SeriesManufacturer>())
+        {
+            if (make == null)
+                continue;
+
+            make.carModel = string.IsNullOrWhiteSpace(make.carModel)
+                ? null : CarTypeDefinition.CanonicalModel(make.carModel.Trim());
+        }
     }
 
     public static string Validate(RacingSeries series)

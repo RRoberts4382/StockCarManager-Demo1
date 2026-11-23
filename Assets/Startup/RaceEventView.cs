@@ -39,6 +39,7 @@ internal sealed class RaceEventView
     private Action repairBody;
     private Func<long> balance;
     private RacingSeries seriesRules;
+    private Career resultsCareer;
     private Func<string, Setup, string> saveSetup;
     private Func<Texture> setupCarImage;
     private VisualElement setupPanel;
@@ -179,7 +180,7 @@ internal sealed class RaceEventView
     public void Open(ScheduledRace eventRace, TrackDefinition definition, TeamCar enteredCar, Texture thumbnail,
         Func<long> teamBalance, Action tires, Action bodyRepair,
         Func<string, Setup, string> saveChassisSetup, Func<Texture> overheadCarImage, Func<EventCarCondition> carCondition,
-        Func<bool> canServiceInGarage, bool testPractice, RacingSeries series)
+        Func<bool> canServiceInGarage, bool testPractice, Career career)
     {
         race = eventRace;
         StartingFuelGallons = (float)SessionFuel.TankCapacity;
@@ -188,7 +189,8 @@ internal sealed class RaceEventView
         foreach (var session in race.sessions) SessionWeatherForecast.Ensure(session, track, race);
         carImage = thumbnail;
         balance = teamBalance;
-        seriesRules = series;
+        seriesRules = career.SeriesRules;
+        resultsCareer = testPractice ? null : career;
         changeTires = tires;
         repairBody = bodyRepair;
         saveSetup = saveChassisSetup;
@@ -830,7 +832,7 @@ internal sealed class RaceEventView
         }
         else if (hasTiming)
         {
-            var grid = CreateResultsGrid(session, scrollRows: true, resultTrack: track);
+            var grid = CreateResultsGrid(session, resultsCareer, car, scrollRows: true, resultTrack: track);
             panel.Add(grid);
             SettingsFormStyle.CheckSelectorListSpacing(toolbar, grid);
         }
@@ -927,6 +929,7 @@ internal sealed class RaceEventView
         {
             if (evt.target == grid) thumbnails.Dispose();
         });
+        var rules = career?.SeriesRules;
         var roster = career?.cars?.Count > 0
             ? TrackPreview.CreateTimingEntries(playerCar ?? career.cars[0], career) : Array.Empty<SessionCarResult>();
         bool isRace = session.kind == RaceSessionKind.Race;
@@ -982,8 +985,16 @@ internal sealed class RaceEventView
                 ((!string.IsNullOrEmpty(result.ownerEntryId) && entry.ownerEntryId == result.ownerEntryId) ||
                  entry.driverName == result.driverName)) ??
                 roster.FirstOrDefault(entry => entry.carNumber == result.carNumber && entry.teamName == result.teamName);
-            var car = result.car ?? rosterEntry?.car ?? new TeamCar { number = result.carNumber };
-            if (string.IsNullOrEmpty(car.modelResource) && career != null) car.modelResource = career.SeriesRules.carModel;
+            var car = result.car ?? rosterEntry?.car;
+            var manufacturer = result.manufacturerRecorded ? result.manufacturer : car?.manufacturer ?? CarManufacturer.Chevrolet;
+            string model = rules == null ? car?.modelResource : rules.ModelFor(manufacturer);
+            if (car == null || car.manufacturer != manufacturer || car.modelResource != model)
+            {
+                var preview = new TeamCar { number = result.carNumber, manufacturer = manufacturer, modelResource = model };
+                if (car != null)
+                    car.PaintStyle.ApplyTo(preview);
+                car = preview;
+            }
             var image = thumbnails.Get(car, Array.Empty<string>(), cacheScope: result.teamName ?? "result",
                 transparentBackground: true, displayNumber: result.carNumber);
             var row = ResultRow(false, cells, image, lapColumns: !isRace);

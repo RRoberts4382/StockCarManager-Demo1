@@ -175,7 +175,7 @@ public sealed class StartupMenu : MonoBehaviour
     private VisualElement trackCockpit, cockpitMirrorImage;
     private CockpitDashboard cockpitDashboard;
     private CockpitSteeringWheel cockpitSteeringWheel;
-    private string cockpitStyleClass;
+    private CarTypeDefinition cockpitCarType;
     private TrackSessionMap trackSessionMap;
     private Button returnToGarageButton;
     private Button visitGarageButton;
@@ -753,7 +753,8 @@ public sealed class StartupMenu : MonoBehaviour
         };
         career.InitializeCars(new System.Random(developmentTrackId), randomizeRivals: true);
         var car = career.cars[0];
-        car.modelResource = modelResource;
+        foreach (var entry in career.AllCars)
+            entry.modelResource = modelResource;
         var session = testRace
             ? new RaceSession { kind = RaceSessionKind.Race, name = "Test Race", laps = RaceSession.TestRaceLaps }
             : new RaceSession { kind = RaceSessionKind.Practice, name = "Practice", minutes = RaceSession.PracticeMinutes };
@@ -859,6 +860,7 @@ public sealed class StartupMenu : MonoBehaviour
             return "Could not save team settings. " + ex.Message;
         }
 
+        ApplyCareerCarModels(career);
         var page = garagePages.FirstOrDefault(view => view.style.display == DisplayStyle.Flex);
         if (page != null)
             UpdateGarageBackground(page.name);
@@ -2243,7 +2245,7 @@ public sealed class StartupMenu : MonoBehaviour
             team.AddToClassList("title-career-load");
             team.tooltip = $"Load {entry.teamName}. Last saved {entry.LastSaved.ToLocalTime():g}.";
             var car = entry.cars?.FirstOrDefault() ?? new TeamCar { number = 27 };
-            car.modelResource = RacingSeries.ForId(entry.seriesId)?.carModel;
+            car.modelResource = RacingSeries.ForId(entry.seriesId).ModelFor(car.manufacturer);
             string sponsor = entry.primarySponsor?.offer == null ? null :
                 Sponsorships.CompanyName(entry.primarySponsor.offer.companyId);
             var thumbnail = new Image
@@ -2409,14 +2411,19 @@ public sealed class StartupMenu : MonoBehaviour
         newCareerButton.Focus();
     }
 
+    private static void ApplyCareerCarModels(Career career)
+    {
+        var rules = career.SeriesRules;
+        foreach (var car in career.AllCars)
+            car.modelResource = rules.ModelFor(car.manufacturer);
+    }
+
     private void ShowTeam(Career career)
     {
         largeCarPreviews.Dispose();
         var random = new System.Random();
         bool careerChanged = career.InitializeCars(random);
-        string carModel = careerSetup.CarModel(career);
-        foreach (var car in career.cars)
-            car.modelResource = carModel;
+        ApplyCareerCarModels(career);
         careerChanged |= career.InitializeEmployees(random);
         careerChanged |= career.AllCars.Any(car => string.IsNullOrEmpty(car.chassisNumber));
         careerSetup.View.style.display = DisplayStyle.None;
@@ -3364,7 +3371,7 @@ public sealed class StartupMenu : MonoBehaviour
             if (checkpoint != null)
             {
                 JsonUtility.FromJsonOverwrite(checkpoint, activeCareer);
-                foreach (var car in activeCareer.AllCars) car.modelResource = careerSetup.CarModel(activeCareer);
+                ApplyCareerCarModels(activeCareer);
                 if (selectedEvent != null)
                     selectedEvent = activeCareer.schedule.races.Find(item => item.trackId == selectedEvent.trackId &&
                         item.date == selectedEvent.date);
@@ -4407,7 +4414,7 @@ public sealed class StartupMenu : MonoBehaviour
         panel.Add(SettingsFormStyle.Label("New Chassis", "team-home-heading"));
         var body = new VisualElement(); body.AddToClassList("new-chassis-body");
         var preview = new VisualElement(); preview.AddToClassList("new-chassis-preview-column");
-        newChassisDraft.modelResource = careerSetup.CarModel(activeCareer);
+        newChassisDraft.modelResource = activeCareer.SeriesRules.ModelFor(newChassisDraft.manufacturer);
         var image = new Image { image = largeCarPreviews.Get(newChassisDraft, System.Array.Empty<string>(),
             cacheScope: "new-chassis-purchase", transparentBackground: true), scaleMode = ScaleMode.ScaleToFit };
         image.AddToClassList("new-chassis-preview"); preview.Add(image);
@@ -4716,7 +4723,7 @@ public sealed class StartupMenu : MonoBehaviour
         foreach (var listing in filtered)
         {
             var car = listing.car;
-            car.modelResource = careerSetup.CarModel(career);
+            car.modelResource = career.SeriesRules.ModelFor(car.manufacturer);
             var item = new VisualElement(); item.AddToClassList("used-chassis-item");
             var identity = new VisualElement(); identity.AddToClassList("used-chassis-identity");
             identity.Add(SettingsFormStyle.Label($"Chassis {car.chassisNumber ?? "Unassigned"}", "used-chassis-title"));
@@ -4830,7 +4837,7 @@ public sealed class StartupMenu : MonoBehaviour
 
         if (listing == null && newChassisDraft != null)
             foreach (var component in TeamCar.Components) newChassisDraft.ComponentLevel(component) = 1;
-        car.modelResource = careerSetup.CarModel(career);
+        car.modelResource = career.SeriesRules.ModelFor(car.manufacturer);
         RefreshTeamBalance();
         RefreshTeamCars();
         RefreshSchedule();
@@ -5256,7 +5263,7 @@ public sealed class StartupMenu : MonoBehaviour
             () => ServiceEventCondition(race, car, changeTires: false),
             (name, setup) => SaveTrackSetup(car, track.id, name, setup),
             () => largeCarPreviews.Get(car, sponsors, overhead: true),
-            () => ReadEventCondition(race, car), CanServiceInGarage, developmentPractice, EventServiceCareer.SeriesRules);
+            () => ReadEventCondition(race, car), CanServiceInGarage, developmentPractice, EventServiceCareer);
     }
 
     private string SaveTrackSetup(TeamCar car, int trackId, string name, Setup setup)
@@ -5516,7 +5523,7 @@ public sealed class StartupMenu : MonoBehaviour
             if (!success && checkpoint != null)
             {
                 JsonUtility.FromJsonOverwrite(checkpoint, activeCareer);
-                foreach (var car in activeCareer.AllCars) car.modelResource = careerSetup.CarModel(activeCareer);
+                ApplyCareerCarModels(activeCareer);
                 selectedEvent = activeCareer.schedule.races.Find(item => item.trackId == race.trackId && item.date == race.date);
             }
             overlay.RemoveFromHierarchy();
@@ -6025,7 +6032,10 @@ public sealed class StartupMenu : MonoBehaviour
         drivingInputRpm.text = $"RPM {rpm:0}";
         drivingInputGear.text = $"Gear {run.TransmissionGear(selected)}";
         if (!sessionInGarage && trackPreview.ViewAngle == TrackPreview.CameraAngle.InCar)
+        {
+            UpdateTrackCockpit(trackPreview.SelectedCarType);
             cockpitDashboard.Update(rpm, fuelPercent / 100f, fuel, throttle, brake);
+        }
     }
 
     private void UpdateTrackFps()
@@ -7095,15 +7105,6 @@ public sealed class StartupMenu : MonoBehaviour
             trackSessionMap.SetPreview(trackPreview.Image != null ? trackPreview : null);
             if (trackPreview.Image != null)
             {
-                var carType = trackPreview.CarType;
-                if (!string.IsNullOrEmpty(cockpitStyleClass))
-                    trackScreen.RemoveFromClassList(cockpitStyleClass);
-                cockpitStyleClass = carType.cockpitStyle;
-                if (!string.IsNullOrEmpty(cockpitStyleClass))
-                    trackScreen.AddToClassList(cockpitStyleClass);
-                cockpitDashboard.Configure(carType);
-                Vector2 mirrorOffset = carType.rearviewMirrorOffset;
-                cockpitMirrorImage.parent.style.translate = new Translate(mirrorOffset.x, mirrorOffset.y, 0f);
                 var savedAngle = (TrackPreview.CameraAngle)PlayerPrefs.GetInt(TrackCameraAnglePreference);
                 ApplyTrackCameraSelection(savedAngle);
                 raceViewport.style.backgroundImage = Background.FromRenderTexture(trackPreview.Image);
@@ -7282,9 +7283,27 @@ public sealed class StartupMenu : MonoBehaviour
         var mirror = trackPreview.ViewAngle == TrackPreview.CameraAngle.InCar ? trackPreview.RearViewImage : null;
         trackCockpit.style.display = mirror != null ? DisplayStyle.Flex : DisplayStyle.None;
         trackScreen.EnableInClassList("in-car-view", mirror != null);
+        if (mirror != null)
+            UpdateTrackCockpit(trackPreview.SelectedCarType);
         cockpitMirrorImage.style.backgroundImage = mirror != null
             ? new StyleBackground(Background.FromRenderTexture(mirror))
             : new StyleBackground(StyleKeyword.None);
+    }
+
+    private void UpdateTrackCockpit(CarTypeDefinition carType)
+    {
+        if (cockpitCarType == carType)
+            return;
+
+        if (!string.IsNullOrEmpty(cockpitCarType?.cockpitStyle))
+            trackScreen.RemoveFromClassList(cockpitCarType.cockpitStyle);
+        cockpitCarType = carType;
+        if (!string.IsNullOrEmpty(carType.cockpitStyle))
+            trackScreen.AddToClassList(carType.cockpitStyle);
+
+        cockpitDashboard.Configure(carType);
+        Vector2 mirrorOffset = carType.rearviewMirrorOffset;
+        cockpitMirrorImage.parent.style.translate = new Translate(mirrorOffset.x, mirrorOffset.y, 0f);
     }
 
     private void BeginCameraMenuHold(PointerDownEvent evt)

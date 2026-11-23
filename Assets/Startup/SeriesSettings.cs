@@ -8,7 +8,7 @@ using UnityEngine.UIElements;
 
 internal sealed class SeriesSettings
 {
-    private static readonly string[] Tabs = { "General", "Manufacturers & engines", "Staff", "Costs & sponsorship", "Artwork" };
+    private static readonly string[] Tabs = { "General", "Manufacturers & engines", "Staff", "Costs & sponsorship", "Artwork", "Car Models" };
     private static readonly (string View, string Label)[] Backgrounds =
     {
         ("setup", "Career setup"), ("homePage", "Team home"), ("mailPage", "Mail"),
@@ -21,6 +21,7 @@ internal sealed class SeriesSettings
     private readonly List<Action> refreshNumericErrors = new();
     private readonly DropdownField selection;
     private readonly ScrollView body = new();
+    private readonly VisualElement frame = new();
     private readonly Button[] tabs;
     private readonly Button save;
     private readonly Button revert;
@@ -34,7 +35,6 @@ internal sealed class SeriesSettings
     public SeriesSettings(Action back)
     {
         SettingsFormStyle.Apply(Screen);
-        var frame = new VisualElement();
         frame.AddToClassList("settings-frame");
         Screen.Add(frame);
         var header = new VisualElement();
@@ -58,6 +58,7 @@ internal sealed class SeriesSettings
             tab = index;
             Render(resetScroll: true);
         })).ToArray();
+        tabs[5].name = "seriesCarModelsTab";
         foreach (var button in tabs)
             nav.Add(button);
         frame.Add(nav);
@@ -250,6 +251,7 @@ internal sealed class SeriesSettings
             case 2: DrawStaff(draft); break;
             case 3: DrawFinances(draft); break;
             case 4: DrawArtwork(draft); break;
+            case 5: DrawCarModels(draft); break;
         }
         body.scrollOffset = scroll;
         SetStatus(message ?? (draft.Dirty ? "Unsaved changes" : string.Empty));
@@ -298,19 +300,151 @@ internal sealed class SeriesSettings
             x => rules.maximumTrackLengthMiles = x, TrackLengthError));
         section.Add(SettingsFormStyle.Label("Set the track limit to 0 to allow every track.", "settings-note"));
 
-        var values = CarTypeDefinition.AvailableModels();
+    }
+
+    private void DrawCarModels(Draft draft)
+    {
+        var rules = draft.Rules;
+        var choices = CarTypeDefinition.AvailableModels();
+        var defaultChoices = new List<(string Model, string Name)>(choices);
         if (rules.id != "craftsman-truck")
-            values.Insert(0, ("", "Series default (Cup Impala)"));
-        string currentModel = rules.carModel ?? "";
-        int selected = values.FindIndex(car => car.Model == currentModel);
-        if (selected < 0)
+            defaultChoices.Insert(0, ("", "Use Cup Impala"));
+
+        var seriesRow = Row(Group("Series default"));
+        string defaultModel = rules.carModel ?? string.Empty;
+        AddSelector(seriesRow, "Series car model", "seriesDefaultCarModel", "Choose the series model",
+            defaultChoices, defaultModel, "Impala", CarTypeDefinition.ForModel(defaultModel).displayName,
+            model => rules.carModel = model);
+
+        var manufacturerChoices = new List<(string Model, string Name)>(choices);
+        manufacturerChoices.Insert(0, ("", "Use series default"));
+        var modelsRow = Row(Group("Manufacturer models"));
+        foreach (var make in rules.manufacturers)
         {
-            values.Add((currentModel, currentModel));
-            selected = values.Count - 1;
+            string name = make.manufacturer.ToString();
+            string currentName = CarTypeDefinition.ForModel(rules.ModelFor(make.manufacturer)).displayName;
+            if (string.IsNullOrWhiteSpace(make.carModel))
+                currentName += " (default)";
+            AddSelector(modelsRow, name, "seriesCarModel" + name, $"Choose a model for {name}",
+                manufacturerChoices, make.carModel ?? "", defaultModel, currentName,
+                model => make.carModel = string.IsNullOrEmpty(model) ? null : model);
         }
-        var names = values.Select(car => car.Name).ToList();
-        var carSelection = new DropdownField("Car model", names, selected);
-        section.Add(Field(carSelection, names[selected], _ => rules.carModel = values[carSelection.index].Model));
+
+        void AddSelector(VisualElement row, string title, string id, string dialogTitle,
+            List<(string Model, string Name)> models, string current, string inheritedModel, string currentName,
+            Action<string> select)
+        {
+            var field = new VisualElement();
+            field.AddToClassList("settings-field");
+            field.style.flexGrow = 0;
+            field.style.minWidth = 225;
+            field.Add(SettingsFormStyle.Label(title, "settings-note"));
+            Button button = null;
+            button = SettingsFormStyle.Button(currentName, () => OpenCarModelPicker(dialogTitle, models, current,
+                inheritedModel, button, model =>
+                {
+                    if (model == current)
+                        return;
+
+                    select(model);
+                    Changed();
+                    Render();
+                    Screen.Q<Button>(id)?.Focus();
+                }));
+            button.name = id;
+            button.tooltip = dialogTitle + ".";
+            field.Add(button);
+            row.Add(field);
+        }
+    }
+
+    private void OpenCarModelPicker(string title, List<(string Model, string Name)> models, string current,
+        string inheritedModel, Button source, Action<string> select)
+    {
+        var overlay = new VisualElement { name = "seriesCarModelPicker" };
+        overlay.AddToClassList("settings-confirmation-overlay");
+        var dialog = new VisualElement();
+        dialog.AddToClassList("settings-confirmation-dialog");
+        dialog.style.width = 345;
+        dialog.style.maxHeight = Length.Percent(90);
+        var trim = (Color)new Color32(0, 155, 221, 255);
+        dialog.style.backgroundColor = (Color)new Color32(16, 21, 30, 255);
+        dialog.style.borderTopColor = dialog.style.borderRightColor =
+            dialog.style.borderBottomColor = dialog.style.borderLeftColor = trim;
+        dialog.Add(SettingsFormStyle.Label(title, "settings-group-heading"));
+
+        var list = new ScrollView(ScrollViewMode.Vertical)
+        {
+            name = "seriesCarModelChoices",
+            horizontalScrollerVisibility = ScrollerVisibility.Hidden,
+            verticalScrollerVisibility = ScrollerVisibility.Hidden
+        };
+        list.style.maxHeight = 360;
+        var thumbnails = new CarThumbnails(192);
+        foreach (var option in models)
+        {
+            var choose = SettingsFormStyle.Button(string.Empty, () =>
+            {
+                Close();
+                select(option.Model);
+            });
+            choose.AddToClassList("series-model-choice");
+            choose.EnableInClassList("settings-tab-current", option.Model == current);
+            choose.tooltip = $"Select {option.Name}.";
+            choose.style.flexDirection = FlexDirection.Row;
+            choose.style.alignItems = Align.Center;
+            choose.style.justifyContent = Justify.FlexStart;
+            choose.style.minHeight = 54;
+            if (SystemInfo.graphicsDeviceType != UnityEngine.Rendering.GraphicsDeviceType.Null)
+            {
+                string model = string.IsNullOrEmpty(option.Model) ? inheritedModel : option.Model;
+                var previewCar = new TeamCar { number = 27, modelResource = model, primaryPaint = "#009BDD", secondaryPaint = "#F5F5F5" };
+                var image = new Image
+                {
+                    image = thumbnails.Get(previewCar, Array.Empty<string>(), cacheScope: model,
+                        transparentBackground: true, retainOrbitScene: false),
+                    scaleMode = ScaleMode.ScaleToFit,
+                    pickingMode = PickingMode.Ignore
+                };
+                image.style.width = 86;
+                image.style.height = 46;
+                image.style.flexShrink = 0;
+                image.style.marginRight = 8;
+                choose.Add(image);
+            }
+            var label = new Label(option.Name) { pickingMode = PickingMode.Ignore };
+            label.style.flexShrink = 1;
+            label.style.whiteSpace = WhiteSpace.Normal;
+            choose.Add(label);
+            list.Add(choose);
+        }
+
+        dialog.Add(list);
+        var footer = new VisualElement();
+        footer.AddToClassList("settings-footer");
+        var cancel = SettingsFormStyle.Button("Cancel", Close);
+        cancel.tooltip = "Close without changing the car model.";
+        footer.Add(cancel);
+        dialog.Add(footer);
+        overlay.Add(dialog);
+        Screen.Add(overlay);
+        frame.SetEnabled(false);
+        (list.Q<Button>(className: "settings-tab-current") ?? list.Q<Button>() ?? cancel).Focus();
+        overlay.RegisterCallback<KeyDownEvent>(evt =>
+        {
+            if (evt.keyCode != KeyCode.Escape)
+                return;
+            Close();
+            evt.StopPropagation();
+        });
+
+        void Close()
+        {
+            overlay.RemoveFromHierarchy();
+            thumbnails.Dispose();
+            frame.SetEnabled(true);
+            source.Focus();
+        }
     }
 
     private void DrawManufacturers(Draft draft)
