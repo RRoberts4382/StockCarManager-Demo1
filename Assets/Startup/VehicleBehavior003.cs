@@ -248,11 +248,14 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
     private const float TrafficLongitudinalEaseDistance = 1f;
     private const float TrafficClearanceReserve = .04f;
     private const float TrafficResumeClearance = .12f;
-    private const float TrafficLateralAcceleration = 10f;
+    internal const float TrafficLateralAcceleration = 10f;
     private const float DraftFollowMaximumSpeedDifference = 3f;
     private const float DraftFollowBumperClearance = .35f;
     private const float PlateDraftBumperClearance = .12f;
     private const float DraftGapResponse = 1.8f;
+    private const float DraftPassClosingSpeed = 2.7f;
+    internal const float DraftPassCorridorReserve = .04f;
+    private const float DraftPassLiftDeceleration = RaceSessionRun.CoastingDeceleration * .5f;
     private const float DraftLateralSpeed = .075f;
     private const float LaneVariationContactDepth = .02f;
 
@@ -269,7 +272,8 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
         float[] distances, float[] widths, bool[] onTrack, float[] lanes, float[] targets,
         float[] currentSpeeds, float[] speeds, float brakingLimit, bool[] draftLine, bool respondToTraffic, float[] brakingFactors,
         float[] paceSpeeds = null, float[] startLanes = null, float[] startLaneSpeeds = null,
-        int[] draftLeaders = null, float[] draftBumpIntent = null, bool plate = false, TrackDraft laneDraft = null)
+        int[] draftLeaders = null, float[] draftBumpIntent = null, bool plate = false, TrackDraft laneDraft = null,
+        bool[] draftPassLane = null, float[] draftPassGap = null)
     {
         const float carLength = VehicleCollision001.ContactLength;
         const float carWidth = VehicleCollision001.ContactWidth;
@@ -279,8 +283,9 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
         float Risk(int index) => allowPassing ? Aggression(index) : .5f;
         for (int i = 0; i < lanes.Length; i++)
         {
+            bool directedDraftPass = plate && allowPassing && draftPassLane?[i] == true && stabilizeLane?[i] != false;
             bool stabilize = laneControl != null && stabilizeLane[i] && respondToTraffic && allowPassing &&
-                draftLine?[i] != true && onTrack[i] && speeds[i] > 0f && seconds > 0f;
+                (draftLine?[i] != true || directedDraftPass) && onTrack[i] && speeds[i] > 0f && seconds > 0f;
             var control = stabilize ? laneControl[i] : default;
             float lane = lanes[i];
             if (laneControl != null && !stabilize)
@@ -298,6 +303,8 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
             float comfortMargin = Mathf.Lerp(.4f, .02f, aggression);
             float carSpacing = carLength + Mathf.Lerp(.9f, .08f, aggression);
             float rearClearance = carLength + Mathf.Lerp(3f * TrackDefinition.MetersPerFoot, .08f, aggression);
+            float laneClearanceAhead = directedDraftPass ? carLength + DraftPassCorridorReserve : carSpacing;
+            float laneClearanceBehind = directedDraftPass ? carLength + DraftPassCorridorReserve : rearClearance;
             float anticipation = Mathf.Lerp(1f, .2f, aggression);
             float target = targets[i];
             bool canVaryLane = laneDraft != null && stabilizeLane?[i] == true;
@@ -313,6 +320,12 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
             }
 
             float passOffset = carWidth + comfortMargin + Mathf.Lerp(.3f, .02f, aggression);
+            if (directedDraftPass)
+            {
+                control.PassSide = 0;
+                control.ReturningToLine = false;
+                control.StalledPassSeconds = 0f;
+            }
             if (control.ReturningToLine && Mathf.Abs(target - lane) <= ReturnCompletionTolerance)
                 control.ReturningToLine = false;
             bool holdingPass = false;
@@ -351,7 +364,7 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
 
             float nearest = float.PositiveInfinity;
             int leader = -1;
-            if (stabilize && !holdingPass && !control.ReturningToLine)
+            if (stabilize && !directedDraftPass && !holdingPass && !control.ReturningToLine)
             {
                 for (int j = 0; j < lanes.Length; j++)
                 {
@@ -417,8 +430,8 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
                 control.PassingOpportunitySeconds = 0f;
             }
 
-            bool followingPreferred = target == targets[i] && !holdingPass && !followingLeader;
-            bool allowVariation = canVaryLane && !holdingPass && !control.ReturningToLine;
+            bool followingPreferred = !directedDraftPass && target == targets[i] && !holdingPass && !followingLeader;
+            bool allowVariation = canVaryLane && !directedDraftPass && !holdingPass && !control.ReturningToLine;
             float appliedOffset = allowVariation ? laneDraft.AppliedLaneOffsets[i] : 0f;
             // Follow the existing offset on the preferred path. When holding the
             // current lane in traffic, that lane already includes the offset.
@@ -436,7 +449,7 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
                     control.WaitingForRoom = true;
                 else if (room >= TrafficResumeClearance)
                     control.WaitingForRoom = false;
-                if (control.ReturningToLine || nearTraffic || control.Easing)
+                if (directedDraftPass || control.ReturningToLine || nearTraffic || control.Easing)
                 {
                     float desiredSpeed = Mathf.Abs(next - lane) / seconds;
                     float safeRoom = control.WaitingForRoom ? 0f : Mathf.Max(0f, room - TrafficClearanceReserve);
@@ -449,7 +462,7 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
             }
 
             // The existing swept check remains authoritative for the final movement.
-            bool safe = LaneClear(next, carSpacing, followingPreferred);
+            bool safe = LaneClear(next, laneClearanceAhead, followingPreferred);
             if (safe)
                 lanes[i] = next;
 
@@ -514,9 +527,10 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
                         continue;
                     float gap = TrackGap(j);
                     float future = gap + (currentSpeeds[j] - currentSpeeds[i]) * TrafficLookAheadSeconds;
-                    float longitudinalRoom = Mathf.Max(Mathf.Min(gap, future) - carSpacing,
-                        -rearClearance - Mathf.Max(gap, future));
-                    if (longitudinalRoom >= TrafficLongitudinalEaseDistance)
+                    float longitudinalRoom = Mathf.Max(Mathf.Min(gap, future) - laneClearanceAhead,
+                        -laneClearanceBehind - Mathf.Max(gap, future));
+                    // A drafting partner can be close behind without occupying the lane-change corridor.
+                    if (longitudinalRoom >= TrafficLongitudinalEaseDistance || directedDraftPass && longitudinalRoom > 0f)
                         continue;
                     float lateralRoom = side - ComfortClearance(j, gap, separation);
                     if (longitudinalRoom > 0f)
@@ -541,7 +555,7 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
                     float horizon = Mathf.Max(seconds, Mathf.Min(anticipation, Mathf.Abs(candidate-lanes[i])/3f * anticipation));
                     float futureGap = gap + (currentSpeeds[j]-currentSpeeds[i])*horizon;
                     // Check the swept longitudinal interval and the whole lane-change corridor.
-                    if (Mathf.Min(gap,futureGap) > ahead || Mathf.Max(gap,futureGap) < -rearClearance)
+                    if (Mathf.Min(gap,futureGap) > ahead || Mathf.Max(gap,futureGap) < -laneClearanceBehind)
                         continue;
                     float before = OtherLane(j) - lane;
                     float after = (comfort ? OtherLane(j) : lanes[j]) - candidate;
@@ -569,6 +583,8 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
                 float aggression = Risk(i);
                 float comfortMargin = Mathf.Lerp(.4f, .02f, aggression);
                 float carSpacing = carLength + Mathf.Lerp(.9f, .08f, aggression);
+                float passBumperClearance = plate ? (draftPassGap?[i] ?? float.NaN) : float.NaN;
+                bool settingUpPass = passBumperClearance >= 0f && !float.IsInfinity(passBumperClearance);
                 for (int j = 0; j < lanes.Length; j++)
                 {
                     if (j == i || !onTrack[j])
@@ -595,16 +611,19 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
                         float offset = Mathf.Max(Mathf.Abs(startSide), Mathf.Abs(side));
                         float speedDifference = Mathf.Abs(currentSpeeds[j] - currentSpeeds[i]);
                         bool steadyLeader = speeds[j] >= currentSpeeds[j] - (RaceSessionRun.CoastingDeceleration + .01f) * seconds;
-                        closeDraft = offset <= TrackDraft.CloseFollowAlignment && speedDifference <= DraftFollowMaximumSpeedDifference &&
-                            steadyLeader;
-                        if (closeDraft && plate &&
+                        bool leavingWake = settingUpPass && draftPassLane?[i] == true && startSide * side >= 0f &&
+                            Mathf.Abs(side) > Mathf.Abs(startSide);
+                        closeDraft = (offset <= TrackDraft.CloseFollowAlignment || leavingWake) &&
+                            speedDifference <= DraftFollowMaximumSpeedDifference && steadyLeader;
+                        if (closeDraft && plate && !settingUpPass &&
                             offset <= VehicleCollision001.DraftBumpAlignment &&
                             Mathf.Min(currentSpeeds[i], currentSpeeds[j]) >= VehicleCollision001.DraftBumpMinimumSpeed &&
                             speedDifference <= VehicleCollision001.DraftBumpMaximumClosingSpeed + .2f)
                             bumpStrength = draftBumpIntent?[i] ?? 0f;
                     }
                     float limit = closeDraft
-                        ? DraftFollowingSpeedLimit(currentSpeeds[i], speeds[j], gap, seconds, carBrakingLimit, bumpStrength, plate)
+                        ? DraftFollowingSpeedLimit(currentSpeeds[i], speeds[j], gap, seconds, carBrakingLimit, bumpStrength, plate,
+                            passBumperClearance)
                         : FollowingSpeedLimit(currentSpeeds[i], speeds[j], clearance,
                             seconds, carBrakingLimit, leaderBrakingLimit, aggression);
                     if (speeds[i] > limit)
@@ -677,16 +696,35 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
     }
 
     internal static float DraftFollowingSpeedLimit(float currentSpeed, float leaderNextSpeed, float gap,
-        float seconds, float brakingLimit, float bumpStrength, bool plate = false)
+        float seconds, float brakingLimit, float bumpStrength, bool plate = false, float passBumperClearance = float.NaN)
     {
         if (seconds <= 0f || brakingLimit <= 0f)
             return currentSpeed;
-        float bumperClearance = plate
+        bool settingUpPass = plate && passBumperClearance >= 0f && !float.IsInfinity(passBumperClearance);
+        float bumperClearance = settingUpPass ? passBumperClearance : plate
             ? (bumpStrength > 0f ? -Mathf.Lerp(.03f, .19f, bumpStrength) : PlateDraftBumperClearance)
             : DraftFollowBumperClearance;
         // Match a steady leader as the gap closes. The small plate offset permits swept bumper contact.
         float gapError = gap - VehicleCollision001.ContactLength - bumperClearance;
-        float closingSpeed = Mathf.Clamp(gapError * DraftGapResponse, -1f, 1f);
+        float closingSpeed = Mathf.Clamp(gapError * DraftGapResponse, -1f, settingUpPass ? DraftPassClosingSpeed : 1f);
+        if (settingUpPass)
+        {
+            float relativeSpeed = Mathf.Max(0f, currentSpeed - leaderNextSpeed);
+            float travelBeforeResponse = relativeSpeed * seconds;
+            if (closingSpeed > 0f)
+            {
+                float remainingGap = Mathf.Max(0f, gapError - travelBeforeResponse);
+                closingSpeed = Mathf.Min(closingSpeed, Mathf.Sqrt(2f * brakingLimit * remainingGap));
+            }
+            else
+            {
+                // Lift to create the gap when there is room to do so without risking contact.
+                float lift = Mathf.Min(brakingLimit, DraftPassLiftDeceleration);
+                float room = gap - VehicleCollision001.ContactLength - travelBeforeResponse;
+                if (room >= DraftPassCorridorReserve + relativeSpeed * relativeSpeed / (2f * lift))
+                    brakingLimit = lift;
+            }
+        }
         return Mathf.Max(0f, Mathf.Max(leaderNextSpeed + closingSpeed, currentSpeed - brakingLimit * seconds));
     }
 

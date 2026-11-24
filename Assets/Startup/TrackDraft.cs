@@ -3,12 +3,13 @@ using UnityEngine;
 internal sealed class TrackDraft
 {
     internal const float MaximumDraftBoostMph = 5f;
+    private const float MaximumForwardDraftMph = MaximumDraftBoostMph + 3f;
     private const float DraftStrengthMultiplier = 2f;
     private const float NonPlateStrength = .25f;
     private const float MphToMetersPerSecond = TrackDefinition.MetersPerMile / 3600f;
     private const float DraftStartSpeed = 95f * MphToMetersPerSecond;
     private const float FullDraftSpeed = 190f * MphToMetersPerSecond;
-    private const float ForwardWakeRange = 130f * TrackDefinition.MetersPerFoot;
+    private const float ForwardWakeRange = 300f * TrackDefinition.MetersPerFoot;
     private const float RearWakeRange = 24f * TrackDefinition.MetersPerFoot;
     private const float TrafficDraftRange = 65f * TrackDefinition.MetersPerFoot;
     private const float NearWakeHalfWidth = 3f * TrackDefinition.MetersPerFoot;
@@ -19,6 +20,8 @@ internal sealed class TrackDraft
     private const float LineBonusSaturationCount = 11f;
     private const float FullLineGap = 5f * TrackDefinition.MetersPerFoot;
     private const float MaximumLineGap = 15f * TrackDefinition.MetersPerFoot;
+    private const float PlateFullLineGap = 8f * TrackDefinition.MetersPerFoot;
+    private const float PlateMaximumLineGap = 44f * TrackDefinition.MetersPerFoot;
     private const float FullLineAlignment = TrackDefinition.MetersPerFoot;
     private const float LineContactTolerance = .05f;
     private const float NaturalVariationStartSpeed = 45f * MphToMetersPerSecond;
@@ -33,6 +36,12 @@ internal sealed class TrackDraft
     private const float CloseFollowSpeed = 120f * MphToMetersPerSecond;
     internal const float CloseFollowAlignment = .6f;
     private const float JoinRange = 120f * TrackDefinition.MetersPerFoot;
+    private const float SeekRange = 250f * TrackDefinition.MetersPerFoot;
+    private const float SeekWakeGap = 100f * TrackDefinition.MetersPerFoot;
+    private const float SeekLateralReach = 6f;
+    private const float SeekHorizon = 15f;
+    private const float SeekSwitchMargin = .12f;
+    private const float SeekWakeThreshold = .08f;
     private const float Alignment = 3f * TrackDefinition.MetersPerFoot;
     private readonly float[] boost;
     private readonly float[] lineBoost;
@@ -44,6 +53,7 @@ internal sealed class TrackDraft
     private readonly float[] carsAheadInLine;
     private readonly bool[] active;
     private readonly bool[] inLine;
+    private readonly int[] seekPartners;
     private readonly int[] closeFollowLeaders;
     private readonly float[] bumpIntent;
     private readonly BumpDecision[] bumpDecisions;
@@ -72,9 +82,11 @@ internal sealed class TrackDraft
         ApronEdgeAllowance = new float[count];
         active = new bool[count];
         inLine = new bool[count];
+        seekPartners = new int[count];
         closeFollowLeaders = new int[count];
         bumpIntent = new float[count];
         bumpDecisions = new BumpDecision[count];
+        System.Array.Fill(seekPartners, -1);
         System.Array.Fill(closeFollowLeaders, -1);
     }
 
@@ -90,6 +102,7 @@ internal sealed class TrackDraft
     {
         System.Array.Clear(boost, 0, boost.Length);
         System.Array.Clear(lineBoost, 0, lineBoost.Length);
+        System.Array.Fill(seekPartners, -1);
         System.Array.Fill(closeFollowLeaders, -1);
     }
 
@@ -98,6 +111,8 @@ internal sealed class TrackDraft
     {
         const float contactLength = VehicleCollision001.ContactLength;
         float scale = MphToMetersPerSecond * DraftStrengthMultiplier * (plate ? 1f : NonPlateStrength);
+        float fullLineGap = plate ? PlateFullLineGap : FullLineGap;
+        float maxLineGap = plate ? PlateMaximumLineGap : MaximumLineGap;
         for (int i = 0; i < speedStrength.Length; i++)
         {
             speedStrength[i] = onTrack[i] && !run.Finished(i) && pitApproach[i] > 15f
@@ -132,17 +147,17 @@ internal sealed class TrackDraft
                 float separation = centerDistance - contactLength;
                 bool ahead = gap > 0f;
                 float range = ahead ? ForwardWakeRange : RearWakeRange;
-                if (separation < -LineContactTolerance || separation >= range)
+                if (separation < -LineContactTolerance || separation >= Mathf.Max(range, maxLineGap))
                     continue;
 
                 float lateral = Mathf.Abs(lanes[j] - lanes[i]);
-                if (separation < MaximumLineGap && lateral < Alignment)
+                if (separation < maxLineGap && lateral < Alignment)
                 {
                     if (gap > 0f && centerDistance < nearestLineAhead)
                     {
                         nearestLineAhead = centerDistance;
                         lineAhead[i] = j;
-                        lineLinkWeight[i] = LineLinkWeight(separation, lateral);
+                        lineLinkWeight[i] = LineLinkWeight(separation, lateral, fullLineGap, maxLineGap);
                     }
                     else if (gap < 0f && centerDistance < nearestLineBehind)
                     {
@@ -152,7 +167,7 @@ internal sealed class TrackDraft
                 }
 
                 // Keep a line intact during slight bumper contact.
-                if (separation < 0f)
+                if (separation < 0f || separation >= range)
                     continue;
 
                 float sharedStrength = Mathf.Min(ownStrength, speedStrength[j]);
@@ -183,8 +198,8 @@ internal sealed class TrackDraft
             // Two close followers can help a leader, with less credit for the second.
             // Apply that support within the headroom left by the strongest wake ahead.
             float rearSupportMph = LeadSupportMph * rearWake + AdditionalLeadSupportMph * secondRearWake;
-            float targetMph = MaximumDraftBoostMph * frontWake + rearSupportMph * (1f - frontWake);
-            boost[i] = MoveBoost(boost[i], targetMph, MaximumDraftBoostMph * ownStrength, scale, seconds);
+            float targetMph = MaximumForwardDraftMph * frontWake + rearSupportMph * (1f - frontWake);
+            boost[i] = MoveBoost(boost[i], targetMph, MaximumForwardDraftMph * ownStrength, scale, seconds);
         }
 
         for (int i = 0; i < speedStrength.Length; i++)
@@ -193,10 +208,47 @@ internal sealed class TrackDraft
             float maximumMph = MaximumLineBonusMph * speedStrength[i];
             // A pair or trio keeps its existing draft. Additional cars contribute
             // progressively less as the line nears the cap.
-            float headroom = 1f - Mathf.Clamp01((carsInLine[i] - 2f) / LineBonusSaturationCount);
-            float targetMph = maximumMph * (1f - headroom * headroom);
+            float targetMph = maximumMph * LineBonusFraction(carsInLine[i]);
             lineBoost[i] = MoveBoost(lineBoost[i], targetMph, maximumMph, scale, seconds);
         }
+    }
+
+    internal float EstimatePassSetupPace(int index, int leader, float currentGap, float setupGap, float lateral, float pace)
+    {
+        if (currentGap >= setupGap)
+            return pace;
+
+        float strength = Mathf.Min(speedStrength[index], speedStrength[leader]);
+        float present = WakeWeight(Mathf.Max(0f, currentGap), lateral, ForwardWakeRange, FarWakeHalfWidth, strength);
+        float opened = WakeWeight(setupGap, lateral, ForwardWakeRange, FarWakeHalfWidth, strength);
+        float scale = MphToMetersPerSecond * DraftStrengthMultiplier;
+        float lostWake = Mathf.Max(0f, present - opened) * MaximumForwardDraftMph * scale;
+        float lostLine = 0f;
+        if (lineAhead[index] == leader && lineBehind[leader] == index && lineLinkWeight[index] > 0f)
+        {
+            float widenedLink = LineLinkWeight(setupGap, lateral, PlateFullLineGap, PlateMaximumLineGap);
+            // The link to the leader attenuates the cars ahead; the line behind still contributes.
+            float lostConnections = carsAheadInLine[index] * (1f - Mathf.Clamp01(widenedLink / lineLinkWeight[index]));
+            float remainingLineBoost = MaximumLineBonusMph * speedStrength[index] *
+                LineBonusFraction(carsInLine[index] - lostConnections) * scale;
+            lostLine = Mathf.Max(0f, lineBoost[index] - remainingLineBoost);
+        }
+        return pace - lostWake - lostLine;
+    }
+
+    internal float EstimateSplitPace(int index, int supporter, float gap, float pace)
+    {
+        // Forecast one helper at its observed distance. Race speed still uses
+        // the measured wake only after a car moves into position.
+        float strength = Mathf.Min(speedStrength[index], speedStrength[supporter]);
+        float rear = WakeWeight(Mathf.Max(0f, gap), 0f, RearWakeRange, NearWakeHalfWidth, strength);
+        return pace - SpeedBoost(index) + LeadSupportMph * rear * MphToMetersPerSecond * DraftStrengthMultiplier;
+    }
+
+    private static float LineBonusFraction(float cars)
+    {
+        float headroom = 1f - Mathf.Clamp01((cars - 2f) / LineBonusSaturationCount);
+        return 1f - headroom * headroom;
     }
 
     public void ClearLaneVariation()
@@ -266,9 +318,10 @@ internal sealed class TrackDraft
         }
     }
 
-    private static float LineLinkWeight(float separation, float lateral)
+    private static float LineLinkWeight(float separation, float lateral,
+        float fullGap = FullLineGap, float maxGap = MaximumLineGap)
     {
-        float gap = Mathf.SmoothStep(1f, 0f, Mathf.InverseLerp(FullLineGap, MaximumLineGap, separation));
+        float gap = Mathf.SmoothStep(1f, 0f, Mathf.InverseLerp(fullGap, maxGap, separation));
         float alignment = Mathf.SmoothStep(1f, 0f, Mathf.InverseLerp(FullLineAlignment, Alignment, lateral));
         return gap * alignment;
     }
@@ -328,12 +381,12 @@ internal sealed class TrackDraft
     internal static float BumpIntensity(float aggression) => Mathf.Lerp(.25f, 1f, aggression);
 
     public void UpdateBumpIntent(float lapLength, float seconds, System.Collections.Generic.IReadOnlyList<SessionCarResult> drivers,
-        float[] distances, float[] lanes, float[] speeds, bool allowBumps)
+        float[] distances, float[] lanes, float[] speeds, bool allowBumps, TrackDraftPass pass = null)
     {
         for (int i = 0; i < bumpDecisions.Length; i++)
         {
             int leader = closeFollowLeaders[i];
-            if (!allowBumps || leader < 0 ||
+            if (!allowBumps || leader < 0 || pass?.SuppressBump(i, leader) == true ||
                 Mathf.Min(speeds[i], speeds[leader]) < VehicleCollision001.DraftBumpMinimumSpeed ||
                 Mathf.Abs(lanes[i] - lanes[leader]) > VehicleCollision001.DraftBumpAlignment ||
                 TrackGap(lapLength, distances[i], distances[leader]) > VehicleCollision001.ContactLength + .4f)
@@ -383,10 +436,12 @@ internal sealed class TrackDraft
 
         for (int i = 0; i < active.Length; i++)
         {
+            bool canSeek = holdDraftingLane && speeds[i] >= DraftStartSpeed;
             bool frontWake = false;
             bool rearWake = false;
             float bestLine = 0f;
             int partner = -1;
+            float edge = Mathf.Max(0f, widths[i] * .5f - 1.1f);
             if (active[i])
             {
                 for (int j = 0; j < active.Length; j++)
@@ -397,18 +452,68 @@ internal sealed class TrackDraft
                     float gap = TrackGap(lapLength, distances[i], distances[j]);
                     float lateral = Mathf.Abs(lanes[j] - lanes[i]);
                     float separation = Mathf.Max(0f, Mathf.Abs(gap) - VehicleCollision001.ContactLength);
-                    if (lateral < Alignment && separation < TrafficDraftRange && gap != 0f)
+                    if (lateral < Alignment && gap != 0f)
                     {
-                        if (gap > 0f)
-                            frontWake = true;
-                        else
-                            rearWake = true;
+                        if (!canSeek && separation < TrafficDraftRange)
+                        {
+                            frontWake |= gap > 0f;
+                            rearWake |= gap < 0f;
+                        }
+                        else if (canSeek && speeds[j] >= DraftStartSpeed)
+                        {
+                            if (gap > 0f && separation < ForwardWakeRange)
+                                frontWake |= WakeWeight(separation, lateral, ForwardWakeRange, FarWakeHalfWidth, 1f) >= SeekWakeThreshold;
+                            else if (gap < 0f)
+                            {
+                                bool directSupport = separation < RearWakeRange &&
+                                    WakeWeight(separation, lateral, RearWakeRange, NearWakeHalfWidth, 1f) >= SeekWakeThreshold;
+                                bool lineSupport = separation < PlateMaximumLineGap && lineBehind[i] == j &&
+                                    lineAhead[j] == i && lineBoost[i] >= .25f * MphToMetersPerSecond;
+                                rearWake |= directSupport || lineSupport;
+                            }
+                        }
                     }
 
-                    if (gap <= VehicleCollision001.ContactLength || gap > JoinRange || lateral > 3.5f)
+                    if (gap <= VehicleCollision001.ContactLength)
                         continue;
 
-                    float score = (1f - gap / JoinRange) * (1f - 0.65f * lateral / 3.5f);
+                    float score;
+                    if (canSeek)
+                    {
+                        if (speeds[j] < DraftStartSpeed || separation > SeekRange)
+                            continue;
+
+                        float target = Mathf.Clamp(lanes[j], -edge, edge);
+                        float travel = Mathf.Abs(target - lanes[i]);
+                        if (travel > SeekLateralReach || Mathf.Abs(target - lanes[j]) > CloseFollowAlignment)
+                            continue;
+
+                        float closing = speeds[i] - speeds[j];
+                        float lateralTime = travel / VehicleBehavior003.MaximumLateralSpeed;
+                        float arrivalGap = separation - closing * lateralTime;
+                        if (arrivalGap > SeekWakeGap && closing <= .1f)
+                            continue;
+
+                        float catchTime = Mathf.Max(0f, separation - SeekWakeGap) / Mathf.Max(.1f, closing);
+                        float reachTime = Mathf.Max(catchTime, lateralTime);
+                        if (reachTime > SeekHorizon)
+                            continue;
+
+                        score = .8f * (1f - reachTime / SeekHorizon) + .2f * (1f - separation / SeekRange) +
+                            .08f * Mathf.Clamp01(carsInLine[j] / 3f);
+                        // Stay aligned when that line is about to yield a useful tow.
+                        if (lateral <= CloseFollowAlignment && reachTime <= 4f)
+                            score += .45f;
+                        if (seekPartners[i] == j)
+                            score += SeekSwitchMargin;
+                    }
+                    else
+                    {
+                        if (gap > JoinRange || lateral > 3.5f)
+                            continue;
+                        score = (1f - gap / JoinRange) * (1f - 0.65f * lateral / 3.5f);
+                    }
+
                     if (score > bestLine)
                     {
                         bestLine = score;
@@ -418,6 +523,7 @@ internal sealed class TrackDraft
             }
 
             inLine[i] = frontWake || holdDraftingLane && rearWake;
+            seekPartners[i] = canSeek && !inLine[i] ? partner : -1;
             if (holdDraftingLane && inLine[i])
             {
                 // This includes the leading car being pushed: it must not drag its
@@ -426,7 +532,6 @@ internal sealed class TrackDraft
             }
             else if (partner >= 0)
             {
-                float edge = Mathf.Max(0f, widths[i] * 0.5f - 1.1f);
                 targets[i] = Mathf.Clamp(lanes[partner], -edge, edge);
             }
         }

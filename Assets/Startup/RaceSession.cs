@@ -161,10 +161,22 @@ internal sealed class RaceSessionRun
     private readonly bool usesSpringPerformance;
     private readonly DynamicTireLoads[] dynamicLoads;
     private readonly float[] thermalSpeeds;
-    private readonly float[] throttleInputs, brakeInputs;
+    private readonly float[] throttleInputs, pedalInputs, brakeInputs;
+    private readonly DraftDrive[] draftDrive;
     private readonly LapSpeedProfile inputSpeedProfile;
     internal const float CoastingDeceleration = 1.0f; // About 2.2 mph per second.
-    internal float ThrottleInput(int index) => throttleInputs[index];
+    private const float DraftPedalCurve = .065f;
+    private const float PedalPressRate = 1.1f;
+    private const float PedalLiftRate = 1.7f;
+    private const float BrakePedalLiftRate = 4f;
+
+    private struct DraftDrive
+    {
+        internal float Capacity, Drag;
+        internal bool Applied;
+    }
+
+    internal float ThrottleInput(int index) => pedalInputs[index];
     internal float BrakeInput(int index) => brakeInputs[index];
     internal void TrafficBrakeInput(int index, float speed, float seconds, float brakingLimit, bool drafting = false)
     {
@@ -182,6 +194,39 @@ internal sealed class RaceSessionRun
             float response = deceleration > 0f ? CoastingDeceleration : ReferenceAcceleration(current);
             throttleInputs[index] = UnityEngine.Mathf.Clamp01(.5f * (1f - deceleration / response));
         }
+    }
+
+    internal float ResolveDraftPedal(int index, float speed, float seconds, bool trafficLimited)
+    {
+        ref var drive = ref draftDrive[index];
+        if (drive.Capacity <= 0f || drive.Applied || seconds <= 0f)
+            return speed;
+
+        float current = CurrentSpeed(index);
+        bool braking = brakeInputs[index] > 0f;
+        float requestedAcceleration = (speed - current) / seconds;
+        float force = UnityEngine.Mathf.Clamp01((requestedAcceleration + drive.Drag) / drive.Capacity);
+        float demand = braking ? 0f : trafficLimited
+            ? DraftPedalCurve * force / (1f - (1f - DraftPedalCurve) * force)
+            : 1f;
+        throttleInputs[index] = demand;
+        pedalInputs[index] = StepPedal(pedalInputs[index], demand, seconds, braking);
+        drive.Applied = true;
+
+        // The traffic controller retains authority over the safe speed.
+        if (braking)
+            return speed;
+
+        float pedal = pedalInputs[index];
+        float driveFraction = pedal / (DraftPedalCurve + (1f - DraftPedalCurve) * pedal);
+        float acceleration = Math.Max(-CoastingDeceleration, drive.Capacity * driveFraction - drive.Drag);
+        return Math.Min(speed, Math.Max(0f, current + acceleration * seconds));
+    }
+
+    private static float StepPedal(float current, float demand, float seconds, bool braking)
+    {
+        float rate = demand > current ? PedalPressRate : braking ? BrakePedalLiftRate : PedalLiftRate;
+        return UnityEngine.Mathf.MoveTowards(current, demand, rate * Math.Max(0f, seconds));
     }
 
     internal void ApplyDraftBumpSpeedChange(int index, float speedChange)
@@ -310,7 +355,10 @@ internal sealed class RaceSessionRun
         var entries = simulation.Cars;
         scheduledRaceLaps = session.laps; // Keep urgency at maximum through overtime.
         cars = new CarTiming[entries.Count];
-        throttleInputs = new float[entries.Count]; brakeInputs = new float[entries.Count];
+        throttleInputs = new float[entries.Count];
+        pedalInputs = new float[entries.Count];
+        brakeInputs = new float[entries.Count];
+        draftDrive = new DraftDrive[entries.Count];
         inputSpeedProfile = new LapSpeedProfile(simulation.Track, usesSpringPerformance);
         double rearGearRatio = ReferenceRearGearRatio(simulation.Track, session, speedModel, inputSpeedProfile);
         for (int i = 0; i < cars.Length; i++)
@@ -688,11 +736,13 @@ internal sealed class RaceSessionRun
             paceSpeedCeiling, preferredLineSpeedFactor);
 
     internal float ConditionLimitedSpeedAndPace(int index, float speed, float seconds, out float pace, float brakingLimit = 0f,
-        bool allowMechanicalFailure = false, float? paceSpeedCeiling = null, float preferredLineSpeedFactor = 1f)
+        bool allowMechanicalFailure = false, float? paceSpeedCeiling = null, float preferredLineSpeedFactor = 1f,
+        float cleanAirSpeed = float.NaN)
     {
         pace = 0f;
         var car = cars[index];
         throttleInputs[index]=brakeInputs[index]=0f;
+        draftDrive[index] = default;
         float damage = (car.Result.car?.Damage ?? 0f) + car.SimulatedContactDamage;
         bool canRun = car.Result.Fuel > 0 && damage < 100f;
         if (allowMechanicalFailure && canRun && car.Result.car != null && !car.Finished &&
@@ -733,6 +783,15 @@ internal sealed class RaceSessionRun
             {
                 throttleInputs[index]=1f;
                 nextSpeed = FullThrottleSpeed(currentSpeed, target, acceleration, seconds);
+                if (cleanAirSpeed > 0f && target > .001f && !paceSpeedCeiling.HasValue && preferredLineSpeedFactor >= 1f)
+                {
+                    float cleanPace = cleanAirSpeed * damageFactor;
+                    float airSpeedRatio = currentSpeed / cleanPace;
+                    float wakeRatio = cleanPace / target;
+                    // Match the full-power ceiling while tracking the actual drag load separately.
+                    draftDrive[index].Capacity = acceleration;
+                    draftDrive[index].Drag = acceleration * airSpeedRatio * airSpeedRatio * wakeRatio * wakeRatio;
+                }
             }
             else if (target < currentSpeed)
             {
@@ -950,6 +1009,12 @@ internal sealed class RaceSessionRun
     {
         for (int i = 0; i < cars.Length; i++)
         {
+            if (!draftDrive[i].Applied)
+            {
+                float demand = cars[i].Retired ? 0f : throttleInputs[i];
+                pedalInputs[i] = StepPedal(pedalInputs[i], demand, seconds, brakeInputs[i] > 0f);
+            }
+            draftDrive[i] = default;
             if (usesSpringPerformance && seconds > 0f)
             {
                 float longitudinalG = (thermalSpeeds[i] - previousThermalSpeeds[i]) / seconds / 9.80665f;
