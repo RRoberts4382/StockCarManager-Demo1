@@ -6676,7 +6676,7 @@ public sealed class StartupMenu : MonoBehaviour
         }
         else if (state == SessionTrackState.Pacing)
         {
-            practiceStateLabel.text = oneToGo ? "One To GO" : "Pace Laps";
+            practiceStateLabel.text = oneToGo ? "One To Go" : "Pace Laps";
         }
         else if (state == SessionTrackState.TrackOpen)
         {
@@ -6697,7 +6697,7 @@ public sealed class StartupMenu : MonoBehaviour
             state == SessionTrackState.FinishUnderCaution)
         {
             primaryPracticeFlag.style.backgroundColor = Color.yellow;
-            practiceStateLabel.text = state == SessionTrackState.FinishUnderCaution ? "Race Over Under Caution" : oneToGo ? "One To GO" : "Caution";
+            practiceStateLabel.text = state == SessionTrackState.FinishUnderCaution ? "Race Over Under Caution" : oneToGo ? "One To Go" : "Caution";
         }
         else if (returning)
         {
