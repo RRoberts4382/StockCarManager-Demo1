@@ -4,7 +4,8 @@
   "SeriesLevel": 1,
   "manufacturerDefaultModels": [
     { "manufacturer": 0, "carModel": "ChevroletCupCamaro" },
-    { "manufacturer": 1, "carModel": "FordCupMustang" }
+    { "manufacturer": 1, "carModel": "FordCupMustang" },
+    { "manufacturer": 2, "carModel": "ToyotaCupCamry" }
   ],
   "manufacturers": [
     {

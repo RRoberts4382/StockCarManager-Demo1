@@ -1,0 +1,98 @@
+{
+  "displayName": "2026 Toyota Camry Cup",
+  "superspeedwayModel": "ToyotaCupCamrySuperspeedway",
+  "shortTrackModel": "ToyotaCupCamryShortTrack",
+  "roadCourseLeftModel": "ToyotaCupCamryRoadLeft",
+  "roadCourseRightModel": "ToyotaCupCamryRoadRight",
+  "inCarCamera": {
+    "anchor": "DriverEye",
+    "position": {
+      "x": -0.295,
+      "y": 0.656,
+      "z": 0.141
+    }
+  },
+  "rearviewCamera": {
+    "x": 0,
+    "y": 0.85,
+    "z": -1.52
+  },
+  "roofNumber": {
+    "anchor": "RoofNumber",
+    "position": {
+      "x": 0,
+      "y": 0.76,
+      "z": 0.0
+    }
+  },
+  "leftNumber": {
+    "anchor": "LeftNumber",
+    "position": {
+      "x": -0.58,
+      "y": 0.38,
+      "z": 0.05
+    }
+  },
+  "rightNumber": {
+    "anchor": "RightNumber",
+    "position": {
+      "x": 0.58,
+      "y": 0.38,
+      "z": 0.05
+    }
+  },
+  "lodModels": [
+    "ToyotaCupCamryLOD1",
+    "ToyotaCupCamryLOD2",
+    "ToyotaCupCamryLOD3",
+    "ToyotaCupCamryLOD4",
+    "ToyotaCupCamry"
+  ],
+  "trackModelLods": [
+    {
+      "model": "ToyotaCupCamrySuperspeedway",
+      "lodModels": [
+        "ToyotaCupCamrySuperspeedwayLOD1",
+        "ToyotaCupCamrySuperspeedwayLOD2",
+        "ToyotaCupCamrySuperspeedwayLOD3",
+        "ToyotaCupCamrySuperspeedwayLOD4",
+        "ToyotaCupCamrySuperspeedway"
+      ],
+      "fullDetailInteriorModel": "ToyotaCupCamryInterior"
+    },
+    {
+      "model": "ToyotaCupCamryShortTrack",
+      "lodModels": [
+        "ToyotaCupCamryShortTrackLOD1",
+        "ToyotaCupCamryShortTrackLOD2",
+        "ToyotaCupCamryShortTrackLOD3",
+        "ToyotaCupCamryShortTrackLOD4",
+        "ToyotaCupCamryShortTrack"
+      ],
+      "fullDetailInteriorModel": "ToyotaCupCamryInterior"
+    },
+    {
+      "model": "ToyotaCupCamryRoadLeft",
+      "lodModels": [
+        "ToyotaCupCamryRoadLeftLOD1",
+        "ToyotaCupCamryRoadLeftLOD2",
+        "ToyotaCupCamryRoadLeftLOD3",
+        "ToyotaCupCamryRoadLeftLOD4",
+        "ToyotaCupCamryRoadLeft"
+      ],
+      "fullDetailInteriorModel": "ToyotaCupCamryInterior"
+    },
+    {
+      "model": "ToyotaCupCamryRoadRight",
+      "lodModels": [
+        "ToyotaCupCamryRoadRightLOD1",
+        "ToyotaCupCamryRoadRightLOD2",
+        "ToyotaCupCamryRoadRightLOD3",
+        "ToyotaCupCamryRoadRightLOD4",
+        "ToyotaCupCamryRoadRight"
+      ],
+      "fullDetailInteriorModel": "ToyotaCupCamryRoadRightInterior"
+    }
+  ],
+  "fullDetailInteriorModel": "ToyotaCupCamryInterior"
+}

@@ -1094,7 +1094,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             var materials = renderer.sharedMaterials;
             if (materials.Length == 0 || !System.Array.TrueForAll(materials, material =>
                     material == carGlass || material != null &&
-                    (material.name is "RaceTruck_Windows" or "RaceTruck_RearSideWindows" or "LateModel_Glass" or "FordMustang_Glass" or "ChevroletCamaro_Glass")))
+                    (material.name is "RaceTruck_Windows" or "RaceTruck_RearSideWindows" or "LateModel_Glass" or "FordMustang_Glass" or "ChevroletCamaro_Glass" or "ToyotaCamry_Glass")))
                 continue;
 
             renderer.forceRenderingOff = true;
@@ -5408,6 +5408,8 @@ public sealed partial class TrackPreview : MonoBehaviour
                     string materialName when materialName.StartsWith("FordMustang_", System.StringComparison.Ordinal) =>
                         CupCarPanelPaint.Apply(renderer, i, materials[i], body),
                     string materialName when materialName.StartsWith("ChevroletCamaro_", System.StringComparison.Ordinal) =>
+                        CupCarPanelPaint.Apply(renderer, i, materials[i], body),
+                    string materialName when materialName.StartsWith("ToyotaCamry_", System.StringComparison.Ordinal) =>
                         CupCarPanelPaint.Apply(renderer, i, materials[i], body),
                     _ => body
                 };

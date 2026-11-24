@@ -20,6 +20,8 @@ internal static class CupCarPanelPaint
             "FordMustang_BodyRight" => "FordMustang/FordBodyRightDetails",
             "ChevroletCamaro_Body" => "ChevroletCamaro/CamaroBodyDetails",
             "ChevroletCamaro_BodyRight" => "ChevroletCamaro/CamaroBodyRightDetails",
+            "ToyotaCamry_Body" => "ToyotaCamry/ToyotaCamryBodyDetails",
+            "ToyotaCamry_BodyRight" => "ToyotaCamry/ToyotaCamryBodyRightDetails",
             _ => null
         };
         if (detailResource == null || !renderer.TryGetComponent<MeshFilter>(out var filter) ||
