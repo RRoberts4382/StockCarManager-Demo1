@@ -83,7 +83,7 @@ internal static class BroadcastCoverage
                 "team" when player != null && qualifying?.playerReport != null =>
                     $"{career.teamName} qualified P{qualifying.playerReport.position} and brought the car home P{player.position}.",
                 _ when winner != null =>
-                    $"{DriverName(winner)} took the checkered flag in the No. {winner.carNumber}" +
+                    $"{DriverName(winner)} took the checkered flag in the No. {winner.DisplayCarNumber}" +
                     (string.IsNullOrWhiteSpace(winner.teamName) ? "." : $" for {winner.teamName}."),
                 _ => $"Here is the final report from {race.trackName}."
             };
@@ -100,7 +100,7 @@ internal static class BroadcastCoverage
     }
 
     private static string DriverName(SessionCarResult result) =>
-        string.IsNullOrWhiteSpace(result.driverName) ? $"the No. {result.carNumber} driver" : result.driverName;
+        string.IsNullOrWhiteSpace(result.driverName) ? $"the No. {result.DisplayCarNumber} driver" : result.driverName;
 
     public static Image Logo(string outletId)
     {

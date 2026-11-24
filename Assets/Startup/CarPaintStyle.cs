@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Object = UnityEngine.Object;
@@ -28,6 +29,38 @@ internal static class CarNumberFonts
         }
         return Resources.Load<Font>(Paths[System.Array.IndexOf(Names, Canonical(name))]);
     }
+    public static void Apply(Label label, CarPaintStyle? paint)
+    {
+        var font = Load(paint?.NumberFont, paint?.NumberBold ?? true, paint?.NumberItalic ?? false);
+        if (font != null)
+            label.style.unityFontDefinition = FontDefinition.FromFont(font);
+        label.style.unityFontStyleAndWeight = Style(paint);
+    }
+
+    public static void Apply(TextMesh label, CarPaintStyle? paint)
+    {
+        label.font = Load(paint?.NumberFont, paint?.NumberBold ?? true, paint?.NumberItalic ?? false) ?? label.font;
+        label.fontStyle = Style(paint);
+    }
+
+    private static FontStyle Style(CarPaintStyle? paint)
+    {
+        if (paint?.NumberFont == "Open Sans")
+            return FontStyle.Normal;
+        bool bold = paint?.NumberBold ?? true;
+        bool italic = paint?.NumberItalic ?? false;
+        return bold ? (italic ? FontStyle.BoldAndItalic : FontStyle.Bold)
+            : (italic ? FontStyle.Italic : FontStyle.Normal);
+    }
+
+    public static Color ContrastColor(Color background)
+    {
+        Color linear = background.linear;
+        float luminance = .2126f * linear.r + .7152f * linear.g + .0722f * linear.b;
+        // Equal contrast against black and white occurs at this relative luminance.
+        return luminance >= .1791288f ? Color.black : Color.white;
+    }
+
 }
 
 internal readonly struct CarPaintStyle
@@ -44,8 +77,10 @@ internal readonly struct CarPaintStyle
     public readonly string NumberFont;
     public readonly bool NumberBold;
     public readonly bool NumberItalic;
+    public readonly bool HideRenderedNumber;
+    public readonly CarPaintTemplateAssignment Template;
 
-    public CarPaintStyle(CarPaintScheme scheme, Color32 primary, Color32 secondary, Color32 trim, bool hasTrim, Color32? numberColor = null, string numberFont = null, bool numberBold = true, bool numberItalic = false)
+    public CarPaintStyle(CarPaintScheme scheme, Color32 primary, Color32 secondary, Color32 trim, bool hasTrim, Color32? numberColor = null, string numberFont = null, bool numberBold = true, bool numberItalic = false, bool hideRenderedNumber = false, CarPaintTemplateAssignment template = default)
     {
         Scheme = scheme;
         Primary = primary;
@@ -56,7 +91,15 @@ internal readonly struct CarPaintStyle
         NumberFont = CarNumberFonts.Canonical(numberFont);
         NumberBold = numberBold;
         NumberItalic = numberItalic;
+        HideRenderedNumber = hideRenderedNumber;
+        Template = template;
     }
+
+    public CarPaintStyle WithRenderedNumberHidden(bool hidden) =>
+        new CarPaintStyle(Scheme, Primary, Secondary, Trim, HasTrim, NumberColor, NumberFont, NumberBold, NumberItalic, hidden, Template);
+
+    public CarPaintStyle WithTemplate(CarPaintTemplateAssignment template) =>
+        new CarPaintStyle(Scheme, Primary, Secondary, Trim, HasTrim, NumberColor, NumberFont, NumberBold, NumberItalic, HideRenderedNumber, template);
 
     public void ApplyTo(TeamCar car)
     {
@@ -68,6 +111,8 @@ internal readonly struct CarPaintStyle
         car.numberFont = NumberFont;
         car.numberBold = NumberBold;
         car.numberItalic = NumberItalic;
+        car.hideRenderedNumber = HideRenderedNumber;
+        car.paintTemplate = Template;
     }
 
     public bool HasWrap => Scheme != CarPaintScheme.Classic || HasTrim;
@@ -203,12 +248,12 @@ internal readonly struct CarPaintStyle
     }
 
     public static bool Apply(Transform car, Material primary, Material secondary, CarPaintStyle paint,
-        Action<Texture2D> retainTexture)
+        Action<Texture2D> retainTexture, Texture2D template = null)
     {
-        if (!paint.HasWrap || retainTexture == null)
+        if (template == null && (!paint.HasWrap || retainTexture == null))
             return false;
 
-        bool classic = paint.Scheme == CarPaintScheme.Classic;
+        bool classic = template == null && paint.Scheme == CarPaintScheme.Classic;
         var paintedMeshes = new List<MeshFilter>();
         foreach (var filter in car.GetComponentsInChildren<MeshFilter>())
         {
@@ -225,8 +270,9 @@ internal readonly struct CarPaintStyle
         foreach (var filter in paintedMeshes)
             ProjectMesh(car, filter);
 
-        var texture = paint.BuildTexture();
-        retainTexture(texture);
+        var texture = template ?? paint.BuildTexture();
+        if (template == null)
+            retainTexture(texture);
         SetPaintTexture(secondary);
         if (!classic)
             SetPaintTexture(primary);
@@ -274,6 +320,8 @@ internal readonly struct CarPaintStyle
 
 internal static class CarPaintEditor
 {
+    private const string PaintTemplateFolderKey = "CarPaint.LastTemplateFolder";
+
     public static void Open(VisualElement parent, TeamCar car, string[] sponsors,
         System.Func<TeamCar, string> savePaint, System.Action saved = null, bool careerDraft = false)
     {
@@ -286,12 +334,12 @@ internal static class CarPaintEditor
         overlay.AddToClassList("settings-confirmation-overlay");
         var dialog = MakeDialog(careerDraft ? "Car Paint Scheme" : $"Paint Scheme · Chassis # {car.chassisNumber}");
         overlay.Add(dialog);
-        dialog.style.width = 620;
+        dialog.style.width = 700;
         var content = new VisualElement();
         content.AddToClassList("settings-row");
         var preview = paintPreviewThumbnails.CreateOrbitPreview();
-        preview.style.width = 300;
-        preview.style.height = 230;
+        preview.style.width = 365;
+        preview.style.height = 260;
         preview.style.flexShrink = 0;
         preview.style.alignSelf = Align.Center;
         content.Add(preview);
@@ -302,11 +350,20 @@ internal static class CarPaintEditor
         dialog.Add(content);
         var error = SettingsFormStyle.Label("", "settings-validation-summary");
         var draft = car.PaintStyle;
-        var schemeButton = BuildControls(controls, overlay, dialog, () => car, sponsors, draft, style =>
+        Action refreshAvailability = null;
+        var (schemeButton, updateAvailability) = BuildControls(controls, overlay, dialog, () => car, sponsors, draft, style =>
         {
-            draft = style;
+            draft = style.WithTemplate(draft.Template);
             UpdatePreview();
-        }, error);
+        }, error, () => draft.Template.IsAssigned, showRenderNumberSwitch: true);
+        refreshAvailability = updateAvailability;
+        var templatePicker = new TemplatePicker(error, selection =>
+        {
+            draft = draft.WithTemplate(selection);
+            UpdatePreview();
+        });
+        templatePicker.SetSelection(draft.Template);
+        controls.Add(templatePicker);
         dialog.Add(error);
         var footer = new VisualElement();
         footer.AddToClassList("settings-footer");
@@ -325,6 +382,7 @@ internal static class CarPaintEditor
 
         void UpdatePreview()
         {
+            refreshAvailability?.Invoke();
             preview.image = paintPreviewThumbnails.Get(car, sponsors, draft);
             SettingsFormStyle.SetValidationMessage(error, null, false);
         }
@@ -362,12 +420,12 @@ internal static class CarPaintEditor
         }
         void Save()
         {
-            var previous = (car.primaryPaint, car.secondaryPaint, car.trimPaint, car.paintScheme, car.numberPaint, car.numberFont, car.numberBold, car.numberItalic);
+            var previous = (car.primaryPaint, car.secondaryPaint, car.trimPaint, car.paintScheme, car.numberPaint, car.numberFont, car.numberBold, car.numberItalic, car.hideRenderedNumber, car.paintTemplate);
             draft.ApplyTo(car);
             string saveError = savePaint(car);
             if (saveError != null)
             {
-                (car.primaryPaint, car.secondaryPaint, car.trimPaint, car.paintScheme, car.numberPaint, car.numberFont, car.numberBold, car.numberItalic) = previous;
+                (car.primaryPaint, car.secondaryPaint, car.trimPaint, car.paintScheme, car.numberPaint, car.numberFont, car.numberBold, car.numberItalic, car.hideRenderedNumber, car.paintTemplate) = previous;
                 SettingsFormStyle.SetValidationMessage(error, saveError, true);
                 return;
             }
@@ -375,8 +433,9 @@ internal static class CarPaintEditor
         }
     }
 
-    internal static Button BuildControls(VisualElement controls, VisualElement popupHost, VisualElement underlay,
-        Func<TeamCar> currentCar, string[] sponsors, CarPaintStyle original, Action<CarPaintStyle> changed, Label error)
+    internal static (Button SchemeButton, Action RefreshAvailability) BuildControls(VisualElement controls, VisualElement popupHost, VisualElement underlay,
+        Func<TeamCar> currentCar, string[] sponsors, CarPaintStyle original, Action<CarPaintStyle> changed, Label error,
+        Func<bool> templateSelected, Func<bool> numberHidden = null, bool showRenderNumberSwitch = false, bool compactLayout = false)
     {
         var schemes = CarPaintStyle.Schemes;
         int schemeIndex = 0;
@@ -387,24 +446,46 @@ internal static class CarPaintEditor
         string numberFont = original.NumberFont;
         bool numberBold = original.NumberBold;
         bool numberItalic = original.NumberItalic;
+        bool hideRenderedNumber = original.HideRenderedNumber;
         bool hasTrim = original.HasTrim;
         var schemeField = new VisualElement();
         schemeField.AddToClassList("settings-field");
         schemeField.Add(SettingsFormStyle.Label("Paint scheme", "settings-note"));
         var schemeButton = SettingsFormStyle.Button(CarPaintStyle.SchemeName(schemes[schemeIndex]), null);
+        schemeButton.name = "paint-scheme-selection";
         schemeButton.tooltip = "Preview and choose a paint scheme on this car.";
         schemeField.Add(schemeButton);
         controls.Add(schemeField);
-        AddColor("Primary color", 0);
-        AddColor("Secondary color", 1);
-        AddColor("Trim color", 2);
-        AddColor("Car number color", 3);
+        var primary = AddColor("Primary color", 0);
+        var secondary = AddColor("Secondary color", 1);
+        var numberControls = new VisualElement();
+        numberControls.AddToClassList("settings-row");
+        if (compactLayout)
+        {
+            numberControls.AddToClassList("career-paint-color-actions");
+            numberControls.style.flexWrap = Wrap.NoWrap;
+        }
+        var trim = AddColor("Trim color", 2, compactLayout ? numberControls : controls);
+        var numberColor = AddColor("Car number color", 3, showRenderNumberSwitch || compactLayout ? numberControls : controls);
+        if (showRenderNumberSwitch)
+        {
+            var renderNumber = CreateRenderNumberSwitch(!hideRenderedNumber);
+            renderNumber.RegisterValueChangedCallback(evt =>
+            {
+                hideRenderedNumber = !evt.newValue;
+                UpdatePreview();
+            });
+            numberControls.Add(renderNumber);
+        }
+        if (showRenderNumberSwitch || compactLayout)
+            controls.Add(numberControls);
         var fontField = new VisualElement();
         fontField.AddToClassList("settings-field");
         fontField.Add(SettingsFormStyle.Label("Car number font", "settings-note"));
         var fontButton = SettingsFormStyle.Button(numberFont, null);
         fontButton.tooltip = "Choose a bundled, licensed font for the car numbers.";
-        fontField.Add(fontButton);
+        if (!compactLayout)
+            fontField.Add(fontButton);
         controls.Add(fontField);
         var styles = new VisualElement();
         styles.AddToClassList("settings-row");
@@ -428,31 +509,61 @@ internal static class CarPaintEditor
             italic.EnableInClassList("settings-tab-current", numberItalic);
             UpdatePreview();
         };
+        if (compactLayout)
+        {
+            styles.AddToClassList("career-paint-font-actions");
+            styles.style.flexWrap = Wrap.NoWrap;
+            fontButton.style.flexGrow = 1;
+            fontButton.style.flexShrink = 1;
+            fontButton.style.minWidth = 0;
+            styles.Add(fontButton);
+        }
         styles.Add(bold);
         styles.Add(italic);
-        controls.Add(styles);
+        if (compactLayout)
+            fontField.Add(styles);
+        else
+            controls.Add(styles);
         fontButton.clicked += ChooseNumberFont;
         schemeButton.clicked += ChooseScheme;
-        return schemeButton;
+        RefreshAvailability();
+        return (schemeButton, RefreshAvailability);
+
+        void RefreshAvailability()
+        {
+            bool useSchemeColors = !templateSelected();
+            schemeButton.SetEnabled(useSchemeColors);
+            primary.SetEnabled(useSchemeColors);
+            secondary.SetEnabled(useSchemeColors);
+            trim.SetEnabled(useSchemeColors);
+
+            bool renderNumber = !RenderedNumberHidden();
+            numberColor.SetEnabled(renderNumber);
+            fontButton.SetEnabled(renderNumber);
+            bold.SetEnabled(renderNumber);
+            italic.SetEnabled(renderNumber);
+        }
 
         void UpdatePreview()
         {
             SettingsFormStyle.SetValidationMessage(error, null, false);
             changed(new CarPaintStyle(schemes[schemeIndex], colors[0], colors[1], colors[2], hasTrim,
-                hasNumberColor ? colors[3] : (Color32?)null, numberFont, numberBold, numberItalic));
+                hasNumberColor ? colors[3] : (Color32?)null, numberFont, numberBold, numberItalic, RenderedNumberHidden()));
         }
 
-        void AddColor(string label, int index)
+        bool RenderedNumberHidden() => numberHidden?.Invoke() ?? hideRenderedNumber;
+
+        Button AddColor(string label, int index, VisualElement container = null)
         {
             var button = SettingsFormStyle.Button(label, null);
+            button.AddToClassList("car-paint-color-button");
+            if (index == 2) button.name = "paint-trim-color";
+            if (index == 3) button.name = "paint-number-color";
             button.tooltip = "Choose the car's " + label.ToLowerInvariant() + ".";
             var swatch = new VisualElement { pickingMode = PickingMode.Ignore };
             swatch.AddToClassList("car-paint-swatch");
             swatch.style.backgroundColor = (Color)colors[index];
-            button.Insert(0, swatch);
-            button.style.flexDirection = FlexDirection.Row;
-            button.style.alignItems = Align.Center;
-            swatch.style.alignSelf = Align.Center;
+            button.Add(swatch);
             button.clicked += () =>
             {
                 try
@@ -471,7 +582,8 @@ internal static class CarPaintEditor
                     SettingsFormStyle.SetValidationMessage(error, ex.Message, true);
                 }
             };
-            controls.Add(button);
+            (container ?? controls).Add(button);
+            return button;
         }
         void ChooseNumberFont()
         {
@@ -561,7 +673,7 @@ internal static class CarPaintEditor
                 var image = new Image
                 {
                     image = thumbnails.Get(car, sponsors,
-                        new CarPaintStyle(schemes[i], colors[0], colors[1], colors[2], hasTrim, hasNumberColor ? colors[3] : (Color32?)null, numberFont, numberBold, numberItalic),
+                        new CarPaintStyle(schemes[i], colors[0], colors[1], colors[2], hasTrim, hasNumberColor ? colors[3] : (Color32?)null, numberFont, numberBold, numberItalic, RenderedNumberHidden()),
                         cacheScope: "paint-scheme-" + schemes[i], transparentBackground: true, retainOrbitScene: false),
                     scaleMode = ScaleMode.ScaleToFit, pickingMode = PickingMode.Ignore
                 };
@@ -586,6 +698,109 @@ internal static class CarPaintEditor
                 picker.RemoveFromHierarchy(); underlay.SetEnabled(true); schemeButton.Focus();
             }
         }
+    }
+
+    internal sealed class TemplatePicker : VisualElement
+    {
+        private const string EmptyLabel = "No paint template selected";
+        private readonly Label fileName;
+        private readonly Button clear;
+        private readonly Label error;
+        private readonly Action<CarPaintTemplateAssignment> changed;
+        public CarPaintTemplateAssignment Selected { get; private set; }
+
+        public TemplatePicker(Label error, Action<CarPaintTemplateAssignment> changed)
+        {
+            this.error = error;
+            this.changed = changed;
+            AddToClassList("paint-template-picker");
+            style.alignItems = Align.FlexStart;
+            style.marginTop = 4;
+            style.flexShrink = 0;
+            var actions = new VisualElement();
+            actions.AddToClassList("settings-row");
+            var browse = SettingsFormStyle.Button("Browse for Paint Template", Browse);
+            browse.name = "browse-paint-template";
+            browse.tooltip = "Choose a paint template file for this car.";
+            actions.Add(browse);
+
+            clear = SettingsFormStyle.Button("", ClearSelection);
+            clear.name = "clear-paint-template";
+            clear.tooltip = "Remove the custom paint assignment from this car.";
+            clear.style.minWidth = 35;
+            clear.style.paddingLeft = 5;
+            clear.style.paddingRight = 5;
+            clear.style.justifyContent = Justify.Center;
+            clear.style.alignItems = Align.Center;
+            StartupMenu.DrawTrashButtonIcon(clear);
+            clear.SetEnabled(false);
+            actions.Add(clear);
+            Add(actions);
+
+            fileName = SettingsFormStyle.Label(EmptyLabel, "settings-note");
+            fileName.name = "paint-template-file-name";
+            fileName.style.maxWidth = Length.Percent(100);
+            fileName.style.overflow = Overflow.Hidden;
+            fileName.style.whiteSpace = WhiteSpace.NoWrap;
+            fileName.style.textOverflow = TextOverflow.Ellipsis;
+            fileName.style.flexShrink = 0;
+            Add(fileName);
+        }
+
+        public void SetSelection(CarPaintTemplateAssignment selection)
+        {
+            Selected = selection;
+            fileName.text = selection.IsAssigned ? Path.GetFileName(selection.fileName) : EmptyLabel;
+            fileName.tooltip = selection.IsAssigned ? fileName.text : null;
+            clear.SetEnabled(selection.IsAssigned);
+        }
+
+        private void ClearSelection()
+        {
+            SetSelection(default);
+            SettingsFormStyle.SetValidationMessage(error, null, false);
+            changed(Selected);
+        }
+
+        private void Browse()
+        {
+            string path;
+            CarPaintTemplateAssignment replacement;
+            try
+            {
+                string folder = PlayerPrefs.GetString(PaintTemplateFolderKey, "");
+                path = TrackImageFilePicker.Pick("Choose a paint template",
+                    Directory.Exists(folder) ? folder : "",
+                    "Paint template images", "tga,png,jpg,jpeg", "All files", "*");
+                if (string.IsNullOrEmpty(path))
+                    return;
+                replacement = CarPaintTemplate.Import(path);
+            }
+            catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException)
+            {
+                SettingsFormStyle.SetValidationMessage(error, ex.Message, true);
+                return;
+            }
+
+            SetSelection(replacement);
+            string selectedFolder = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(selectedFolder))
+            {
+                PlayerPrefs.SetString(PaintTemplateFolderKey, selectedFolder);
+                PlayerPrefs.Save();
+            }
+            SettingsFormStyle.SetValidationMessage(error, null, false);
+            changed(Selected);
+        }
+    }
+
+    internal static Toggle CreateRenderNumberSwitch(bool value)
+    {
+        var toggle = PracticeRunChart.CreatePillSwitch("Render number", value);
+        toggle.name = "render-car-number";
+        toggle.style.flexShrink = 0;
+        toggle.tooltip = "Show the game-rendered number on the car. Turn off if the paint already includes a number.";
+        return toggle;
     }
 
     private static VisualElement MakeDialog(string title)

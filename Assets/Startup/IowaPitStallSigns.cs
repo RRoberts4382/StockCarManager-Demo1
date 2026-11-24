@@ -10,8 +10,8 @@ public sealed partial class TrackPreview
     private const float IowaPitMarkerHeight = .84f;
     private const float IowaPitMarkerSpacing = .035f;
 
-    private void AddIowaPitStallSign(Transform parent, int number, Vector3 stall, Vector3 center,
-        Vector3 travel, Vector3 infield, Color primary, Color accent)
+    private void AddIowaPitStallSign(Transform parent, string number, Vector3 stall, Vector3 center,
+        Vector3 travel, Vector3 infield, Color primary, Color accent, CarPaintStyle? paint)
     {
         Vector3 forward = Vector3.ProjectOnPlane(travel, Vector3.up).normalized;
         Vector3 right = Vector3.Cross(Vector3.up, forward);
@@ -25,10 +25,18 @@ public sealed partial class TrackPreview
         Vector3 floor = new Vector3(stall.x, center.y - .02f, stall.z);
         sign.transform.SetLocalPositionAndRotation(floor, Quaternion.LookRotation(forward, Vector3.up));
 
-        string digits = Math.Abs((long)number).ToString(CultureInfo.InvariantCulture);
-        float widthUnits = IowaPitMarkerSpacing * (digits.Length - 1);
-        foreach (char digit in digits)
-            widthUnits += IowaPitMarkerGlyphs[digit - '0'].Width;
+        bool useText = paint.HasValue;
+        float widthUnits = IowaPitMarkerSpacing * (number.Length - 1);
+        foreach (char character in number)
+        {
+            if (character is >= '0' and <= '9')
+                widthUnits += IowaPitMarkerGlyphs[character - '0'].Width;
+            else
+            {
+                widthUnits += .75f;
+                useText = true;
+            }
+        }
         float widthScale = Mathf.Min(IowaPitMarkerHeight, 1.55f / widthUnits);
         float span = widthUnits * widthScale;
 
@@ -42,8 +50,16 @@ public sealed partial class TrackPreview
 
         var art = new IowaPitMarkerMesh(combined);
         art.AddPole(poleX, wallSide, attachment);
-        art.AddDigits(digits, widthUnits, widthScale, 1f);
-        art.AddDigits(digits, widthUnits, widthScale, -1f);
+        if (useText)
+        {
+            AddTextFace(1f);
+            AddTextFace(-1f);
+        }
+        else
+        {
+            art.AddDigits(number, widthUnits, widthScale, 1f);
+            art.AddDigits(number, widthUnits, widthScale, -1f);
+        }
         art.Apply(combined);
 
         roadMeshes.Add(combined);
@@ -51,6 +67,31 @@ public sealed partial class TrackPreview
         var renderer = sign.AddComponent<MeshRenderer>();
         renderer.sharedMaterial = IowaPitStallSignMaterial(primary, accent);
         renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+
+        void AddTextFace(float face)
+        {
+            var field = CreateObject("Pit stall race number", sign.transform);
+            field.transform.SetLocalPositionAndRotation(
+                new Vector3(0f, IowaPitMarkerBottom + IowaPitMarkerHeight * .5f, face * .018f),
+                Quaternion.LookRotation(Vector3.back * face, Vector3.up));
+            var text = field.AddComponent<TextMesh>();
+            text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            CarNumberFonts.Apply(text, paint);
+            text.text = number;
+            text.anchor = TextAnchor.MiddleCenter;
+            text.alignment = TextAlignment.Center;
+            text.fontSize = 80;
+            text.characterSize = 1f;
+            text.color = primary;
+            var numberRenderer = field.GetComponent<MeshRenderer>();
+            numberRenderer.sharedMaterial = GetCarDecalMaterial(text.font);
+            numberRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            var ink = CarNumberInkBounds(text, numberRenderer.localBounds);
+            float fit = Mathf.Min(span / Mathf.Max(.01f, ink.size.x),
+                IowaPitMarkerHeight / Mathf.Max(.01f, ink.size.y));
+            field.transform.localScale = Vector3.one * fit;
+            field.transform.localPosition -= field.transform.localRotation * ink.center * fit;
+        }
     }
 
     private sealed class IowaPitMarkerMesh

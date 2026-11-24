@@ -206,7 +206,7 @@ internal static class TeamCommunications
                 var lines = contact.damage >= 22f ? HeavyContact : contact.damage >= 8f ? ModerateContact : LightContact;
                 var random = new Random(SeedForDate(race.date, unchecked(race.trackId * 31 + contact.carNumber + sessionIndex)));
                 string author = string.IsNullOrWhiteSpace(contact.driverName)
-                    ? $"Driver of #{contact.carNumber}" : $"{contact.driverName} · #{contact.carNumber}";
+                    ? $"Driver of #{contact.DisplayCarNumber}" : $"{contact.driverName} · #{contact.DisplayCarNumber}";
                 int firstLine = random.Next(lines.Length);
                 string text = UniqueContactMessage(lines, firstLine, session, contact);
                 yield return new TeamSocialPost($"{race.date}/{race.trackId}/contact/{sessionIndex}/{contact.carNumber}",
@@ -225,7 +225,7 @@ internal static class TeamCommunications
 
             string sessionName = string.IsNullOrWhiteSpace(session.name) ? session.kind.ToString() : session.name;
             string baseText = string.Format(lines[firstLine], team, race.trackName);
-            string detail = $"My No. {contact.carNumber} still has the marks from {sessionName}.";
+            string detail = $"My No. {contact.DisplayCarNumber} still has the marks from {sessionName}.";
             string text = $"{baseText} {detail}";
             for (int occurrence = 2; !usedMessages.Add(text); occurrence++)
                 text = $"{baseText} That's hit number {occurrence} my No. {contact.carNumber} has to deal with after {sessionName}.";

@@ -509,7 +509,7 @@ public sealed class StartupMenu : MonoBehaviour
         garageScreen.Q<Button>("cancelSkipRaceButton").clicked += CloseSkipRacePrompt;
         garageScreen.Q<Button>("confirmSkipRaceButton").clicked += ConfirmSkipRace;
 
-        settings = new GameSettings(root, ApplyDisplaySettings, CloseSettings, SaveTeamColors);
+        settings = new GameSettings(root, ApplyDisplaySettings, CloseSettings, SaveTeamColors, OpenRivalSettings);
         settings.CarLodChanged += level =>
         {
             if (trackPreview != null && trackPreview.SupportsCarDetail && trackPreview.SetCarDetail(level - 1))
@@ -871,6 +871,31 @@ public sealed class StartupMenu : MonoBehaviour
         return null;
     }
 
+    private void OpenRivalSettings(Button source)
+    {
+        RivalRosterSettings.Open(settings.ScreenView, source, PlayerNumbersForSeries, series =>
+        {
+            if (settingsReturnScreen != garageScreen || activeCareer == null || activeCareer.SeriesRules.id != series.id)
+                return;
+
+            RivalRosterStore.ApplyToCareer(activeCareer);
+            RefreshHomeDashboard();
+            DisplayTeamStandings(activeCareer.schedule);
+        });
+    }
+
+    private IEnumerable<int> PlayerNumbersForSeries(RacingSeries series)
+    {
+        var savedNumbers = careerSetup.ReadSavedCareers()
+            .Where(career => RacingSeries.CanonicalId(career.seriesId) == series.id)
+            .SelectMany(career => career.cars ?? System.Array.Empty<TeamCar>())
+            .Where(car => car != null)
+            .Select(car => car.number);
+        return settingsReturnScreen == garageScreen && activeCareer?.SeriesRules.id == series.id
+            ? savedNumbers.Concat(activeCareer.cars.Select(car => car.number))
+            : savedNumbers;
+    }
+
     private void CloseSettings()
     {
         settings.RestorePalette();
@@ -1148,13 +1173,15 @@ public sealed class StartupMenu : MonoBehaviour
         var scroll = rows.scrollOffset;
         rows.Clear();
         var totals = new Dictionary<(string Driver, string Team), long>();
-        var numbers = new Dictionary<(string Driver, string Team), int>();
+        var numbers = new Dictionary<(string Driver, string Team), string>();
+        var numberPaint = new Dictionary<(string Driver, string Team), CarPaintStyle>();
         var roster = TrackPreview.CreateTimingEntries(activeCareer.cars[0], activeCareer);
         foreach (var entry in roster)
         {
             var key = (entry.driverName ?? "Unknown driver", entry.teamName ?? "");
             totals[key] = 0;
-            numbers[key] = entry.carNumber;
+            numbers[key] = entry.DisplayCarNumber;
+            if (entry.car != null) numberPaint[key] = entry.car.PaintStyle;
         }
         foreach (var race in activeCareer.schedule.races ?? Enumerable.Empty<ScheduledRace>())
         {
@@ -1166,7 +1193,8 @@ public sealed class StartupMenu : MonoBehaviour
                 var key = (result.driverName ?? "Unknown driver", result.teamName ?? "");
                 totals[key] = (totals.TryGetValue(key, out var points) ? points : 0) + result.pointsEarned;
                 if (!numbers.ContainsKey(key) && result.carNumber > 0)
-                    numbers[key] = result.carNumber;
+                    numbers[key] = result.DisplayCarNumber;
+                if (result.car != null) numberPaint.TryAdd(key, result.car.PaintStyle);
             }
         }
         int position = 0;
@@ -1178,8 +1206,11 @@ public sealed class StartupMenu : MonoBehaviour
             row.EnableInClassList("team-home-player", entry.Key.Team == activeCareer.teamName);
             position++;
             row.Add(SettingsFormStyle.Label(position.ToString(), "team-home-position"));
-            row.Add(SettingsFormStyle.Label(numbers.TryGetValue(entry.Key, out int number) && number > 0
-                ? number.ToString() : "-", "team-home-car-number"));
+            var carNumber = SettingsFormStyle.Label(numbers.TryGetValue(entry.Key, out string number)
+                ? number : "-", "team-home-car-number");
+            if (number != null && numberPaint.TryGetValue(entry.Key, out var paint))
+                CarNumberFonts.Apply(carNumber, paint);
+            row.Add(carNumber);
             row.Add(SettingsFormStyle.Label(entry.Key.Driver, "team-home-driver"));
             row.Add(SettingsFormStyle.Label(entry.Value == 0 ? "-" : entry.Value.ToString(), "team-home-points"));
             rows.Add(row);
@@ -1631,7 +1662,11 @@ public sealed class StartupMenu : MonoBehaviour
         garageScreen.EnableInClassList("garage-finances-background", showingFinances);
         garageScreen.EnableInClassList("garage-cars-background", showingCars);
         garageScreen.EnableInClassList("victory-results-background", false);
-        bool useTeamColorDesign = pageName == "mailPage" || showingFinances;
+        var series = activeCareer?.SeriesRules;
+        var imagePath = series?.BackgroundFor(pageName);
+        bool usesCarsTourDefaults = series?.UsesCarsTourArtworkDefaults == true;
+        var carsTourMailArt = usesCarsTourDefaults && pageName == "mailPage" ? SeriesSettingsStore.LoadArtwork(imagePath) : null;
+        bool useTeamColorDesign = (pageName == "mailPage" && carsTourMailArt == null) || (showingFinances && !usesCarsTourDefaults);
         garageScreen.EnableInClassList("garage-team-color-background", useTeamColorDesign);
         if (useTeamColorDesign && activeCareer != null)
         {
@@ -1642,13 +1677,13 @@ public sealed class StartupMenu : MonoBehaviour
                 : new StyleBackground(teamColorDesign);
             return;
         }
-        var imagePath = activeCareer?.SeriesRules.BackgroundFor(pageName);
         // The generated series-branding tiles are placeholders, not replacements
         // for the original Team page scenes and photographic backgrounds.
         bool originalPageBackground = showingShop || showingSchedule || showingHome || showingFinances || showingCars;
         bool bundledPlaceholder = new[] { "nascar-cup", "craftsman-truck", "oreilly-auto-parts", "tour-modified" }
             .Any(seriesId => imagePath == $"SeriesBranding/{seriesId}/{pageName}");
-        var seriesImage = originalPageBackground && bundledPlaceholder ? null : SeriesSettingsStore.LoadArtwork(imagePath);
+        var seriesImage = originalPageBackground && bundledPlaceholder ? null :
+            carsTourMailArt ?? SeriesSettingsStore.LoadArtwork(imagePath);
         if (seriesImage != null)
         {
             teamShopPreview.Dispose();
@@ -1989,6 +2024,7 @@ public sealed class StartupMenu : MonoBehaviour
             trackInfo.Add(outline); new TrackOutlineView(outline).SetTrack(track);
         }
         var eventCar = EventGarageCar(race);
+        var roster = TrackPreview.CreateTimingEntries(eventCar ?? activeCareer.cars[0], activeCareer);
         string chassisInfo = race.playerSkipped ? "Team did not participate" : eventCar != null
             ? $"Chassis {eventCar.chassisNumber} - {eventCar.manufacturer} - {eventCar.ChassisTypeName}"
             : !string.IsNullOrWhiteSpace(race.carChassisNumber)
@@ -2031,7 +2067,11 @@ public sealed class StartupMenu : MonoBehaviour
             if (leader != null)
             {
                 var driverLine = new VisualElement(); driverLine.AddToClassList("results-session-driver-line");
-                driverLine.Add(SettingsFormStyle.Label($"#{leader.carNumber} {leader.driverName ?? leader.carName}", "results-session-driver"));
+                var leaderNumber = SettingsFormStyle.Label($"#{leader.DisplayCarNumber}", "results-session-car-number");
+                if (RaceEventView.ResultCar(leader, roster) is TeamCar leaderCar)
+                    CarNumberFonts.Apply(leaderNumber, leaderCar.PaintStyle);
+                driverLine.Add(leaderNumber);
+                driverLine.Add(SettingsFormStyle.Label(leader.driverName ?? leader.carName, "results-session-driver"));
                 if (session.kind != RaceSessionKind.Race)
                 {
                     driverLine.Add(SettingsFormStyle.Label(RaceEventView.LapTime(leader.FastestLap), "results-session-lap-time"));
@@ -2369,6 +2409,16 @@ public sealed class StartupMenu : MonoBehaviour
         }
     }
 
+    internal static void DrawTrashButtonIcon(Button button)
+    {
+        var icon = new VisualElement { pickingMode = PickingMode.Ignore };
+        icon.AddToClassList("track-icon-art");
+        icon.style.width = 22;
+        icon.style.height = 22;
+        button.Add(icon);
+        DrawButtonIcon(button, DrawCareerTrashIcon);
+    }
+
     private static void DrawCareerTrashIcon(Painter2D painter)
     {
         painter.MoveTo(new Vector2(3, 6));
@@ -2432,10 +2482,7 @@ public sealed class StartupMenu : MonoBehaviour
         RefreshDriverLabel(career);
         activeCareer = career;
         careerChanged |= ScenarioMail.RefreshSeriesChangeChoices(career);
-        // Capture legacy result manufacturers before changing the active roster.
-        careerChanged |= career.schedule != null && ChampionshipStandings.MigrateResultIdentities(career.schedule,
-            TrackPreview.CreateTimingEntries(career.cars[0], career));
-        careerChanged |= career.AssignRivalManufacturers(random);
+        careerChanged |= RivalRosterStore.ApplyToCareer(career);
         ApplyCareerCarModels(career);
         careerChanged |= career.MigrateSponsorship();
         DisplayEmployees(career);
@@ -4194,7 +4241,8 @@ public sealed class StartupMenu : MonoBehaviour
     {
         var added = new List<(TeamCar Car, ComponentRepair Repair, Employee Employee, string PreviousId)>();
         var entries = TrackPreview.CreateTimingEntries(activeCareer.cars[0], activeCareer);
-        foreach (var team in entries.Skip(1).Where(entry => entry.car != null).GroupBy(entry => entry.teamName))
+        foreach (var team in entries.Skip(1).Where(entry => entry.car != null)
+            .GroupBy(entry => TrackPreview.RivalTeamForSlot(entry.car.number)))
         {
             var staff = activeCareer.rivalEmployees.Find(roster => roster.teamName == team.Key)?.employees;
             if (staff == null)
@@ -4294,7 +4342,8 @@ public sealed class StartupMenu : MonoBehaviour
             primaryPaint = "#848482", secondaryPaint = "#848482",
             trimPaint = "#848482", paintScheme = teamCar.paintScheme,
             numberPaint = teamCar.numberPaint, numberFont = teamCar.numberFont,
-            numberBold = teamCar.numberBold, numberItalic = teamCar.numberItalic
+            numberBold = teamCar.numberBold, numberItalic = teamCar.numberItalic,
+            hideRenderedNumber = teamCar.hideRenderedNumber
         };
         RestoreNewChassisConfiguration();
         newChassisDraft.Initialize(new System.Random());
@@ -5004,12 +5053,14 @@ public sealed class StartupMenu : MonoBehaviour
             {
                 var entry = entries[i];
                 if (i > 0 && entry.points != entries[i - 1].points) rank = i + 1;
-                AddStandingsRow(rows, rank.ToString(), number ? entry.number.ToString() : "", entry.name,
+                var row = AddStandingsRow(rows, rank.ToString(), number ? entry.numberText : "", entry.name,
                     entry.points == 0 ? "-" : entry.points.ToString(), entry.player, entry.wins.ToString(),
                     driverStats ? entry.top5.ToString() : null, driverStats ? entry.top10.ToString() : null);
-                var row = rows.contentContainer.ElementAt(rows.contentContainer.childCount - 1);
-                if (!number) row.Q(className: "standings-car-number").style.display = DisplayStyle.None;
-                row.tooltip = entry.name + (number ? " - Car #" + entry.number : "") + ": " + entry.points + " points, " + entry.wins + " wins";
+                var carNumber = row.Q<Label>(className: "standings-car-number");
+                if (!number) carNumber.style.display = DisplayStyle.None;
+                else if (roster.FirstOrDefault(result => result.carNumber == entry.number && result.playerEntry == entry.player)?.car is TeamCar car)
+                    CarNumberFonts.Apply(carNumber, car.PaintStyle);
+                row.tooltip = entry.name + (number ? " - Car #" + entry.numberText : "") + ": " + entry.points + " points, " + entry.wins + " wins";
             }
             rows.schedule.Execute(() => rows.scrollOffset = scroll);
         }
@@ -5019,7 +5070,7 @@ public sealed class StartupMenu : MonoBehaviour
     {
         string playerTeam = activeCareer.teamName;
         var roster = TrackPreview.CreateTimingEntries(activeCareer.cars[0], activeCareer);
-        var rivalNumbers = roster.Skip(1).ToDictionary(car => (car.teamName, car.driverName), car => car.carNumber);
+        var rivalNumbers = roster.Skip(1).ToDictionary(car => car.ownerEntryId, car => car.carNumber);
         var totals = roster.Skip(1).ToDictionary(car => (Number: car.carNumber, Team: car.teamName, IsPlayer: false), _ => 0L);
         foreach (var car in activeCareer.cars)
             totals[(car.number, playerTeam, true)] = 0;
@@ -5036,8 +5087,14 @@ public sealed class StartupMenu : MonoBehaviour
                 {
                     bool isPlayer = race.IsPlayerResult(result);
                     int number = result.carNumber;
-                    if (!isPlayer && rivalNumbers.TryGetValue((result.teamName, result.driverName), out int rivalNumber))
-                        number = rivalNumber;
+                    if (!isPlayer)
+                    {
+                        if (!string.IsNullOrEmpty(result.ownerEntryId) && rivalNumbers.TryGetValue(result.ownerEntryId, out int rivalNumber))
+                            number = rivalNumber;
+                        else if (roster.Skip(1).FirstOrDefault(entry => entry.teamName == result.teamName &&
+                            (entry.driverName == result.driverName || entry.driver?.OriginalName == result.driverName)) is SessionCarResult rival)
+                            number = rival.carNumber;
+                    }
 
                     var car = (Number: number, Team: isPlayer ? playerTeam : result.teamName, IsPlayer: isPlayer);
                     if (car.Number > 0 && !string.IsNullOrWhiteSpace(car.Team))
@@ -5050,7 +5107,7 @@ public sealed class StartupMenu : MonoBehaviour
             .ThenBy(car => car.Key.Number).ThenBy(car => car.Key.Team, System.StringComparer.OrdinalIgnoreCase).ToList();
     }
 
-    private static void AddStandingsRow(VisualElement rows, string position, string carNumber, string team, string points,
+    private static VisualElement AddStandingsRow(VisualElement rows, string position, string carNumber, string team, string points,
         bool player, string wins = null, string top5 = null, string top10 = null)
     {
         var row = new VisualElement();
@@ -5065,6 +5122,7 @@ public sealed class StartupMenu : MonoBehaviour
         if (top10 != null) AddCell(top10, "standings-top-ten");
         AddCell(points, "standings-points");
         rows.Add(row);
+        return row;
 
         void AddCell(string text, string column)
         {
@@ -6270,7 +6328,7 @@ public sealed class StartupMenu : MonoBehaviour
         {
             cell.Row.userData = result;
             cell.Row.EnableInClassList("timing-player", carIndex == 0);
-            cell.Car.text = result.carNumber.ToString();
+            cell.Car.text = result.DisplayCarNumber;
             trackPreview.StyleScoringNumber(cell.Car, carIndex);
             cell.Driver.tooltip = result.driverName?.Trim() ?? string.Empty;
             cell.Driver.text = scoringDriverNames.TryGetValue(result, out string displayName)

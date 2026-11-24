@@ -663,7 +663,7 @@ internal sealed class PracticeRunChart : VisualElement
         return row;
     }
 
-    private static Toggle CreatePillSwitch(string label, bool value)
+    internal static Toggle CreatePillSwitch(string label, bool value)
     {
         var toggle = new Toggle { text = label, value = value };
         toggle.style.minHeight = 24;

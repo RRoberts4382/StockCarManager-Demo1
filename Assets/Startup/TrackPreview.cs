@@ -63,7 +63,7 @@ public sealed partial class TrackPreview : MonoBehaviour
     private readonly List<Texture2D> carPaintTextures = new List<Texture2D>();
     private readonly List<Mesh> roadMeshes = new List<Mesh>();
     private Mesh preferredLineMesh;
-    internal const int CarCount = 24;
+    internal const int CarCount = 40;
     private readonly Transform[] cars = new Transform[CarCount];
     private readonly (Color HoodAndTrunk, Color RoofAndSides)[] renderedCarPaint =
         new (Color HoodAndTrunk, Color RoofAndSides)[CarCount];
@@ -156,15 +156,14 @@ public sealed partial class TrackPreview : MonoBehaviour
         Color body = colors.RoofAndSides;
         label.style.backgroundColor = body;
         label.style.borderLeftColor = colors.HoodAndTrunk;
-        label.style.color = paint?.NumberColor is Color32 numberColor ? (Color)numberColor :
-            0.213f * body.r + 0.715f * body.g + 0.072f * body.b > 0.52f ? Color.black : Color.white;
-        var font = CarNumberFonts.Load(paint?.NumberFont, paint?.NumberBold ?? true, paint?.NumberItalic ?? false);
-        if (font != null)
-            label.style.unityFontDefinition = UnityEngine.UIElements.FontDefinition.FromFont(font);
-        bool bold = paint?.NumberBold ?? true;
-        bool italic = paint?.NumberItalic ?? false;
-        label.style.unityFontStyleAndWeight = paint?.NumberFont == "Open Sans" ? FontStyle.Normal :
-            bold ? (italic ? FontStyle.BoldAndItalic : FontStyle.Bold) : (italic ? FontStyle.Italic : FontStyle.Normal);
+        label.style.color = paint?.NumberColor is Color32 numberColor ? (Color)numberColor : CarNumberFonts.ContrastColor(body);
+        CarNumberFonts.Apply(label, paint);
+    }
+
+    internal void StyleMapNumber(UnityEngine.UIElements.Label label, int index)
+    {
+        if (index != 0 && scoringPaint[index] is CarPaintStyle rivalPaint)
+            CarNumberFonts.Apply(label, rivalPaint);
     }
     private TrackPitTraffic pitTraffic;
     private TrackPitTraffic.Car[] trafficCars;
@@ -545,7 +544,7 @@ public sealed partial class TrackPreview : MonoBehaviour
                 return string.Empty;
 
             int index = stages.FreePassCarIndex;
-            return index < 0 ? "No Lucky Dog awarded" : $"Lucky Dog - No. {simulation.Cars[index].carNumber}";
+            return index < 0 ? "No Lucky Dog awarded" : $"Lucky Dog - No. {simulation.Cars[index].DisplayCarNumber}";
         }
     }
 
@@ -778,10 +777,11 @@ public sealed partial class TrackPreview : MonoBehaviour
             scoringPaint[i] = playerPaint;
             int firstPaintTexture = carPaintTextures.Count;
             string visualModelResource = track.CarModelForTrack(modelResource, CarDetailIndex + 1);
+            string numberText = gridNumbers[i] > 99 ? liveryCar?.rivalRaceNumberText : null;
             BuildCar(cars[i], gridNumbers[i],
                 hoodAndTrunkPaint, bodyPaint, glass, rubber, i == 0 ? sponsorNames : null, playerPaint, carPaintTextures.Add,
                 modelResource, carLodLevel: CarDetailIndex + 1,
-                measureHalfWidth: halfWidth => raceCarHalfWidths[i] = halfWidth, visualModelResource: visualModelResource);
+                measureHalfWidth: halfWidth => raceCarHalfWidths[i] = halfWidth, visualModelResource: visualModelResource, numberText: numberText);
             raceWheels[i] = RaceWheelAnimation.Bind(cars[i]);
             if (SupportsCarDetail)
             {
@@ -825,7 +825,7 @@ public sealed partial class TrackPreview : MonoBehaviour
                                 carPaintTextures.Add(texture);
                                 visualTextures.Add(texture);
                             }, modelResource, carLodLevel: level,
-                            measureHalfWidth: halfWidth => raceCarHalfWidths[carIndex] = halfWidth, visualModelResource: resource);
+                            measureHalfWidth: halfWidth => raceCarHalfWidths[carIndex] = halfWidth, visualModelResource: resource, numberText: numberText);
                         currentVisualResource = resource;
                         raceWheels[carIndex] = RaceWheelAnimation.Bind(cars[carIndex]);
                         foreach (Transform child in cars[carIndex])
@@ -1016,7 +1016,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         }
     }
 
-    internal bool TryGetMapCar(int index, out Vector2 position, out int number)
+    internal bool TryGetMapCar(int index, out Vector2 position, out string number)
     {
         position = default;
         number = default;
@@ -1025,7 +1025,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             return false;
 
         position = MapPoint(car.localPosition);
-        number = simulation.Cars[index].carNumber;
+        number = simulation.Cars[index].DisplayCarNumber;
         return true;
     }
 
@@ -1488,11 +1488,12 @@ public sealed partial class TrackPreview : MonoBehaviour
     }
 
     private static readonly System.Collections.Generic.IReadOnlyList<string> RivalTeams = System.Array.AsReadOnly(new[] { "Redline Racing", "Summit Motorsports", "Pioneer Racing", "Blue Ridge Autosport",
-            "Velocity Racing", "Ironwood Motorsports", "Cedar Racing", "Crosswind Racing" });
+            "Velocity Racing", "Ironwood Motorsports", "Cedar Racing", "Crosswind Racing", "Stonebridge Motorsports",
+            "Highline Racing", "Copper Creek Racing", "Oak Valley Motorsports", "Ridgeline Racing" });
 
     internal const int RivalCarsPerTeam = 3;
 
-    private static int[] GridNumbers(int playerNumber, IReadOnlyList<TeamCar> rivals)
+    internal static int[] GridNumbers(int playerNumber, IReadOnlyList<TeamCar> rivals)
     {
         var numbers = new int[CarCount];
         numbers[0] = playerNumber;
@@ -1500,8 +1501,12 @@ public sealed partial class TrackPreview : MonoBehaviour
         // Claim the saved numbers first so a fallback cannot displace another rival's number.
         foreach (var rival in rivals ?? System.Array.Empty<TeamCar>())
         {
-            if (rival.number > 0 && rival.number < numbers.Length && numbers[rival.number] == 0 &&
-                rival.rivalRaceNumber >= 1 && rival.rivalRaceNumber <= 99 && used.Add(rival.rivalRaceNumber))
+            if (rival.number <= 0 || rival.number >= numbers.Length || numbers[rival.number] != 0)
+                continue;
+            // Numbers outside the legacy 1-99 format use a stable timing key per roster slot.
+            if (rival.HasCustomRivalTimingKey)
+                numbers[rival.number] = 100 + rival.number;
+            else if (rival.rivalRaceNumber >= 1 && rival.rivalRaceNumber <= 99 && used.Add(rival.rivalRaceNumber))
                 numbers[rival.number] = rival.rivalRaceNumber;
         }
         for (int slot = 1; slot < numbers.Length; slot++)
@@ -1516,22 +1521,29 @@ public sealed partial class TrackPreview : MonoBehaviour
         return numbers;
     }
 
+    private static readonly string[] RivalDrivers =
+    {
+        "Alex Morgan", "Blake Turner", "Cameron Hayes", "Casey Brooks", "Drew Bennett", "Elliot Reed",
+        "Emerson Grant", "Frankie Brooks", "Harper Lewis", "Jamie Cole", "Jordan Blake", "Kai Foster",
+        "Lane Mitchell", "Logan Shaw", "Morgan Ellis", "Parker Nash", "Quinn Carter", "Reese Walker",
+        "Robin Scott", "Rowan Miller", "Sage Parker", "Taylor West", "Toby Rivers", "Avery Hale",
+        "Bailey Stone", "Carter Wynn", "Dakota Bishop", "Eden Rhodes", "Finley Dawson", "Gray Monroe",
+        "Hayden Banks", "Indigo Pierce", "Jules Sutton", "Kendall Moore", "Lennon Price", "Marley Page",
+        "Nico Bennett", "Oakley Flynn", "Payton Dean"
+    };
+
+    internal static string RivalTeamForSlot(int slot) => RivalTeams[(slot - 1) / RivalCarsPerTeam];
+    internal static string RivalNameForSlot(int slot) => RivalDrivers[slot - 1];
+
     internal static SessionCarResult[] CreateTimingEntries(TeamCar playerCar, Career career)
     {
         var entries = new SessionCarResult[CarCount];
         var numbers = GridNumbers(playerCar.number, career.rivalCars);
-        string[] rivalDrivers =
-        {
-            "Alex Morgan", "Blake Turner", "Cameron Hayes", "Casey Brooks", "Drew Bennett", "Elliot Reed",
-            "Emerson Grant", "Frankie Brooks", "Harper Lewis", "Jamie Cole", "Jordan Blake", "Kai Foster",
-            "Lane Mitchell", "Logan Shaw", "Morgan Ellis", "Parker Nash", "Quinn Carter", "Reese Walker",
-            "Robin Scott", "Rowan Miller", "Sage Parker", "Taylor West", "Toby Rivers"
-        };
         for (int i = 0; i < entries.Length; i++)
         {
-            string teamName = i == 0 ? career.teamName : RivalTeams[(i - 1) / RivalCarsPerTeam];
-            var driver = i == 0 ? career.Driver : career.RivalDriver(teamName, rivalDrivers[i - 1]);
             var car = i == 0 ? playerCar : career.rivalCars.Find(item => item.number == i);
+            string teamName = i == 0 ? career.teamName : car?.rivalTeamName ?? RivalTeamForSlot(i);
+            var driver = i == 0 ? career.Driver : career.RivalDriverForSlot(i);
             var supplier = i == 0 ? career.EngineSupplierFor(car) :
                 car != null && !string.IsNullOrEmpty(career.seriesId)
                     ? career.SeriesRules.SuppliersFor(car.manufacturer).FirstOrDefault() : null;
@@ -1541,11 +1553,13 @@ public sealed partial class TrackPreview : MonoBehaviour
                 enginePowerRating = supplier?.power,
                 engineReliabilityRating = supplier?.reliability,
                 carNumber = numbers[i],
+                carNumberText = numbers[i] > 99 ? car?.rivalRaceNumberText : null,
                 driver = driver,
-                driverName = driver?.FullName ?? (i == 0 ? "Unassigned driver" : rivalDrivers[i - 1]),
+                driverName = driver?.FullName ?? (i == 0 ? "Unassigned driver" : RivalNameForSlot(i)),
                 teamName = teamName,
                 teamPaint = i == 0 ? (career.TeamColors.Secondary, career.TeamColors.Primary) : null,
                 ownerEntryId = i == 0 ? "player" : "rival:" + i,
+                rivalDriverId = i == 0 ? null : car?.rivalDriverId,
                 playerEntry = i == 0,
                 manufacturerRecorded = true,
                 manufacturer = car?.manufacturer ?? CarManufacturer.Chevrolet
@@ -4308,7 +4322,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             int bay = i / 2;
             float x = BristolBayCenterX + (bay + 0.5f - BristolBaysPerRow / 2f) * BristolBayPitch;
             var hauler = Instantiate(model, parkedHaulers.transform, false);
-            hauler.name = entry != null ? $"Hauler No. {entry.carNumber}" : $"Guest hauler {i + 1}";
+            hauler.name = entry != null ? $"Hauler No. {entry.DisplayCarNumber}" : $"Guest hauler {i + 1}";
             hauler.transform.localPosition = new Vector3(x, -0.025f, side * BristolHaulerCenterZ);
             var tractor = hauler.transform.Find("Tractor")?.GetComponent<Renderer>();
             var trailer = hauler.transform.Find("Trailer")?.GetComponent<Renderer>();
@@ -4331,14 +4345,16 @@ public sealed partial class TrackPreview : MonoBehaviour
                 label.transform.localRotation = Quaternion.Euler(90f, facesForward ? 0f : 180f, 0f);
                 var number = label.AddComponent<TextMesh>();
                 number.font = font;
-                number.text = entry.carNumber.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                number.text = entry.DisplayCarNumber;
                 number.anchor = TextAnchor.MiddleCenter;
-                number.fontStyle = FontStyle.Bold;
+                if (i > 0 && entry.car?.PaintStyle is CarPaintStyle paintStyle)
+                    CarNumberFonts.Apply(number, paintStyle);
+                else
+                    number.fontStyle = FontStyle.Bold;
                 number.fontSize = 64;
                 number.characterSize = 0.30f;
-                number.color = 0.213f * roofColor.r + 0.715f * roofColor.g + 0.072f * roofColor.b > 0.52f
-                    ? Color.black : Color.white;
-                label.GetComponent<MeshRenderer>().sharedMaterial = GetCarDecalMaterial(font);
+                number.color = CarNumberFonts.ContrastColor(roofColor);
+                label.GetComponent<MeshRenderer>().sharedMaterial = GetCarDecalMaterial(number.font);
             }
             PaintHauler(hauler.transform, livery, roofColor, paint);
         }
@@ -4637,7 +4653,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             var forward = PitTangent(pitRoute[1], fraction, pitHeights[1], pitHeights[2]);
             var outward = Vector3.Cross(Vector3.up, forward).normalized * pitWallSide;
             var box = Instantiate(model, teamPitBoxes.transform, false);
-            box.name = $"Pit box No. {entry.carNumber}";
+            box.name = $"Pit box No. {entry.DisplayCarNumber}";
             box.transform.localPosition = center;
             var facing = Quaternion.LookRotation(-outward, Vector3.up);
             // Preserve the imported FBX orientation for the upright pit stands.
@@ -4678,8 +4694,8 @@ public sealed partial class TrackPreview : MonoBehaviour
             if (renderers.Length > 0)
                 AddIowaPitWorkArea(box.transform, renderers, facing, entry.carNumber, i, count,
                     workPaint, workConcrete, compact: !detailedWork);
-            AddIowaPitStallSign(teamPitBoxes.transform, entry.carNumber, practiceStallPositions[i], stallCenterline,
-                stallHeading, infield, livery.RoofAndSides, livery.HoodAndTrunk);
+            AddIowaPitStallSign(teamPitBoxes.transform, entry.DisplayCarNumber, practiceStallPositions[i], stallCenterline,
+                stallHeading, infield, livery.RoofAndSides, livery.HoodAndTrunk, i == 0 ? null : entry.car?.PaintStyle);
             foreach (var child in box.GetComponentsInChildren<Transform>(true))
                 child.gameObject.layer = PreviewLayer;
 
@@ -5141,12 +5157,27 @@ public sealed partial class TrackPreview : MonoBehaviour
         Material glass, Material rubber, string[] sponsorNames = null,
         CarPaintStyle? paintStyle = null, System.Action<Texture2D> retainPaint = null, string modelResource = null,
         string carTypeModelResource = null, int? carLodLevel = null, System.Action<float> measureHalfWidth = null,
-        string visualModelResource = null)
+        string visualModelResource = null, string numberText = null)
     {
         string typeResource = carTypeModelResource ?? modelResource;
         var carType = CarTypeDefinition.ForModel(typeResource);
         string visualResource = visualModelResource ?? carType.ModelForLod(typeResource, carLodLevel ?? 5);
-        var model = CreateRaceCarModel(car, hoodAndTrunkPaint, bodyPaint, glass, rubber, visualResource, out float halfWidth);
+        var template = CarPaintTemplate.AcquireAssigned(paintStyle?.Template ?? default);
+        CarPaintTemplateRenderAssets templateAssets = null;
+        if (template != null)
+        {
+            templateAssets = CreateObject("Custom paint assets", car).AddComponent<CarPaintTemplateRenderAssets>();
+            templateAssets.Own(template);
+        }
+        bool useFordAtlas = template?.UsesFordAtlas == true &&
+            visualResource?.StartsWith("FordCupMustang", System.StringComparison.Ordinal) == true;
+        if (useFordAtlas)
+        {
+            bodyPaint.color = Color.white;
+            bodyPaint.SetTexture("_BaseMap", template.FordAtlas);
+        }
+        var model = CreateRaceCarModel(car, hoodAndTrunkPaint, bodyPaint, glass, rubber, visualResource, out float halfWidth,
+            useFordAtlas ? template : null, templateAssets);
         measureHalfWidth?.Invoke(halfWidth);
         if (model == null)
         {
@@ -5158,8 +5189,8 @@ public sealed partial class TrackPreview : MonoBehaviour
             Box("Front tires", car, new Vector3(0f, 0.22f, 0.87f), new Vector3(1.8f, 0.41f, 0.5f), rubber);
             Box("Rear tires", car, new Vector3(0f, 0.22f, -0.87f), new Vector3(1.8f, 0.41f, 0.5f), rubber);
         }
-        bool wrapped = paintStyle.HasValue &&
-            CarPaintStyle.Apply(car, hoodAndTrunkPaint, bodyPaint, paintStyle.Value, retainPaint);
+        bool wrapped = !useFordAtlas && paintStyle.HasValue &&
+            CarPaintStyle.Apply(car, hoodAndTrunkPaint, bodyPaint, paintStyle.Value, retainPaint, template?.Texture);
         var font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         if (font == null)
             return;
@@ -5167,12 +5198,15 @@ public sealed partial class TrackPreview : MonoBehaviour
         var decalMaterial = GetCarDecalMaterial(font);
 
         var modelNodes = model == null ? System.Array.Empty<Transform>() : model.GetComponentsInChildren<Transform>();
-        // Point the bottom of the roof number toward the driver's side (local -X).
-        var roofRotation = Quaternion.AngleAxis(carType.roofNumberPitch, Vector3.right) * Quaternion.Euler(90f, 90f, 0f);
-        AddNumber(carType.roofNumber.Resolve(car, modelNodes), roofRotation, carType.roofNumberScale,
-            carType.roofNumberMaxSize);
-        AddSideNumber(carType.rightNumber, carType.rightNumberYaw);
-        AddSideNumber(carType.leftNumber, carType.leftNumberYaw);
+        if (paintStyle?.HideRenderedNumber != true)
+        {
+            // Point the bottom of the roof number toward the driver's side (local -X).
+            var roofRotation = Quaternion.AngleAxis(carType.roofNumberPitch, Vector3.right) * Quaternion.Euler(90f, 90f, 0f);
+            AddNumber(carType.roofNumber.Resolve(car, modelNodes), roofRotation, carType.roofNumberScale,
+                carType.roofNumberMaxSize);
+            AddSideNumber(carType.rightNumber, carType.rightNumberYaw);
+            AddSideNumber(carType.leftNumber, carType.leftNumberYaw);
+        }
 
         if (sponsorNames?.Length > 0 && !string.IsNullOrEmpty(sponsorNames[0]))
         {
@@ -5213,21 +5247,16 @@ public sealed partial class TrackPreview : MonoBehaviour
             label.transform.localPosition = position;
             label.transform.localRotation = rotation;
             var text = label.AddComponent<TextMesh>();
-            var numberFont = CarNumberFonts.Load(paintStyle?.NumberFont, paintStyle?.NumberBold ?? true, paintStyle?.NumberItalic ?? false) ?? font;
-            text.font = numberFont;
-            text.text = number.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            text.font = font;
+            CarNumberFonts.Apply(text, paintStyle);
+            text.text = numberText ?? number.ToString(System.Globalization.CultureInfo.InvariantCulture);
             text.anchor = TextAnchor.MiddleCenter;
-            bool bold = paintStyle?.NumberBold ?? true;
-            bool italic = paintStyle?.NumberItalic ?? false;
-            text.fontStyle = paintStyle?.NumberFont == "Open Sans" ? FontStyle.Normal :
-                bold ? (italic ? FontStyle.BoldAndItalic : FontStyle.Bold) : (italic ? FontStyle.Italic : FontStyle.Normal);
             text.fontSize = 64;
             text.characterSize = 0.06f * scale;
             Color body = wrapped ? (Color)paintStyle.Value.ColorAt(position, false) : bodyPaint.color;
-            text.color = paintStyle?.NumberColor is Color32 numberColor ? (Color)numberColor :
-                0.213f * body.r + 0.715f * body.g + 0.072f * body.b > 0.52f ? Color.black : Color.white;
+            text.color = paintStyle?.NumberColor is Color32 numberColor ? (Color)numberColor : CarNumberFonts.ContrastColor(body);
             var renderer = label.GetComponent<MeshRenderer>();
-            renderer.sharedMaterial = GetCarDecalMaterial(numberFont);
+            renderer.sharedMaterial = GetCarDecalMaterial(text.font);
             if (maxSize.x > 0f && maxSize.y > 0f)
             {
                 Bounds ink = CarNumberInkBounds(text, renderer.localBounds);
@@ -5304,7 +5333,7 @@ public sealed partial class TrackPreview : MonoBehaviour
     }
 
     private static GameObject CreateRaceCarModel(Transform car, Material accent, Material body, Material glass,
-        Material rubber, string modelResource, out float halfWidth)
+        Material rubber, string modelResource, out float halfWidth, CarPaintTemplate fordTemplate = null, CarPaintTemplateRenderAssets templateAssets = null)
     {
         halfWidth = .9f; // Built-in fallback tire span.
         var asset = string.IsNullOrEmpty(modelResource) ? null : Resources.Load<GameObject>("Startup/" + modelResource);
@@ -5350,6 +5379,14 @@ public sealed partial class TrackPreview : MonoBehaviour
                 else
                     bounds.Encapsulate(point);
                 first = false;
+            }
+
+            if (fordTemplate != null)
+            {
+                if (renderer.name == "Windshield")
+                    MustangTemplatePreview.AddWindshieldBanner(renderer, car, body, fordTemplate.FordBanner, templateAssets.Retain);
+                if (MustangTemplatePreview.Apply(renderer, car, body, templateAssets.Retain))
+                    continue;
             }
 
             var materials = renderer.sharedMaterials;

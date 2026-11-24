@@ -164,7 +164,7 @@ internal static class ChampionshipStandings
 {
     internal sealed class Row
     {
-        public string key, name;
+        public string key, name, numberText;
         public int number;
         public long points;
         public int wins;
@@ -182,11 +182,16 @@ internal static class ChampionshipStandings
         {
             bool isPlayer = race.IsPlayerResult(result);
             var current = isPlayer ? player : roster.FirstOrDefault(entry => !entry.playerEntry &&
-                entry.teamName == result.teamName && entry.driverName == result.driverName) ??
+                entry.ownerEntryId == result.ownerEntryId) ??
+                roster.FirstOrDefault(entry => !entry.playerEntry &&
+                    entry.teamName == result.teamName && (entry.driverName == result.driverName ||
+                        entry.driver?.OriginalName == result.driverName)) ??
                 roster.FirstOrDefault(entry => !entry.playerEntry && entry.teamName == result.teamName && entry.carNumber == result.carNumber);
             if (current == null) continue;
             if (string.IsNullOrEmpty(result.ownerEntryId))
             { result.ownerEntryId = current.ownerEntryId; result.playerEntry = isPlayer; changed = true; }
+            if (!isPlayer && string.IsNullOrEmpty(result.rivalDriverId) && !string.IsNullOrEmpty(current.rivalDriverId))
+            { result.rivalDriverId = current.rivalDriverId; changed = true; }
             if (!result.manufacturerRecorded)
             { result.manufacturer = current.manufacturer; result.manufacturerRecorded = true; changed = true; }
         }
@@ -198,18 +203,25 @@ internal static class ChampionshipStandings
         var drivers = new Dictionary<string, Row>(StringComparer.Ordinal);
         var owners = new Dictionary<string, Row>(StringComparer.Ordinal);
         var makers = new Dictionary<string, Row>(StringComparer.Ordinal);
-        string DriverKey(SessionCarResult r) => r.driverName ?? "Unknown driver";
+        string DriverKey(SessionCarResult r)
+        {
+            if (!r.playerEntry && !string.IsNullOrEmpty(r.rivalDriverId))
+                return r.rivalDriverId;
+            if (!r.playerEntry && r.ownerEntryId?.StartsWith("rival:", StringComparison.Ordinal) == true)
+                return r.ownerEntryId;
+            return r.driverName ?? "Unknown driver";
+        }
         string OwnerKey(SessionCarResult r) => !string.IsNullOrEmpty(r.ownerEntryId) ? r.ownerEntryId : "entry:" + r.teamName + ":" + r.carNumber;
-        Row Ensure(Dictionary<string, Row> table, string key, string name, int number, bool player)
+        Row Ensure(Dictionary<string, Row> table, string key, string name, int number, bool player, string numberText = null)
         {
             if (!table.TryGetValue(key, out var row)) table[key] = row = new Row { key = key };
-            row.name = name; row.number = number; row.player |= player; return row;
+            row.name = name; row.number = number; row.numberText = numberText; row.player |= player; return row;
         }
         foreach (var manufacturer in manufacturers) Ensure(makers, manufacturer.ToString(), manufacturer.ToString(), 0, false);
         foreach (var entry in roster)
         {
-            Ensure(drivers, DriverKey(entry), entry.driverName, entry.carNumber, entry.playerEntry);
-            Ensure(owners, OwnerKey(entry), entry.teamName, entry.carNumber, entry.playerEntry);
+            Ensure(drivers, DriverKey(entry), entry.driverName, entry.carNumber, entry.playerEntry, entry.DisplayCarNumber);
+            Ensure(owners, OwnerKey(entry), entry.teamName, entry.carNumber, entry.playerEntry, entry.DisplayCarNumber);
             Ensure(makers, entry.manufacturer.ToString(), entry.manufacturer.ToString(), 0, entry.playerEntry);
         }
         foreach (var race in schedule.races ?? Enumerable.Empty<ScheduledRace>())
@@ -223,11 +235,17 @@ internal static class ChampionshipStandings
                 // Results from older saves lack identity and manufacturer snapshots.
                 bool player = race.IsPlayerResult(result);
                 var current = player ? roster.FirstOrDefault(entry => entry.playerEntry) :
+                    roster.FirstOrDefault(entry => !entry.playerEntry && entry.ownerEntryId == result.ownerEntryId) ??
                     roster.FirstOrDefault(entry => !entry.playerEntry && entry.teamName == result.teamName && entry.driverName == result.driverName) ??
                     roster.FirstOrDefault(entry => !entry.playerEntry && entry.teamName == result.teamName && entry.carNumber == result.carNumber);
                 string owner = !string.IsNullOrEmpty(result.ownerEntryId) ? result.ownerEntryId : player ? "player" : current != null ? OwnerKey(current) : OwnerKey(result);
-                var driverRow = Ensure(drivers, DriverKey(result), result.driverName, result.carNumber, player);
-                var ownerRow = Ensure(owners, owner, current?.teamName ?? result.teamName, current?.carNumber ?? result.carNumber, player);
+                var currentDriver = player ? null : roster.FirstOrDefault(entry => !entry.playerEntry &&
+                    (!string.IsNullOrEmpty(result.rivalDriverId)
+                        ? entry.rivalDriverId == result.rivalDriverId : entry.ownerEntryId == owner));
+                var driverEntry = currentDriver ?? result;
+                var driverRow = Ensure(drivers, DriverKey(driverEntry), driverEntry.driverName, driverEntry.carNumber, player, driverEntry.DisplayCarNumber);
+                var ownerRow = Ensure(owners, owner, current?.teamName ?? result.teamName, current?.carNumber ?? result.carNumber,
+                    player, (current ?? result).DisplayCarNumber);
                 driverRow.points += result.pointsEarned;
                 ownerRow.points += result.pointsEarned;
                 if (result.position == 1) { driverRow.wins++; ownerRow.wins++; }

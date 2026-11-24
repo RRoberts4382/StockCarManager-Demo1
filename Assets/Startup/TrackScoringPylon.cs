@@ -18,13 +18,29 @@ public sealed partial class TrackPreview
         { 2, 6, 10, 18, 31, 2, 2 }, { 31, 16, 16, 30, 1, 1, 30 },
         { 14, 16, 16, 30, 17, 17, 14 }, { 31, 1, 2, 4, 8, 8, 8 },
         { 14, 17, 17, 14, 17, 17, 14 }, { 14, 17, 17, 15, 1, 1, 14 },
-        { 16, 16, 16, 16, 16, 16, 31 }, { 14, 17, 17, 31, 17, 17, 17 },
-        { 30, 17, 17, 30, 16, 16, 16 }
+        // A-Z, in order after the ten digits.
+        { 14, 17, 17, 31, 17, 17, 17 }, { 30, 17, 17, 30, 17, 17, 30 },
+        { 14, 17, 16, 16, 16, 17, 14 }, { 30, 17, 17, 17, 17, 17, 30 },
+        { 31, 16, 16, 30, 16, 16, 31 }, { 31, 16, 16, 30, 16, 16, 16 },
+        { 14, 17, 16, 23, 17, 17, 15 }, { 17, 17, 17, 31, 17, 17, 17 },
+        { 14, 4, 4, 4, 4, 4, 14 }, { 7, 2, 2, 2, 18, 18, 12 },
+        { 17, 18, 20, 24, 20, 18, 17 }, { 16, 16, 16, 16, 16, 16, 31 },
+        { 17, 27, 21, 21, 17, 17, 17 }, { 17, 25, 21, 19, 17, 17, 17 },
+        { 14, 17, 17, 17, 17, 17, 14 }, { 30, 17, 17, 30, 16, 16, 16 },
+        { 14, 17, 17, 17, 21, 18, 13 }, { 30, 17, 17, 30, 20, 18, 17 },
+        { 15, 16, 16, 14, 1, 1, 30 }, { 31, 4, 4, 4, 4, 4, 4 },
+        { 17, 17, 17, 17, 17, 17, 14 }, { 17, 17, 17, 17, 17, 10, 4 },
+        { 17, 17, 17, 21, 21, 21, 10 }, { 17, 17, 10, 4, 10, 17, 17 },
+        { 17, 17, 10, 4, 4, 4, 4 }, { 31, 1, 2, 4, 8, 16, 31 }
     };
 
     private Texture2D pylonDisplay;
     private Color32[] pylonPixels;
-    private int[] pylonOrder;
+    private string[] pylonOrder;
+    private int[] pylonCarIndices;
+    private TextMesh[,] pylonNumberLabels;
+    private Vector2 pylonNumberCellSize;
+    private Font tracksideNumberFont;
     private int pylonLap = -1;
     private float nextPylonUpdate;
 
@@ -79,8 +95,7 @@ public sealed partial class TrackPreview
         Box("Pylon crown trim", tower, Vector3.up * (crown + .15f), new Vector3(4.66f, .17f, 4.66f), trim);
         Box("Pylon top cap", tower, Vector3.up * (crown + 2.02f), new Vector3(4.75f, .13f, 4.75f), steel);
 
-        pylonOrder = new int[cars.Length];
-        Array.Fill(pylonOrder, -1);
+        CreateScoringOrder(cars.Length);
         pylonLap = -1;
         nextPylonUpdate = 0f;
         int height = (cars.Length + 1) * PylonRowHeight;
@@ -99,6 +114,13 @@ public sealed partial class TrackPreview
         var uv = new Vector2[16];
         var triangles = new int[24];
         var font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        tracksideNumberFont = font;
+        if (font != null)
+        {
+            pylonNumberLabels = new TextMesh[4, cars.Length];
+            pylonNumberCellSize = new Vector2((bodyWidth - .19f) * 24f / PylonDisplayWidth,
+                (displayHeight - .09f) * 14f / height);
+        }
         string venueName = definition.name.ToUpperInvariant();
         int wrap = venueName.LastIndexOf(' ', venueName.Length / 2);
         if (wrap < 0)
@@ -128,6 +150,23 @@ public sealed partial class TrackPreview
 
             if (font == null)
                 continue;
+            float rightEdge = width * (1f - 2f * 112f / PylonDisplayWidth);
+            Quaternion textRotation = rotation * Quaternion.Euler(0f, 180f, 0f);
+            for (int row = 0; row < cars.Length; row++)
+            {
+                float rowHeight = displayCenter + halfHeight * (1f - 2f * (row + 1.5f) * PylonRowHeight / height);
+                var cell = CreateObject("Pylon race number", tower);
+                cell.transform.SetLocalPositionAndRotation(outwards * (bodyWidth * .5f + .022f) +
+                    across * rightEdge + Vector3.up * rowHeight, textRotation);
+                var number = cell.AddComponent<TextMesh>();
+                number.anchor = TextAnchor.MiddleRight;
+                number.alignment = TextAlignment.Right;
+                number.font = font;
+                number.fontSize = 64;
+                number.color = PylonNumber;
+                cell.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
+                pylonNumberLabels[side, row] = number;
+            }
             var nameplate = CreateObject("Pylon track name", tower);
             nameplate.transform.SetLocalPositionAndRotation(outwards * 2.315f + Vector3.up * (crown + 1.08f),
                 rotation * Quaternion.Euler(0f, 180f, 0f));
@@ -158,6 +197,41 @@ public sealed partial class TrackPreview
         UpdateScoringPylon();
     }
 
+    private void CreateScoringOrder(int rows)
+    {
+        pylonOrder = new string[rows];
+        pylonCarIndices = new int[rows];
+        Array.Fill(pylonCarIndices, -1);
+    }
+
+    private CarPaintStyle? TracksideScoringPaint(int row)
+    {
+        int index = pylonCarIndices[row];
+        return index > 0 ? scoringPaint[index] : null;
+    }
+
+    private static void SetTracksideRaceNumber(TextMesh text, string number, CarPaintStyle? paint, Font fallback, Vector2 cellSize)
+    {
+        string digits = number ?? string.Empty;
+        if (text.text == digits)
+            return;
+        text.text = digits;
+        if (digits.Length == 0)
+            return;
+
+        if (paint.HasValue)
+            CarNumberFonts.Apply(text, paint);
+        else
+        {
+            text.font = fallback;
+            text.fontStyle = FontStyle.Bold;
+        }
+        var renderer = text.GetComponent<MeshRenderer>();
+        renderer.sharedMaterial = GetCarDecalMaterial(text.font);
+        Vector3 size = renderer.localBounds.size;
+        float scale = Mathf.Min(cellSize.x / Mathf.Max(.01f, size.x), cellSize.y / Mathf.Max(.01f, size.y));
+        text.transform.localScale = Vector3.one * scale;
+    }
     private void UpdateScoringPylon()
     {
         if (pylonOrder == null || Time.unscaledTime < nextPylonUpdate)
@@ -175,13 +249,16 @@ public sealed partial class TrackPreview
             {
                 if (row >= pylonOrder.Length)
                     break;
-                changed |= pylonOrder[row] != standing.Car.carNumber;
-                pylonOrder[row++] = standing.Car.carNumber;
+                int carIndex = timing.IndexOfCar(standing.Car);
+                changed |= pylonOrder[row] != standing.Car.DisplayCarNumber || pylonCarIndices[row] != carIndex;
+                pylonOrder[row] = standing.Car.DisplayCarNumber;
+                pylonCarIndices[row++] = carIndex;
             }
         for (; row < pylonOrder.Length; row++)
         {
-            changed |= pylonOrder[row] != -1;
-            pylonOrder[row] = -1;
+            changed |= pylonOrder[row] != null;
+            pylonOrder[row] = null;
+            pylonCarIndices[row] = -1;
         }
         if (!changed)
             return;
@@ -195,11 +272,21 @@ public sealed partial class TrackPreview
         Array.Fill(pylonPixels, PylonBackground);
         DrawPylonText("LAP", 14, 2, PylonLap);
         DrawPylonNumber(lap, 112, 2, PylonLap);
-        for (int i = 0; i < pylonOrder.Length && pylonOrder[i] >= 0; i++)
+        for (int i = 0; i < pylonOrder.Length; i++)
         {
-            int y = (i + 1) * PylonRowHeight + 2;
-            DrawPylonNumber(i + 1, 40, y, PylonPosition);
-            DrawPylonNumber(pylonOrder[i], 112, y, PylonNumber);
+            var paint = TracksideScoringPaint(i);
+            bool styled = pylonNumberLabels != null && paint.HasValue;
+            if (pylonOrder[i] != null)
+            {
+                int y = (i + 1) * PylonRowHeight + 2;
+                DrawPylonNumber(i + 1, 40, y, PylonPosition);
+                if (!styled)
+                    DrawPylonText(pylonOrder[i], 112 - pylonOrder[i].Length * 12, y, PylonNumber);
+            }
+            if (pylonNumberLabels != null)
+                for (int side = 0; side < pylonNumberLabels.GetLength(0); side++)
+                    SetTracksideRaceNumber(pylonNumberLabels[side, i], styled ? pylonOrder[i] : null,
+                        paint, tracksideNumberFont, pylonNumberCellSize);
         }
         pylonDisplay.SetPixels32(pylonPixels);
         pylonDisplay.Apply();
@@ -215,7 +302,15 @@ public sealed partial class TrackPreview
     {
         for (int i = 0; i < value.Length; i++)
         {
-            int glyph = value[i] switch { 'L' => 10, 'A' => 11, 'P' => 12, _ => value[i] - '0' };
+            char character = value[i];
+            int glyph = character switch
+            {
+                >= '0' and <= '9' => character - '0',
+                >= 'A' and <= 'Z' => character - 'A' + 10,
+                _ => -1
+            };
+            if (glyph < 0)
+                continue;
             for (int row = 0; row < 7; row++)
             for (int column = 0; column < 5; column++)
             {

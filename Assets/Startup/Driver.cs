@@ -59,7 +59,9 @@ internal sealed class Driver
     public long annualSalary;
     public PersonalityTraits personalityTraits = new PersonalityTraits();
 
-    public string FullName => (firstName + " " + lastName).Trim();
+    public string rivalNameOverride;
+    internal string OriginalName => (firstName + " " + lastName).Trim();
+    public string FullName => string.IsNullOrWhiteSpace(rivalNameOverride) ? OriginalName : rivalNameOverride;
 
     public bool EnsureEthnicity()
     {

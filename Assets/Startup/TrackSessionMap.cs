@@ -4,14 +4,14 @@ using UnityEngine.UIElements;
 internal sealed class TrackSessionMap
 {
     private const string ExpandedPreference = "StockCarManager.TrackMapExpanded";
-    private const float MarkerRadius = 8f;
+    private const float MarkerRadius = 10f;
     private const float Padding = 13f;
     private readonly VisualElement container;
     private readonly VisualElement element;
     private readonly Button toggle;
     private bool expanded;
     private readonly Label[] markers = new Label[TrackPreview.CarCount];
-    private readonly int?[] markerNumbers = new int?[TrackPreview.CarCount];
+    private readonly string[] markerNumbers = new string[TrackPreview.CarCount];
     private TrackPreview preview;
     private Vector2[] inside;
     private Vector2[] outside;
@@ -63,6 +63,9 @@ internal sealed class TrackSessionMap
         if (preview == null)
             return;
 
+        for (int i = 0; i < markers.Length; i++)
+            preview.StyleMapNumber(markers[i], i);
+
         preview.GetMapSurface(out inside, out outside, out apron);
         Vector2 min = inside[0];
         Vector2 max = min;
@@ -101,7 +104,7 @@ internal sealed class TrackSessionMap
         for (int i = 0; i < markers.Length; i++)
         {
             var marker = markers[i];
-            bool visible = preview.TryGetMapCar(i, out Vector2 position, out int number);
+            bool visible = preview.TryGetMapCar(i, out Vector2 position, out string number);
             marker.style.display = visible ? DisplayStyle.Flex : DisplayStyle.None;
             if (!visible)
                 continue;
@@ -111,7 +114,8 @@ internal sealed class TrackSessionMap
             if (markerNumbers[i] != number)
             {
                 markerNumbers[i] = number;
-                marker.text = number.ToString();
+                marker.text = number;
+                marker.style.fontSize = number.Length switch { 4 => 6, 3 => 8, _ => StyleKeyword.Null };
             }
         }
     }

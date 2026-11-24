@@ -11,8 +11,8 @@ public sealed partial class TrackPreview
     private IowaStandSignal iowaOfficialFlag;
     private IowaStandSignal iowaPendingFlag;
     private IowaStandSignal iowaDisplayedFlag;
-    private uint iowaFlagSeenMask;
-    private uint iowaFlagRemainingMask;
+    private ulong iowaFlagSeenMask;
+    private ulong iowaFlagRemainingMask;
     private float iowaFlagWaveSeconds;
     private float iowaFlagLowerAt = -1f;
 
@@ -51,7 +51,7 @@ public sealed partial class TrackPreview
             if (signal != IowaStandSignal.None)
                 for (int i = 0; i < cars.Length; i++)
                     if (IsIowaFlagRecipient(i))
-                        iowaFlagRemainingMask |= 1u << i;
+                        iowaFlagRemainingMask |= 1UL << i;
         }
 
         if (iowaPendingFlag == IowaStandSignal.None && iowaDisplayedFlag == IowaStandSignal.None)
@@ -65,7 +65,7 @@ public sealed partial class TrackPreview
             raceStart.State == SessionTrackState.Pacing;
         for (int i = 0; i < cars.Length; i++)
         {
-            uint car = 1u << i;
+            ulong car = 1UL << i;
             if ((iowaFlagRemainingMask & car) == 0)
                 continue;
 

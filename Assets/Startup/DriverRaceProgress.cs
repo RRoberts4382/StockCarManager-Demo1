@@ -20,7 +20,7 @@ internal static class DriverRaceProgress
                 continue;
 
             var driver = result.driver ?? (!race.playerSkipped && result.carNumber == race.carNumber
-                ? career.Driver : career.RivalDriver(result.teamName, result.driverName));
+                ? career.Driver : career.RivalDriver(result.teamName, result.driverName, result.rivalDriverId));
             if (driver == null || !previous.TryAdd(driver, driver.TrackXp(category)))
                 continue;
 

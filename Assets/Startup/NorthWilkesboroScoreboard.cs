@@ -44,6 +44,7 @@ public sealed partial class TrackPreview
         var font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         if (font == null)
             return;
+        tracksideNumberFont = font;
 
         var board = CreateObject("North Wilkesboro live scoreboard numbers", transform).transform;
         northWilkesboroScoreboard = new TextMesh[cells.Length];
@@ -82,8 +83,7 @@ public sealed partial class TrackPreview
         }
         if (pylonOrder == null)
         {
-            pylonOrder = new int[Mathf.Max(cars.Length, NorthWilkesboroLeaderboardPositions)];
-            Array.Fill(pylonOrder, -1);
+            CreateScoringOrder(Mathf.Max(cars.Length, NorthWilkesboroLeaderboardPositions));
         }
         UpdateScoringPylon();
         DisplayNorthWilkesboroScoreboard();
@@ -111,7 +111,7 @@ public sealed partial class TrackPreview
     {
         northWilkesboroScoreboard[0].text = Mathf.Max(0, pylonLap).ToString(CultureInfo.InvariantCulture);
         for (int i = 0; i < NorthWilkesboroLeaderboardPositions; i++)
-            northWilkesboroScoreboard[i + 1].text = pylonOrder[i] >= 0
-                ? pylonOrder[i].ToString(CultureInfo.InvariantCulture) : string.Empty;
+            SetTracksideRaceNumber(northWilkesboroScoreboard[i + 1], pylonOrder[i], TracksideScoringPaint(i),
+                tracksideNumberFont, new Vector2(1.18f * .84f, 1.12f * .90f));
     }
 }

@@ -16,6 +16,8 @@ internal sealed class PracticeWear
 internal sealed class DriverContact
 {
     public int carNumber;
+    public string carNumberText;
+    internal string DisplayCarNumber => carNumberText ?? carNumber.ToString(System.Globalization.CultureInfo.InvariantCulture);
     public string driverName;
     public string teamName;
     public int driverAge;
@@ -119,9 +121,12 @@ internal sealed class SessionCarResult
     [NonSerialized] public double InstantSpeed;
     public string carName = string.Empty;
     public int carNumber;
+    public string carNumberText;
+    internal string DisplayCarNumber => carNumberText ?? carNumber.ToString(System.Globalization.CultureInfo.InvariantCulture);
     public string driverName;
     public string teamName;
     public string ownerEntryId;
+    public string rivalDriverId;
     public bool playerEntry;
     public bool manufacturerRecorded;
     public CarManufacturer manufacturer;
@@ -563,6 +568,7 @@ internal sealed class RaceSessionRun
             player.contacts.Add(new DriverContact
             {
                 carNumber = rival.carNumber,
+                carNumberText = rival.carNumberText,
                 driverName = rival.driverName,
                 teamName = rival.teamName,
                 driverAge = rival.driver?.age ?? 0,

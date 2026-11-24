@@ -95,7 +95,8 @@ internal sealed class GameSettings
 
     public VisualElement ScreenView { get; } = new VisualElement();
 
-    public GameSettings(VisualElement root, Action applyDisplay, Action close, Func<string, string, string, CarManufacturer, EngineSupplier, string> saveTeamColors)
+    public GameSettings(VisualElement root, Action applyDisplay, Action close,
+        Func<string, string, string, CarManufacturer, EngineSupplier, string> saveTeamColors, Action<Button> openRivals)
     {
         this.root = root;
         this.applyDisplay = applyDisplay;
@@ -299,6 +300,11 @@ internal sealed class GameSettings
         footer.AddToClassList("settings-footer");
         status.AddToClassList("settings-status");
         footer.Add(status);
+        var rivals = SettingsFormStyle.Tab("Rivals", null);
+        rivals.tooltip = "Edit the shared rival roster for each racing series.";
+        rivals.clicked += () => openRivals(rivals);
+        navigation.Add(rivals);
+
         var backButton = SettingsFormStyle.Button("Back", null);
         footer.Add(backButton);
         revertButton = SettingsFormStyle.Button("Revert", () =>

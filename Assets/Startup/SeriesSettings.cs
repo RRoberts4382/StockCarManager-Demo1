@@ -593,20 +593,34 @@ internal sealed class SeriesSettings
     {
         var rules = draft.Rules;
         var branding = Group("Series logo");
-        var texture = SeriesSettingsStore.LoadArtwork(rules.logo);
-        if (texture != null)
+        var preview = new Image { scaleMode = ScaleMode.ScaleToFit, pickingMode = PickingMode.Ignore };
+        preview.AddToClassList("settings-logo");
+        branding.Add(preview);
+        RefreshLogo();
+        ArtworkField(branding, "Logo", rules.logo, path =>
         {
-            var preview = new Image { image = texture, scaleMode = ScaleMode.ScaleToFit, pickingMode = PickingMode.Ignore };
-            preview.AddToClassList("settings-logo");
-            branding.Add(preview);
-        }
-        ArtworkField(branding, "Logo", rules.logo, x => rules.logo = x);
+            rules.logo = path;
+            RefreshLogo();
+        }, rules.UsesCarsTourArtworkDefaults ? "zMAX CARS Tour logo" : null);
 
         var backgrounds = Group("Team backgrounds");
-        foreach (var (view, label) in Backgrounds)
+        var columns = new[] { backgrounds, backgrounds };
+        if (rules.UsesCarsTourArtworkDefaults)
         {
+            var grid = new VisualElement { style = { flexDirection = FlexDirection.Row } };
+            backgrounds.Add(grid);
+            for (int index = 0; index < columns.Length; index++)
+            {
+                columns[index] = new VisualElement { style = { flexGrow = 1, flexBasis = 0, minWidth = 0 } };
+                grid.Add(columns[index]);
+            }
+        }
+
+        for (int index = 0; index < Backgrounds.Length; index++)
+        {
+            var (view, label) = Backgrounds[index];
             var item = rules.teamBackgrounds.FirstOrDefault(background => background.view == view);
-            ArtworkField(backgrounds, label, item?.image, path =>
+            ArtworkField(columns[index % columns.Length], label, item?.image, path =>
             {
                 if (item == null)
                 {
@@ -614,29 +628,40 @@ internal sealed class SeriesSettings
                     rules.teamBackgrounds = rules.teamBackgrounds.Append(item).ToArray();
                 }
                 item.image = path;
-            });
+            }, rules.DefaultBackgroundLabel(view));
+        }
+
+        void RefreshLogo()
+        {
+            if (Path.IsPathRooted(rules.ArtworkLogo ?? string.Empty))
+                return;
+            preview.image = rules.Logo;
+            preview.style.display = preview.image == null ? DisplayStyle.None : DisplayStyle.Flex;
         }
     }
 
-    private void ArtworkField(VisualElement parent, string label, string path, Action<string> set)
+    private void ArtworkField(VisualElement parent, string label, string path, Action<string> set, string defaultName = null)
     {
         var row = Row(parent);
-        var field = SettingsFormStyle.Field(new TextField(label) { isReadOnly = true }, ArtworkName(path), _ => {});
+        var field = SettingsFormStyle.Field(new TextField(label) { isReadOnly = true }, DisplayName(path), _ => {});
         field.AddToClassList("settings-field-art");
-        field.tooltip = path;
+        field.tooltip = string.IsNullOrWhiteSpace(path) ? defaultName : path;
         var showError = SettingsFormStyle.InlineError(field);
-        showError(string.IsNullOrWhiteSpace(path) ? "Choose an image." : null);
+        showError(string.IsNullOrWhiteSpace(path) && defaultName == null ? "Choose an image." : null);
         row.Add(field);
+
+        string DisplayName(string image) => string.IsNullOrWhiteSpace(image) && defaultName != null
+            ? "Default: " + defaultName : ArtworkName(image);
 
         void SetArtwork(string next)
         {
             set(next);
-            field.SetValueWithoutNotify(ArtworkName(next));
-            field.tooltip = next;
-            showError(string.IsNullOrWhiteSpace(next) ? "Choose an image." : null);
+            field.SetValueWithoutNotify(DisplayName(next));
+            field.tooltip = string.IsNullOrWhiteSpace(next) ? defaultName : next;
+            showError(string.IsNullOrWhiteSpace(next) && defaultName == null ? "Choose an image." : null);
             Changed();
         }
-        row.Add(SettingsFormStyle.Button("Browse…", () =>
+        var browse = SettingsFormStyle.Button("Browse…", () =>
         {
             try
             {
@@ -648,8 +673,12 @@ internal sealed class SeriesSettings
             {
                 SetStatus(ex.Message, error: true);
             }
-        }));
-        row.Add(SettingsFormStyle.Button("Clear", () => SetArtwork(string.Empty)));
+        });
+        browse.tooltip = "Choose an image for " + label + ".";
+        row.Add(browse);
+        var clear = SettingsFormStyle.Button(defaultName == null ? "Clear" : "Default", () => SetArtwork(string.Empty));
+        clear.tooltip = defaultName == null ? "Remove the selected image." : "Restore the built-in " + label + " artwork.";
+        row.Add(clear);
     }
 
     private static string ArtworkName(string path)
@@ -835,8 +864,8 @@ internal sealed class SeriesSettings
             MinimumError(rules.minimumSponsorshipPerRace, rules.maximumSponsorshipPerRace) != null ||
             rules.eventCosts.Any(cost => SettingsFormStyle.TextError(cost.name) != null || NonnegativeError(cost.amount) != null))
             invalid.Add(3);
-        if (string.IsNullOrWhiteSpace(rules.logo) || Backgrounds.Any(page =>
-            string.IsNullOrWhiteSpace(rules.BackgroundFor(page.View))))
+        if (string.IsNullOrWhiteSpace(rules.ArtworkLogo) || Backgrounds.Any(page =>
+            rules.DefaultBackgroundLabel(page.View) == null && string.IsNullOrWhiteSpace(rules.BackgroundFor(page.View))))
             invalid.Add(4);
         return invalid;
     }

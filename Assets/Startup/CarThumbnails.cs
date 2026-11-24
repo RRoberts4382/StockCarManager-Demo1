@@ -9,6 +9,7 @@ internal sealed class CarThumbnails : IDisposable
     internal static readonly Color32 BackgroundColor = new Color32(31, 39, 48, 255);
     private readonly int width;
     private readonly bool highQuality;
+    private readonly bool tighterOrbit;
     private readonly Dictionary<string, (string Livery, RenderTexture Image)> images = new();
     private Camera orbitCamera;
     private RenderTexture orbitImage;
@@ -18,18 +19,21 @@ internal sealed class CarThumbnails : IDisposable
 
     public CarThumbnails(int width = 256) : this(width, highQuality: false) { }
 
-    public static CarThumbnails CreateLargePreview() => new CarThumbnails(2560, highQuality: true);
+    public static CarThumbnails CreateLargePreview(bool tighterOrbit = false) =>
+        new CarThumbnails(2560, highQuality: true, tighterOrbit: tighterOrbit);
 
-    private CarThumbnails(int width, bool highQuality)
+    private CarThumbnails(int width, bool highQuality, bool tighterOrbit = false)
     {
         this.width = width;
         this.highQuality = highQuality;
+        this.tighterOrbit = tighterOrbit;
     }
 
     public RenderTexture Get(TeamCar car, string[] sponsorNames, CarPaintStyle? preview = null, bool overhead = false, string cacheScope = null,
-        bool transparentBackground = false, bool retainOrbitScene = true, int? displayNumber = null, TrackDefinition track = null)
+        bool transparentBackground = false, bool retainOrbitScene = true, int? displayNumber = null, TrackDefinition track = null, string displayNumberText = null)
     {
         int number = displayNumber ?? car.number;
+        string numberText = displayNumberText ?? car.rivalRaceNumberText;
         string key = car.chassisNumber ?? number.ToString();
         if (cacheScope != null)
             key = cacheScope + "|" + key;
@@ -40,7 +44,7 @@ internal sealed class CarThumbnails : IDisposable
         string highestModel = track?.CarModelForTrack(car.modelResource) ??
             CarTypeDefinition.ForModel(car.modelResource).ModelForLod(car.modelResource, 5);
         var livery = preview ?? car.PaintStyle;
-        string liveryKey = $"{car.modelResource}|{highestModel}|{number}|{livery.Scheme}|{livery.Primary}|{livery.Secondary}|{livery.Trim}|{livery.HasTrim}|{livery.NumberColor}|{livery.NumberFont}|{livery.NumberBold}|{livery.NumberItalic}|{string.Join("|", sponsorNames)}";
+        string liveryKey = $"{car.modelResource}|{highestModel}|{number}|{numberText}|{livery.Scheme}|{livery.Primary}|{livery.Secondary}|{livery.Trim}|{livery.HasTrim}|{livery.NumberColor}|{livery.NumberFont}|{livery.NumberBold}|{livery.NumberItalic}|{livery.HideRenderedNumber}|{livery.Template.asset}|{string.Join("|", sponsorNames)}";
         if (images.TryGetValue(key, out var cached))
         {
             if (cached.Livery == liveryKey)
@@ -85,7 +89,7 @@ internal sealed class CarThumbnails : IDisposable
 
             TrackPreview.BuildCar(root.transform, number, Paint(livery.Primary), Paint(livery.Secondary),
                 Paint(new Color32(43, 66, 87, 255)), Paint(new Color32(24, 25, 30, 255)), sponsorNames, livery, paintTextures.Add,
-                car.modelResource, visualModelResource: highestModel);
+                car.modelResource, visualModelResource: highestModel, numberText: numberText);
             foreach (var child in root.GetComponentsInChildren<Transform>())
                 child.gameObject.layer = Layer;
 
@@ -238,6 +242,12 @@ internal sealed class CarThumbnails : IDisposable
 
     private void PositionOrbitCamera(Camera camera)
     {
+        if (tighterOrbit)
+        {
+            // Keep the elevated view wide enough for the car's full footprint as it rotates.
+            float angle = pitch * Mathf.Deg2Rad;
+            camera.orthographicSize = Mathf.Max(1.02f, 1.64f * Mathf.Sin(angle) + .50f * Mathf.Cos(angle) + .08f);
+        }
         var target = new Vector3(0f, 0.5f, 0f);
         camera.transform.localPosition = target + Quaternion.Euler(-pitch, yaw, 0f) * (Vector3.forward * 6.3f);
         camera.transform.localRotation = Quaternion.LookRotation(target - camera.transform.localPosition);

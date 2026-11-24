@@ -964,7 +964,7 @@ internal sealed class RaceEventView
             bool hasTime = times?.Count > 0;
             var cells = new List<string>
             {
-                result.position.ToString(), "", result.carNumber > 0 ? result.carNumber.ToString() : "—",
+                result.position.ToString(), "", result.carNumber > 0 ? result.DisplayCarNumber : "—",
                 result.driverName ?? result.carName, result.teamName ?? "—", (times?.Count ?? 0).ToString()
             };
             if (!isRace)
@@ -980,12 +980,7 @@ internal sealed class RaceEventView
                 cells.Add(result.winnings > 0 ? RaceFinances.Dollars(result.winnings) : "—");
                 cells.Add(result.pointsEarned.ToString());
             }
-            var rosterEntry = roster.FirstOrDefault(entry =>
-                entry.teamName == result.teamName &&
-                ((!string.IsNullOrEmpty(result.ownerEntryId) && entry.ownerEntryId == result.ownerEntryId) ||
-                 entry.driverName == result.driverName)) ??
-                roster.FirstOrDefault(entry => entry.carNumber == result.carNumber && entry.teamName == result.teamName);
-            var car = result.car ?? rosterEntry?.car;
+            var car = ResultCar(result, roster);
             var manufacturer = result.manufacturerRecorded ? result.manufacturer : car?.manufacturer ?? CarManufacturer.Chevrolet;
             string model = rules == null ? car?.modelResource : rules.ModelFor(manufacturer);
             if (car == null || car.manufacturer != manufacturer || car.modelResource != model)
@@ -996,8 +991,10 @@ internal sealed class RaceEventView
                 car = preview;
             }
             var image = thumbnails.Get(car, Array.Empty<string>(), cacheScope: result.teamName ?? "result",
-                transparentBackground: true, displayNumber: result.carNumber, track: resultTrack);
+                transparentBackground: true, displayNumber: result.carNumber, track: resultTrack, displayNumberText: result.DisplayCarNumber);
             var row = ResultRow(false, cells, image, lapColumns: !isRace);
+            if (result.carNumber > 0)
+                CarNumberFonts.Apply(row.Q<Label>(className: "results-car-number"), car.PaintStyle);
             if (!string.IsNullOrEmpty(result.mechanicalFailure))
                 row.tooltip = result.mechanicalFailure;
             bool player = career != null && roster.FirstOrDefault()?.carNumber == result.carNumber;
@@ -1005,6 +1002,18 @@ internal sealed class RaceEventView
             rows.Add(row);
         }
         return grid;
+    }
+
+    internal static TeamCar ResultCar(SessionCarResult result, IReadOnlyList<SessionCarResult> roster)
+    {
+        if (result.car != null)
+            return result.car;
+        var entry = roster.FirstOrDefault(item =>
+            item.teamName == result.teamName &&
+            ((!string.IsNullOrEmpty(result.ownerEntryId) && item.ownerEntryId == result.ownerEntryId) ||
+             item.driverName == result.driverName)) ??
+            roster.FirstOrDefault(item => item.carNumber == result.carNumber && item.teamName == result.teamName);
+        return entry?.car;
     }
 
     private static VisualElement ResultRow(bool header, IReadOnlyList<string> values, Texture carImage = null, bool lapColumns = false)
