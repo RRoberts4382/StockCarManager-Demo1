@@ -15,6 +15,7 @@ internal sealed class CarTypeDefinition
     public string roadCourseLeftModel;
     public string roadCourseRightModel;
     public CarTrackModelLods[] trackModelLods = Array.Empty<CarTrackModelLods>();
+    public string fullDetailInteriorModel;
     public string cockpitStyle;
     public bool darkDashboardDials;
     public float steeringWheelRatio = 14f;
@@ -53,6 +54,15 @@ internal sealed class CarTypeDefinition
     {
         var chain = trackModelLods?.FirstOrDefault(entry => entry != null && entry.model == variant);
         return SelectLod(variant, chain?.lodModels, level);
+    }
+
+    internal string InteriorForVisualModel(string family, string visual)
+    {
+        if (string.IsNullOrEmpty(visual))
+            return null;
+        if (visual == ModelForLod(family, 5))
+            return fullDetailInteriorModel;
+        return trackModelLods?.FirstOrDefault(entry => entry != null && entry.model == visual)?.fullDetailInteriorModel;
     }
 
     private static string SelectLod(string fallback, string[] candidates, int level)
@@ -104,6 +114,7 @@ internal sealed class CarTrackModelLods
 {
     public string model;
     public string[] lodModels;
+    public string fullDetailInteriorModel;
 }
 
 [Serializable]

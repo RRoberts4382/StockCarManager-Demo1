@@ -25,6 +25,7 @@ internal static class CarTypeSettingsStore
             // LODs are bundled assets, not editable car type settings.
             definition.lodModels = defaults.lodModels;
             definition.trackModelLods = defaults.trackModelLods;
+            definition.fullDetailInteriorModel = defaults.fullDetailInteriorModel;
             if (model == "TourModified" && definition.displayName == "Tour Modified Detailed")
                 definition.displayName = "Tour Modified";
             string error = Validate(definition);

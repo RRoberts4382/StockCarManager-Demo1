@@ -1,0 +1,98 @@
+{
+  "displayName": "2026 Chevrolet Camaro Cup",
+  "superspeedwayModel": "ChevroletCupCamaroSuperspeedway",
+  "shortTrackModel": "ChevroletCupCamaroShortTrack",
+  "roadCourseLeftModel": "ChevroletCupCamaroRoadLeft",
+  "roadCourseRightModel": "ChevroletCupCamaroRoadRight",
+  "inCarCamera": {
+    "anchor": "DriverEye",
+    "position": {
+      "x": -0.295,
+      "y": 0.656,
+      "z": 0.141
+    }
+  },
+  "rearviewCamera": {
+    "x": 0,
+    "y": 0.85,
+    "z": -1.52
+  },
+  "roofNumber": {
+    "anchor": "RoofNumber",
+    "position": {
+      "x": 0,
+      "y": 0.76,
+      "z": 0.0
+    }
+  },
+  "leftNumber": {
+    "anchor": "LeftNumber",
+    "position": {
+      "x": -0.58,
+      "y": 0.38,
+      "z": 0.05
+    }
+  },
+  "rightNumber": {
+    "anchor": "RightNumber",
+    "position": {
+      "x": 0.58,
+      "y": 0.38,
+      "z": 0.05
+    }
+  },
+  "lodModels": [
+    "ChevroletCupCamaroLOD1",
+    "ChevroletCupCamaroLOD2",
+    "ChevroletCupCamaroLOD3",
+    "ChevroletCupCamaroLOD4",
+    "ChevroletCupCamaro"
+  ],
+  "trackModelLods": [
+    {
+      "model": "ChevroletCupCamaroSuperspeedway",
+      "lodModels": [
+        "ChevroletCupCamaroSuperspeedwayLOD1",
+        "ChevroletCupCamaroSuperspeedwayLOD2",
+        "ChevroletCupCamaroSuperspeedwayLOD3",
+        "ChevroletCupCamaroSuperspeedwayLOD4",
+        "ChevroletCupCamaroSuperspeedway"
+      ],
+      "fullDetailInteriorModel": "ChevroletCupCamaroInterior"
+    },
+    {
+      "model": "ChevroletCupCamaroShortTrack",
+      "lodModels": [
+        "ChevroletCupCamaroShortTrackLOD1",
+        "ChevroletCupCamaroShortTrackLOD2",
+        "ChevroletCupCamaroShortTrackLOD3",
+        "ChevroletCupCamaroShortTrackLOD4",
+        "ChevroletCupCamaroShortTrack"
+      ],
+      "fullDetailInteriorModel": "ChevroletCupCamaroInterior"
+    },
+    {
+      "model": "ChevroletCupCamaroRoadLeft",
+      "lodModels": [
+        "ChevroletCupCamaroRoadLeftLOD1",
+        "ChevroletCupCamaroRoadLeftLOD2",
+        "ChevroletCupCamaroRoadLeftLOD3",
+        "ChevroletCupCamaroRoadLeftLOD4",
+        "ChevroletCupCamaroRoadLeft"
+      ],
+      "fullDetailInteriorModel": "ChevroletCupCamaroInterior"
+    },
+    {
+      "model": "ChevroletCupCamaroRoadRight",
+      "lodModels": [
+        "ChevroletCupCamaroRoadRightLOD1",
+        "ChevroletCupCamaroRoadRightLOD2",
+        "ChevroletCupCamaroRoadRightLOD3",
+        "ChevroletCupCamaroRoadRightLOD4",
+        "ChevroletCupCamaroRoadRight"
+      ],
+      "fullDetailInteriorModel": "ChevroletCupCamaroRoadRightInterior"
+    }
+  ],
+  "fullDetailInteriorModel": "ChevroletCupCamaroInterior"
+}

@@ -3,6 +3,7 @@
   "name": "NASCAR Cup Series",
   "SeriesLevel": 1,
   "manufacturerDefaultModels": [
+    { "manufacturer": 0, "carModel": "ChevroletCupCamaro" },
     { "manufacturer": 1, "carModel": "FordCupMustang" }
   ],
   "manufacturers": [
