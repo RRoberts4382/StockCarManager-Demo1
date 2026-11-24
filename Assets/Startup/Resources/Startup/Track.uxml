@@ -21,10 +21,13 @@
                     <ui:Label name="playerTrackLaps" text="Run laps: 0 / Session laps: 0" class="garage-detail" />
                 </ui:VisualElement>
             </ui:VisualElement>
-            <ui:VisualElement class="track-playback">
-                <ui:Button name="playbackSpeedButton" text="1x &#x25BE;" tooltip="Playback speed" class="track-header-icon playback-speed-button" />
-                <ui:Button name="playSessionButton" text="&#x25B6;" tooltip="Play" class="track-header-icon" />
-                <ui:Button name="pauseSessionButton" text="&#x2161;" tooltip="Pause" class="track-header-icon" />
+            <ui:VisualElement class="track-playback-area">
+                <ui:VisualElement class="track-playback">
+                    <ui:Button name="playbackSpeedButton" text="1x &#x25BE;" tooltip="Playback speed" class="track-header-icon playback-speed-button" />
+                    <ui:Button name="playSessionButton" text="&#x25B6;" tooltip="Play" class="track-header-icon" />
+                    <ui:Button name="pauseSessionButton" text="&#x2161;" tooltip="Pause" class="track-header-icon" />
+                </ui:VisualElement>
+                <ui:Label name="cautionReasonLabel" class="track-caution-reason" picking-mode="Ignore" style="display: none;" />
             </ui:VisualElement>
             <ui:VisualElement class="track-header-right">
                 <ui:Button name="returnToGarageButton" class="track-header-icon" tooltip="Leave and end the current session">

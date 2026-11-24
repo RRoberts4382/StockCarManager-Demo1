@@ -21,6 +21,15 @@ internal sealed class TrackDraft
     private const float MaximumLineGap = 15f * TrackDefinition.MetersPerFoot;
     private const float FullLineAlignment = TrackDefinition.MetersPerFoot;
     private const float LineContactTolerance = .05f;
+    private const float NaturalVariationStartSpeed = 45f * MphToMetersPerSecond;
+    private const float NaturalVariationFullSpeed = 85f * MphToMetersPerSecond;
+    private const float PacingVariationStartSpeed = 20f * MphToMetersPerSecond;
+    private const float PacingVariationFullSpeed = 65f * MphToMetersPerSecond;
+    private const float NaturalLaneAmplitude = .15f;
+    private const float RearTurbulenceAmplitude = .08f;
+    private const float SideTurbulenceAmplitude = .05f;
+    private const float SideTurbulenceReach = 27f;
+    private const float SideTurbulenceWidth = 4.8f;
     private const float CloseFollowSpeed = 120f * MphToMetersPerSecond;
     internal const float CloseFollowAlignment = .6f;
     private const float JoinRange = 120f * TrackDefinition.MetersPerFoot;
@@ -31,12 +40,15 @@ internal sealed class TrackDraft
     private readonly int[] lineAhead;
     private readonly int[] lineBehind;
     private readonly float[] lineLinkWeight;
+    private readonly float[] carsInLine;
+    private readonly float[] carsAheadInLine;
     private readonly bool[] active;
     private readonly bool[] inLine;
     private readonly int[] closeFollowLeaders;
     private readonly float[] bumpIntent;
     private readonly BumpDecision[] bumpDecisions;
     private readonly System.Random bumpRandom = new System.Random(27099);
+    private float laneVariationTime;
 
     private struct BumpDecision
     {
@@ -53,6 +65,11 @@ internal sealed class TrackDraft
         lineAhead = new int[count];
         lineBehind = new int[count];
         lineLinkWeight = new float[count];
+        carsInLine = new float[count];
+        carsAheadInLine = new float[count];
+        LaneOffsets = new float[count];
+        AppliedLaneOffsets = new float[count];
+        ApronEdgeAllowance = new float[count];
         active = new bool[count];
         inLine = new bool[count];
         closeFollowLeaders = new int[count];
@@ -65,6 +82,9 @@ internal sealed class TrackDraft
     public bool[] InLine => inLine;
     public int[] CloseFollowLeaders => closeFollowLeaders;
     public float[] BumpIntent => bumpIntent;
+    public float[] LaneOffsets { get; }
+    public float[] AppliedLaneOffsets { get; }
+    public float[] ApronEdgeAllowance { get; }
 
     public void ClearSpeed()
     {
@@ -122,11 +142,7 @@ internal sealed class TrackDraft
                     {
                         nearestLineAhead = centerDistance;
                         lineAhead[i] = j;
-                        float gapWeight = Mathf.SmoothStep(1f, 0f,
-                            Mathf.InverseLerp(FullLineGap, MaximumLineGap, separation));
-                        float alignmentWeight = Mathf.SmoothStep(1f, 0f,
-                            Mathf.InverseLerp(FullLineAlignment, Alignment, lateral));
-                        lineLinkWeight[i] = gapWeight * alignmentWeight;
+                        lineLinkWeight[i] = LineLinkWeight(separation, lateral);
                     }
                     else if (gap < 0f && centerDistance < nearestLineBehind)
                     {
@@ -173,13 +189,88 @@ internal sealed class TrackDraft
 
         for (int i = 0; i < speedStrength.Length; i++)
         {
+            carsInLine[i] = LinkedCarCount(i, out carsAheadInLine[i]);
             float maximumMph = MaximumLineBonusMph * speedStrength[i];
             // A pair or trio keeps its existing draft. Additional cars contribute
             // progressively less as the line nears the cap.
-            float headroom = 1f - Mathf.Clamp01((LinkedCarCount(i) - 2f) / LineBonusSaturationCount);
+            float headroom = 1f - Mathf.Clamp01((carsInLine[i] - 2f) / LineBonusSaturationCount);
             float targetMph = maximumMph * (1f - headroom * headroom);
             lineBoost[i] = MoveBoost(lineBoost[i], targetMph, maximumMph, scale, seconds);
         }
+    }
+
+    public void ClearLaneVariation()
+    {
+        System.Array.Clear(LaneOffsets, 0, LaneOffsets.Length);
+        System.Array.Clear(AppliedLaneOffsets, 0, AppliedLaneOffsets.Length);
+        System.Array.Clear(ApronEdgeAllowance, 0, ApronEdgeAllowance.Length);
+    }
+
+    public void UpdateLaneVariation(float lapLength, float seconds, float[] distances, float[] lanes,
+        float[] speeds, bool[] eligible, bool plate, bool pacing = false)
+    {
+        laneVariationTime += seconds;
+        float response = 1f - Mathf.Exp(-seconds / 1.2f);
+        float startSpeed = pacing ? PacingVariationStartSpeed : NaturalVariationStartSpeed;
+        float fullSpeed = pacing ? PacingVariationFullSpeed : NaturalVariationFullSpeed;
+        bool turbulence = plate && !pacing;
+        for (int i = 0; i < LaneOffsets.Length; i++)
+        {
+            float offset = 0f;
+            if (eligible[i] && speeds[i] > startSpeed)
+            {
+                float naturalExposure = pacing ? 1f : 0f;
+                float sideExposure = 0f;
+                for (int j = 0; !pacing && j < LaneOffsets.Length; j++)
+                {
+                    if (i == j || !eligible[j] || speeds[j] <= startSpeed)
+                        continue;
+
+                    float distance = Mathf.Abs(TrackGap(lapLength, distances[i], distances[j]));
+                    float lateral = Mathf.Abs(lanes[j] - lanes[i]);
+                    float separation = distance - VehicleCollision001.ContactLength;
+                    if (separation >= -LineContactTolerance && separation < MaximumLineGap && lateral < Alignment)
+                        naturalExposure = Mathf.Max(naturalExposure, LineLinkWeight(separation, lateral));
+
+                    // Cars alongside can be well outside the forward wake and
+                    // overlap longitudinally. Use the strongest nearby line.
+                    if (turbulence && carsInLine[j] > 0f && distance < SideTurbulenceReach &&
+                        lateral > 1.15f && lateral < SideTurbulenceWidth)
+                    {
+                        float nearSide = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(1.15f, 1.8f, lateral));
+                        float farSide = Mathf.SmoothStep(1f, 0f, Mathf.InverseLerp(2.7f, SideTurbulenceWidth, lateral));
+                        float longitudinal = Mathf.SmoothStep(1f, 0f, Mathf.InverseLerp(8f, SideTurbulenceReach, distance));
+                        float lineStrength = Mathf.Clamp01(carsInLine[j] / 7f) * speedStrength[j];
+                        sideExposure = Mathf.Max(sideExposure, nearSide * farSide * longitudinal * lineStrength);
+                    }
+                }
+
+                // Separate phases and periods give each driver a gradual change in line.
+                float phase = i * 2.399963f;
+                float naturalSpeed = Mathf.SmoothStep(0f, 1f,
+                    Mathf.InverseLerp(startSpeed, fullSpeed, speeds[i]));
+                offset = NaturalLaneAmplitude * naturalExposure * naturalSpeed *
+                    Mathf.Sin(laneVariationTime * (.20f + .017f * (i % 5)) + phase);
+                if (turbulence)
+                {
+                    float rearExposure = Mathf.SmoothStep(0f, 1f, (carsAheadInLine[i] - 1f) / 7f);
+                    float rear = RearTurbulenceAmplitude * rearExposure * Mathf.Sin(laneVariationTime * .31f + phase * 1.7f);
+                    float side = SideTurbulenceAmplitude * sideExposure * Mathf.Sin(laneVariationTime * .27f + phase * 2.3f);
+                    offset += (rear + side) * speedStrength[i];
+                }
+            }
+
+            float cap = VehicleCollision001.ContactWidth * .75f;
+            float next = Mathf.Lerp(LaneOffsets[i], Mathf.Clamp(offset, -cap, cap), response);
+            LaneOffsets[i] = offset == 0f && Mathf.Abs(next) < .0001f ? 0f : next;
+        }
+    }
+
+    private static float LineLinkWeight(float separation, float lateral)
+    {
+        float gap = Mathf.SmoothStep(1f, 0f, Mathf.InverseLerp(FullLineGap, MaximumLineGap, separation));
+        float alignment = Mathf.SmoothStep(1f, 0f, Mathf.InverseLerp(FullLineAlignment, Alignment, lateral));
+        return gap * alignment;
     }
 
     private static float WakeWeight(float separation, float lateral, float range, float farHalfWidth, float speedStrength)
@@ -189,7 +280,7 @@ internal sealed class TrackDraft
         return Mathf.SmoothStep(1f, 0f, distanceFraction) * Mathf.SmoothStep(1f, 0f, lateral / halfWidth) * speedStrength;
     }
 
-    private float LinkedCarCount(int index)
+    private float LinkedCarCount(int index, out float aheadCount)
     {
         // Require each pair to agree on its nearest neighbor. A weak link reduces
         // the contribution of every car beyond it.
@@ -200,7 +291,10 @@ internal sealed class TrackDraft
         while (ahead >= 0 && lineBehind[ahead] == car)
         {
             if (ahead == index)
+            {
+                aheadCount = count;
                 return count;
+            }
 
             weight *= lineLinkWeight[car];
             count += weight;
@@ -208,6 +302,7 @@ internal sealed class TrackDraft
             ahead = lineAhead[car];
         }
 
+        aheadCount = count;
         weight = 1f;
         car = index;
         int behind = lineBehind[car];

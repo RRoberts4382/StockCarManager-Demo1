@@ -253,6 +253,8 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
     private const float DraftFollowBumperClearance = .35f;
     private const float PlateDraftBumperClearance = .12f;
     private const float DraftGapResponse = 1.8f;
+    private const float DraftLateralSpeed = .075f;
+    private const float LaneVariationContactDepth = .02f;
 
     public void AvoidTraffic(float lapLength, float inside, float seconds, bool allowPassing,
         float[] distances, float[] widths, bool[] onTrack, float[] lanes, float[] targets,
@@ -267,7 +269,7 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
         float[] distances, float[] widths, bool[] onTrack, float[] lanes, float[] targets,
         float[] currentSpeeds, float[] speeds, float brakingLimit, bool[] draftLine, bool respondToTraffic, float[] brakingFactors,
         float[] paceSpeeds = null, float[] startLanes = null, float[] startLaneSpeeds = null,
-        int[] draftLeaders = null, float[] draftBumpIntent = null, bool plate = false)
+        int[] draftLeaders = null, float[] draftBumpIntent = null, bool plate = false, TrackDraft laneDraft = null)
     {
         const float carLength = VehicleCollision001.ContactLength;
         const float carWidth = VehicleCollision001.ContactWidth;
@@ -286,7 +288,11 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
             if (control.HasLane && Mathf.Abs(lane - control.LastLane) > .001f)
                 control = default;
             if (!onTrack[i] || speeds[i] <= 0f)
+            {
+                if (laneDraft != null)
+                    laneDraft.AppliedLaneOffsets[i] = 0f;
                 continue;
+            }
 
             float aggression = Risk(i);
             float comfortMargin = Mathf.Lerp(.4f, .02f, aggression);
@@ -294,9 +300,15 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
             float rearClearance = carLength + Mathf.Lerp(3f * TrackDefinition.MetersPerFoot, .08f, aggression);
             float anticipation = Mathf.Lerp(1f, .2f, aggression);
             float target = targets[i];
+            bool canVaryLane = laneDraft != null && stabilizeLane?[i] == true;
             if (!respondToTraffic)
             {
-                lanes[i] = StepTowardPreferredLane(i, lanes[i], target, seconds);
+                float heldOffset = canVaryLane ? laneDraft.AppliedLaneOffsets[i] : 0f;
+                lanes[i] = StepTowardPreferredLane(i, lane, target + heldOffset, seconds);
+                if (canVaryLane)
+                    ApplyLaneVariation(i, lapLength, seconds, distances, widths, onTrack, lanes, currentSpeeds, laneDraft, startLanes);
+                else if (laneDraft != null)
+                    laneDraft.AppliedLaneOffsets[i] = 0f;
                 continue;
             }
 
@@ -406,9 +418,14 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
             }
 
             bool followingPreferred = target == targets[i] && !holdingPass && !followingLeader;
+            bool allowVariation = canVaryLane && !holdingPass && !control.ReturningToLine;
+            float appliedOffset = allowVariation ? laneDraft.AppliedLaneOffsets[i] : 0f;
+            // Follow the existing offset on the preferred path. When holding the
+            // current lane in traffic, that lane already includes the offset.
+            float drivingTarget = followingLeader || draftLine?[i] == true ? target : target + appliedOffset;
             float next = followingPreferred && !control.ReturningToLine
-                ? StepTowardPreferredLane(i, lane, target, seconds)
-                : Mathf.MoveTowards(lane, target, MaximumLateralSpeed * seconds);
+                ? StepTowardPreferredLane(i, lane, drivingTarget, seconds)
+                : Mathf.MoveTowards(lane, drivingTarget, MaximumLateralSpeed * seconds);
             bool nearTraffic = false;
             if (stabilize && next != lane)
             {
@@ -435,6 +452,11 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
             bool safe = LaneClear(next, carSpacing, followingPreferred);
             if (safe)
                 lanes[i] = next;
+
+            if (allowVariation)
+                ApplyLaneVariation(i, lapLength, seconds, distances, widths, onTrack, lanes, currentSpeeds, laneDraft, startLanes);
+            else if (laneDraft != null)
+                laneDraft.AppliedLaneOffsets[i] = 0f;
 
             if (stabilize)
             {
@@ -595,6 +617,53 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
             if (!changed)
                 break;
         }
+    }
+
+    internal static void ApplyLaneVariation(int index, float lapLength, float seconds, float[] distances,
+        float[] widths, bool[] onTrack, float[] lanes, float[] currentSpeeds, TrackDraft draft,
+        float[] startLanes = null)
+    {
+        const float carLength = VehicleCollision001.ContactLength;
+        const float carWidth = VehicleCollision001.ContactWidth;
+        float appliedOffset = draft.AppliedLaneOffsets[index];
+        float desiredOffset = Mathf.MoveTowards(appliedOffset, draft.LaneOffsets[index], DraftLateralSpeed * seconds);
+        float movement = desiredOffset - appliedOffset;
+        if (movement == 0f)
+            return;
+
+        float lane = lanes[index];
+        float direction = Mathf.Sign(movement);
+        float requestedLane = lane + movement;
+        float limit = Mathf.Max(0f, widths[index] * .5f - carWidth * .5f) +
+            Mathf.Max(0f, direction * draft.ApronEdgeAllowance[index]);
+        float room = limit - direction * lane;
+        for (int other = 0; other < lanes.Length && room > 0f; other++)
+        {
+            if (other == index || !onTrack[other])
+                continue;
+
+            float side = direction * (lanes[other] - lane);
+            if (side <= 0f)
+                continue;
+
+            float gap = Mathf.Repeat(distances[other] - distances[index] + lapLength * .5f, lapLength) - lapLength * .5f;
+            float futureGap = gap + (currentSpeeds[other] - currentSpeeds[index]) * seconds;
+            if (Mathf.Min(gap, futureGap) >= carLength || Mathf.Max(gap, futureGap) <= -carLength)
+                continue;
+
+            // Permit a shallow side rub. The normal swept collision resolver
+            // separates the cars and determines the impact severity.
+            float startSide = direction * ((startLanes?[other] ?? lanes[other]) - lane);
+            if (startSide > 0f)
+                side = Mathf.Min(side, startSide);
+            room = Mathf.Min(room, side - (carWidth - LaneVariationContactDepth));
+        }
+
+        // A car already touching a boundary or another car can still move away.
+        float actualMovement = direction * Mathf.Min(Mathf.Abs(movement), Mathf.Max(0f, room));
+        float candidate = lane + actualMovement;
+        draft.AppliedLaneOffsets[index] = candidate == requestedLane ? desiredOffset : appliedOffset + actualMovement;
+        lanes[index] = candidate;
     }
 
     private static float LateralComfortClearance(float comfortMargin, float gap, float side, float speed,

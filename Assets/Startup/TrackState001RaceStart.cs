@@ -5,6 +5,8 @@ internal sealed class TrackState001RaceStart
 {
     private const double OpeningDelay = 5.0;
     private const float PaceSpeed = 32f;
+    private const float FormationPositionVariation = .55f;
+    private const float VariationFadeDistance = 120f;
     private readonly TrackPitTraffic pit;
     private readonly int[] slots;
     private readonly float rowSpacing;
@@ -13,10 +15,14 @@ internal sealed class TrackState001RaceStart
     private readonly float greenAt;
     private readonly float parkingDistance;
     private readonly float firstRowOffset;
+    private readonly float positionVariation;
     private float progress;
     private float fieldLead;
     private float paceLead;
     private float flashTime;
+    private float previousProgress;
+    private float previousFieldLead;
+    private float previousFlashTime;
     private TrackPitTraffic.Car returningPaceCar;
 
     public SessionTrackState State { get; private set; } = SessionTrackState.TrackClosed;
@@ -38,6 +44,8 @@ internal sealed class TrackState001RaceStart
         this.slots = slots;
         int rows = (slots.Length + 1) / 2;
         rowSpacing = Math.Min(4.5f, pit.RoadLength / (rows + 2));
+        positionVariation = Mathf.Clamp((rowSpacing - VehicleCollision001.ContactLength - .15f) * .5f,
+            0f, FormationPositionVariation);
         firstRowOffset = rowSpacing;
         float lastRowOffset = rowSpacing * rows;
         progress = pit.RoadStart + lastRowOffset + rowSpacing;
@@ -63,9 +71,12 @@ internal sealed class TrackState001RaceStart
 
     public void Advance(float seconds)
     {
+        previousFlashTime = flashTime;
         flashTime += seconds;
         if (State == SessionTrackState.Pacing)
         {
+            previousProgress = progress;
+            previousFieldLead = fieldLead;
             float speed = progress < pit.RouteLength ? Math.Min(PaceSpeed, pit.SpeedLimit) : PaceSpeed;
             progress += speed * seconds;
             paceLead = pit.ExitDistance + progress - pit.RouteLength;
@@ -87,8 +98,30 @@ internal sealed class TrackState001RaceStart
         float distance = progress - firstRowOffset - offset;
         float side = slot % 2 == 0 ? -lane : lane;
         return distance < pit.RouteLength ? (true, distance, side)
-            : (false, fieldLead - offset, side);
+            : (false, fieldLead - offset + FormationVariation(index, distance, fieldLead, flashTime), side);
     }
+
+    internal float PacedMeters(int index, float fallback)
+    {
+        float offset = firstRowOffset + slots[index] / 2 * rowSpacing;
+        float before = previousProgress - offset;
+        if (before < pit.RouteLength)
+            return fallback;
+
+        float previousVariation = FormationVariation(index, before, previousFieldLead, previousFlashTime);
+        float currentVariation = FormationVariation(index, progress - offset, fieldLead, flashTime);
+        return Mathf.Max(0f, fieldLead - previousFieldLead + currentVariation - previousVariation);
+    }
+
+    private float FormationVariation(int index, float distance, float lead, float time)
+    {
+        float leavingPit = Mathf.SmoothStep(0f, 1f, (distance - pit.RouteLength) / VariationFadeDistance);
+        float approachingGreen = Mathf.SmoothStep(0f, 1f, (greenAt - lead) / VariationFadeDistance);
+        return PaceSpeedVariation(index, time, positionVariation) * leavingPit * approachingGreen;
+    }
+
+    internal static float PaceSpeedVariation(int index, float elapsed, float amplitude) =>
+        amplitude * Mathf.Sin(elapsed * (.21f + .014f * (index % 5)) + index * 2.399963f);
 
     public (bool OnPitRoad, float Distance, float ParkingBlend) PacePosition()
     {

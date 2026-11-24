@@ -114,6 +114,7 @@ public sealed class StartupMenu : MonoBehaviour
     private Button playbackSpeedButton;
     private Button pauseSessionButton;
     private Button requestCautionButton;
+    private Label cautionReasonLabel;
     private VisualElement throttleDisplay, brakeDisplay, fuelDisplay;
     private VisualElement throttleFill, brakeFill, fuelFill;
     private Label drivingInputMph, drivingInputRpm, drivingInputGear;
@@ -376,6 +377,7 @@ public sealed class StartupMenu : MonoBehaviour
         playbackSpeedButton.clicked += OpenPlaybackSpeedMenu;
         pauseSessionButton = trackScreen.Q<Button>("pauseSessionButton");
         pauseSessionButton.clicked += PauseSession;
+        cautionReasonLabel = trackScreen.Q<Label>("cautionReasonLabel");
         requestCautionButton = trackScreen.Q<Button>("requestCautionButton");
         requestCautionButton.clicked += CallCaution;
         requestCautionButton.SetEnabled(false);
@@ -6779,6 +6781,16 @@ public sealed class StartupMenu : MonoBehaviour
         snapshotStatus.style.display = DisplayStyle.Flex;
     }
 
+    private void UpdateCautionReason(string reason)
+    {
+        string text = reason ?? string.Empty;
+        if (cautionReasonLabel.text == text)
+            return;
+
+        cautionReasonLabel.text = text;
+        cautionReasonLabel.style.display = text.Length == 0 ? DisplayStyle.None : DisplayStyle.Flex;
+    }
+
     private void UpdateSessionLabel()
     {
         snapshotButton.SetEnabled(trackPreview.CanSaveSnapshot);
@@ -6792,6 +6804,7 @@ public sealed class StartupMenu : MonoBehaviour
         UpdatePlayerPitPanel(run);
         var state = trackPreview.TrackState;
         UpdateTrackFlags(state, trackPreview.OneToGoBeforeGreen);
+        UpdateCautionReason(trackPreview.CautionReason);
         string luckyDog = trackPreview.LuckyDogMessage;
         luckyDogLabel.text = luckyDog;
         luckyDogLabel.style.display = luckyDog.Length == 0 ? DisplayStyle.None : DisplayStyle.Flex;
@@ -7153,6 +7166,7 @@ public sealed class StartupMenu : MonoBehaviour
         }
 
         cycleTrackCameraButton.SetEnabled(trackPreview.Image != null);
+        UpdateCautionReason(trackPreview.CautionReason);
         trackScreen.Q<Label>("selectedTrackName").text = track.Definition.name;
         trackPreview.gameObject.SetActive(true);
         visitGarageButton.style.display = DisplayStyle.None;
@@ -7642,6 +7656,7 @@ public sealed class StartupMenu : MonoBehaviour
         visitGarageButton.SetEnabled(trackPreview.CanVisitGarage);
         visitGarageButton.tooltip = CallToGarageTooltip;
         UpdateTrackFlags(null);
+        UpdateCautionReason(null);
         snapshotStatus.text = string.Empty;
         snapshotStatus.tooltip = null;
         snapshotStatus.style.display = DisplayStyle.None;

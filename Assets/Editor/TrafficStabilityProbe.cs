@@ -428,7 +428,7 @@ public static class TrafficStabilityProbe
                 laneControl, stabilize, LapLength, -1f, Step, true,
                 distances, widths, onTrack, Lanes, Targets,
                 currentSpeeds, stepSpeeds, 8f, DraftLine, true, null, currentSpeeds, startLanes, startLaneSpeeds,
-                null, null, false
+                null, null, false, null
             };
         }
 
