@@ -166,12 +166,31 @@ internal sealed class RaceSessionRun
     internal const float CoastingDeceleration = 1.0f; // About 2.2 mph per second.
     internal float ThrottleInput(int index) => throttleInputs[index];
     internal float BrakeInput(int index) => brakeInputs[index];
-    internal void TrafficBrakeInput(int index, float speed, float seconds, float brakingLimit)
+    internal void TrafficBrakeInput(int index, float speed, float seconds, float brakingLimit, bool drafting = false)
     {
-        throttleInputs[index]=0f; // Called only when traffic reduced the free-running request.
-        float deceleration=(CurrentSpeed(index)-speed)/Math.Max(.0001f,seconds);
-        if(deceleration>CoastingDeceleration+.01f)
-        { throttleInputs[index]=0f; brakeInputs[index]=UnityEngine.Mathf.Clamp01(deceleration/Math.Max(.01f,brakingLimit)); }
+        float current = CurrentSpeed(index);
+        float deceleration = (current - speed) / Math.Max(.0001f, seconds);
+        throttleInputs[index] = 0f;
+        if (deceleration > CoastingDeceleration + .01f)
+        {
+            brakeInputs[index] = UnityEngine.Mathf.Clamp01(deceleration / Math.Max(.01f, brakingLimit));
+        }
+        else if (drafting && speed > 0f && brakeInputs[index] == 0f)
+        {
+            // Steady drafting pace needs partial power. Use the resolved acceleration request
+            // to modulate around half throttle, reaching zero at the coasting rate.
+            float response = deceleration > 0f ? CoastingDeceleration : ReferenceAcceleration(current);
+            throttleInputs[index] = UnityEngine.Mathf.Clamp01(.5f * (1f - deceleration / response));
+        }
+    }
+
+    internal void ApplyDraftBumpSpeedChange(int index, float speedChange)
+    {
+        var car = cars[index];
+        double speed = Math.Max(0d, car.Result.InstantSpeed + speedChange);
+        car.Result.InstantSpeed = speed;
+        car.Transmission.Update(speed * 3600d / TrackDefinition.MetersPerMile);
+        thermalSpeeds[index] = (float)speed;
     }
     private readonly bool[] thermalRacing;
     private readonly float[] previousThermalSpeeds;
@@ -335,7 +354,7 @@ internal sealed class RaceSessionRun
         float peakSpeed = speedModel.UsesLapSpeedProfile ? profile.EstimatePeakSpeed(baseSpeed, forceFactor) : baseSpeed;
         double peakMph = peakSpeed * 3600.0 / TrackDefinition.MetersPerMile;
         if (track.restrictorPlate)
-            peakMph += RestrictorPlateDraft.MaximumDraftBoostMph;
+            peakMph += TrackDraft.MaximumDraftBoostMph;
         return FourSpeedTransmission.RearGearRatioForTopSpeed(peakMph);
     }
 

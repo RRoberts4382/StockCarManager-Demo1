@@ -5,26 +5,48 @@ internal sealed class VehicleCollision001
 {
     internal const float ContactLength = 2.9f;
     internal const float ContactWidth = 1.8f;
+    internal const float DraftBumpMinimumSpeed = 145f * TrackDefinition.MetersPerMile / 3600f;
+    internal const float DraftBumpAlignment = .4f;
+    internal const float DraftBumpMaximumClosingSpeed = 1f;
     private readonly bool[,] touching;
+    private readonly bool[,] gentleBumpContacts;
     private readonly float[] impactDamage;
     private readonly float[] crashImpulse;
+    private readonly float[] draftBumpSpeedChange;
+    private readonly bool[] gaveDraftBump, receivedDraftBump;
 
     public VehicleCollision001(int count)
     {
         touching = new bool[count, count];
+        gentleBumpContacts = new bool[count, count];
         impactDamage = new float[count];
         crashImpulse = new float[count];
+        draftBumpSpeedChange = new float[count];
+        gaveDraftBump = new bool[count];
+        receivedDraftBump = new bool[count];
     }
 
-    public void ClearContacts() => Array.Clear(touching, 0, touching.Length);
+    public void ClearContacts()
+    {
+        Array.Clear(touching, 0, touching.Length);
+        Array.Clear(gentleBumpContacts, 0, gentleBumpContacts.Length);
+    }
 
     public float CrashImpulse(int index) => crashImpulse[index];
 
     public bool HadImpact(int index) => impactDamage[index] > 0f;
 
+    public float DraftBumpSpeedChange(int index) => draftBumpSpeedChange[index];
+    public bool GaveDraftBump(int index) => gaveDraftBump[index];
+    public bool ReceivedDraftBump(int index) => receivedDraftBump[index];
+
     public void Resolve(RaceSessionRun run, float lapLength, float seconds,
-        bool[] onTrack, float[] startDistances, float[] endDistances, float[] startLanes, float[] endLanes, bool wrap = true, float[] startYaw = null, float[] endYaw = null)
+        bool[] onTrack, float[] startDistances, float[] endDistances, float[] startLanes, float[] endLanes,
+        bool wrap = true, float[] startYaw = null, float[] endYaw = null, bool[] draftBumpEligible = null)
     {
+        Array.Clear(draftBumpSpeedChange, 0, draftBumpSpeedChange.Length);
+        Array.Clear(gaveDraftBump, 0, gaveDraftBump.Length);
+        Array.Clear(receivedDraftBump, 0, receivedDraftBump.Length);
         if (seconds <= 0f)
             return;
 
@@ -37,6 +59,7 @@ internal sealed class VehicleCollision001
                 if (!onTrack[first] || !onTrack[second])
                 {
                     touching[first, second] = false;
+                    gentleBumpContacts[first, second] = false;
                     continue;
                 }
 
@@ -66,28 +89,60 @@ internal sealed class VehicleCollision001
                 }
                 else contact = OverlapsDuringStep(gap, longitudinal, ContactLength, ref enter, ref exit) &&
                     OverlapsDuringStep(side, lateral, ContactWidth, ref enter, ref exit);
-                if (!touching[first, second] && contact)
+                bool continuingBump = gentleBumpContacts[first, second];
+                bool gentleBump = false;
+                if (contact && (!touching[first, second] || continuingBump))
                 {
-                    float relativeSpeed = Mathf.Sqrt(longitudinal * longitudinal + lateral * lateral) / seconds;
-                    float damage = Mathf.Clamp(relativeSpeed * 1.2f, 0.5f, 100f);
-                    run.RecordContact(first, second, damage);
-                    // Hard contact breaks traction. Opposite impulses send the cars apart.
-                    if (relativeSpeed >= 8f)
+                    if (draftBumpEligible != null && wrap && !oriented &&
+                        draftBumpEligible[first] && draftBumpEligible[second] &&
+                        Mathf.Abs(gap) >= ContactLength - .05f && gap * (gap + longitudinal) > 0f &&
+                        Mathf.Abs(side) <= DraftBumpAlignment && Mathf.Abs(side + lateral) <= DraftBumpAlignment &&
+                        Mathf.Abs(lateral) <= .55f * seconds)
                     {
-                        float direction = side >= 0f ? 1f : -1f;
-                        float impulse = Mathf.Min(14f, relativeSpeed * 0.6f);
-                        crashImpulse[first] -= direction * impulse;
-                        crashImpulse[second] += direction * impulse;
+                        int leader = gap > 0f ? second : first;
+                        int follower = gap > 0f ? first : second;
+                        float leaderSpeed = run.CurrentSpeed(leader);
+                        float followerSpeed = run.CurrentSpeed(follower);
+                        // Relative travel inferred from float distances can overstate the
+                        // closing speed after many laps, so use the recorded speeds.
+                        float closingSpeed = followerSpeed - leaderSpeed;
+                        gentleBump = leaderSpeed >= DraftBumpMinimumSpeed && followerSpeed >= DraftBumpMinimumSpeed &&
+                            Mathf.Abs(closingSpeed) <= DraftBumpMaximumClosingSpeed &&
+                            (continuingBump || closingSpeed >= .03f);
+                        if (gentleBump && !continuingBump)
+                        {
+                            float transfer = .6f * closingSpeed;
+                            draftBumpSpeedChange[leader] += transfer;
+                            draftBumpSpeedChange[follower] -= transfer;
+                            receivedDraftBump[leader] = true;
+                            gaveDraftBump[follower] = true;
+                        }
                     }
-                    impactDamage[first] += damage;
-                    impactDamage[second] += damage;
+
+                    if (!gentleBump)
+                    {
+                        float relativeSpeed = Mathf.Sqrt(longitudinal * longitudinal + lateral * lateral) / seconds;
+                        float damage = Mathf.Clamp(relativeSpeed * 1.2f, 0.5f, 100f);
+                        run.RecordContact(first, second, damage);
+                        // Hard contact breaks traction. Opposite impulses send the cars apart.
+                        if (relativeSpeed >= 8f)
+                        {
+                            float direction = side >= 0f ? 1f : -1f;
+                            float impulse = Mathf.Min(14f, relativeSpeed * 0.6f);
+                            crashImpulse[first] -= direction * impulse;
+                            crashImpulse[second] += direction * impulse;
+                        }
+                        impactDamage[first] += damage;
+                        impactDamage[second] += damage;
+                    }
                 }
 
-                // Small release margin avoids repeated impact damage from contact projection jitter.
-                float releaseMargin = touching[first, second] || impactDamage[first] > 0f ? .05f : 0f;
+                // Small release margin avoids repeated impacts from contact projection jitter.
+                float releaseMargin = touching[first, second] || gentleBump || impactDamage[first] > 0f ? .05f : 0f;
                 touching[first, second] = oriented
                     ? PitFootprint.Overlaps(gap + longitudinal, side + lateral, endYaw[first], endYaw[second], releaseMargin * .5f)
                     : Mathf.Abs(gap + longitudinal) < ContactLength + releaseMargin && Mathf.Abs(side + lateral) < ContactWidth + releaseMargin;
+                gentleBumpContacts[first, second] = touching[first, second] && (contact ? gentleBump : continuingBump);
             }
         }
 

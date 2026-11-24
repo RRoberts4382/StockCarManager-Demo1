@@ -249,6 +249,10 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
     private const float TrafficClearanceReserve = .04f;
     private const float TrafficResumeClearance = .12f;
     private const float TrafficLateralAcceleration = 10f;
+    private const float DraftFollowMaximumSpeedDifference = 3f;
+    private const float DraftFollowBumperClearance = .35f;
+    private const float PlateDraftBumperClearance = .12f;
+    private const float DraftGapResponse = 1.8f;
 
     public void AvoidTraffic(float lapLength, float inside, float seconds, bool allowPassing,
         float[] distances, float[] widths, bool[] onTrack, float[] lanes, float[] targets,
@@ -262,7 +266,8 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
         float lapLength, float inside, float seconds, bool allowPassing,
         float[] distances, float[] widths, bool[] onTrack, float[] lanes, float[] targets,
         float[] currentSpeeds, float[] speeds, float brakingLimit, bool[] draftLine, bool respondToTraffic, float[] brakingFactors,
-        float[] paceSpeeds = null, float[] startLanes = null, float[] startLaneSpeeds = null)
+        float[] paceSpeeds = null, float[] startLanes = null, float[] startLaneSpeeds = null,
+        int[] draftLeaders = null, float[] draftBumpIntent = null, bool plate = false)
     {
         const float carLength = VehicleCollision001.ContactLength;
         const float carWidth = VehicleCollision001.ContactWidth;
@@ -559,8 +564,27 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
                     float clearance = Mathf.Max(0f, gap - carSpacing);
                     float carBrakingLimit = brakingLimit * (brakingFactors == null ? 1f : brakingFactors[i]);
                     float leaderBrakingLimit = brakingLimit * (brakingFactors == null ? 1f : brakingFactors[j]);
-                    float limit = FollowingSpeedLimit(currentSpeeds[i], speeds[j], clearance,
-                        seconds, carBrakingLimit, leaderBrakingLimit, aggression);
+                    bool closeDraft = false;
+                    float bumpStrength = 0f;
+                    if (allowPassing && draftLeaders?[i] == j && stabilizeLane?[i] != false &&
+                        stabilizeLane?[j] != false && gap > 0f)
+                    {
+                        float startSide = startLanes == null ? side : startLanes[j] - startLanes[i];
+                        float offset = Mathf.Max(Mathf.Abs(startSide), Mathf.Abs(side));
+                        float speedDifference = Mathf.Abs(currentSpeeds[j] - currentSpeeds[i]);
+                        bool steadyLeader = speeds[j] >= currentSpeeds[j] - (RaceSessionRun.CoastingDeceleration + .01f) * seconds;
+                        closeDraft = offset <= TrackDraft.CloseFollowAlignment && speedDifference <= DraftFollowMaximumSpeedDifference &&
+                            steadyLeader;
+                        if (closeDraft && plate &&
+                            offset <= VehicleCollision001.DraftBumpAlignment &&
+                            Mathf.Min(currentSpeeds[i], currentSpeeds[j]) >= VehicleCollision001.DraftBumpMinimumSpeed &&
+                            speedDifference <= VehicleCollision001.DraftBumpMaximumClosingSpeed + .2f)
+                            bumpStrength = draftBumpIntent?[i] ?? 0f;
+                    }
+                    float limit = closeDraft
+                        ? DraftFollowingSpeedLimit(currentSpeeds[i], speeds[j], gap, seconds, carBrakingLimit, bumpStrength, plate)
+                        : FollowingSpeedLimit(currentSpeeds[i], speeds[j], clearance,
+                            seconds, carBrakingLimit, leaderBrakingLimit, aggression);
                     if (speeds[i] > limit)
                     {
                         speeds[i] = limit;
@@ -581,6 +605,20 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
         float convergence = Mathf.Max(longitudinalClosing / 3f, lateralClosing / 1.25f);
         return VehicleCollision001.ContactWidth + Mathf.Lerp(Mathf.Min(comfortMargin, ParallelClearanceMargin),
             comfortMargin, convergence);
+    }
+
+    internal static float DraftFollowingSpeedLimit(float currentSpeed, float leaderNextSpeed, float gap,
+        float seconds, float brakingLimit, float bumpStrength, bool plate = false)
+    {
+        if (seconds <= 0f || brakingLimit <= 0f)
+            return currentSpeed;
+        float bumperClearance = plate
+            ? (bumpStrength > 0f ? -Mathf.Lerp(.03f, .19f, bumpStrength) : PlateDraftBumperClearance)
+            : DraftFollowBumperClearance;
+        // Match a steady leader as the gap closes. The small plate offset permits swept bumper contact.
+        float gapError = gap - VehicleCollision001.ContactLength - bumperClearance;
+        float closingSpeed = Mathf.Clamp(gapError * DraftGapResponse, -1f, 1f);
+        return Mathf.Max(0f, Mathf.Max(leaderNextSpeed + closingSpeed, currentSpeed - brakingLimit * seconds));
     }
 
     internal static float FollowingSpeedLimit(float currentSpeed, float leaderNextSpeed, float clearance,

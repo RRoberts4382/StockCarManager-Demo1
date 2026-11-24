@@ -38,6 +38,9 @@ internal sealed class TrackSnapshot
         public float trackMeters, pitMeters, laneMeters, mph, damage;
         public float throttle, brake;
         public float preferredLaneMeters, preferredLineSpeedFactor;
+        // Draft allowance in the free-running target before the corner profile and other speed limits.
+        public float draftBoostMph;
+        public int draftBumpsGiven, draftBumpsReceived;
         public double fuelGallons;
         public float nextPitEntryMeters;
         // All poses use TrackPreview local space, in meters. Rotation includes banking.
@@ -69,7 +72,7 @@ internal sealed class TrackSnapshot
     [Serializable]
     private sealed class FileData
     {
-        public int formatVersion = 18;
+        public int formatVersion = 20;
         public string poseSpace = "TrackPreview local space (meters)";
         public float centerToRearAxleMeters = RearAxleHeading.CenterToRearAxle;
         public string savedUtc;

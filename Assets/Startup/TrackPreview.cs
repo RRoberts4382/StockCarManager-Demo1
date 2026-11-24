@@ -137,8 +137,11 @@ public sealed partial class TrackPreview : MonoBehaviour
     private System.Func<float, float> racingLine;
     private IVehicleBehaviorModel behaviorModel = VehicleBehaviorModels.Available[0];
     private LapSpeedProfile lapSpeedProfile;
-    private RestrictorPlateDraft draft;
+    private TrackDraft draft;
+    private readonly bool[] draftEligible = new bool[CarCount];
+    private readonly bool[] draftBumpEligible = new bool[CarCount];
     private readonly float[] draftPitApproach = new float[CarCount];
+    private readonly int[] draftBumpsGiven = new int[CarCount], draftBumpsReceived = new int[CarCount];
     private IVehicleSpeedModel speedModel = VehicleSpeedModels.Available[0];
     private CarSimulationContext simulation;
     private readonly float[] baseSpeeds = new float[CarCount];
@@ -1293,9 +1296,10 @@ public sealed partial class TrackPreview : MonoBehaviour
         TrackGrandstandScenery.SetAttendance(grandstandScenery, session.kind, MakeMaterial, roadMeshes, carPaintTextures);
         drivingLanesReady = false;
         System.Array.Clear(trafficLaneControl, 0, trafficLaneControl.Length);
-        draft = definition.restrictorPlate && (simulation.Session.kind == RaceSessionKind.Race ||
-            behaviorModel is VehicleBehavior003 && simulation.Session.kind == RaceSessionKind.Practice)
-            ? new RestrictorPlateDraft(cars.Length) : null;
+        draft = cars.Length > 1 && session.kind is RaceSessionKind.Race or RaceSessionKind.Practice
+            ? new TrackDraft(cars.Length) : null;
+        System.Array.Clear(draftBumpsGiven, 0, draftBumpsGiven.Length);
+        System.Array.Clear(draftBumpsReceived, 0, draftBumpsReceived.Length);
         simulation.Session.garageRuns = new System.Collections.Generic.List<GarageRunReview>();
         simulation.Session.rivalSetupChanges = new System.Collections.Generic.List<RivalSetupChange>();
         simulation.Session.rivalFinalSetupReviewed = false;
@@ -1900,6 +1904,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             !SessionRun.Retired(0) && !crashes[0].Active)
             pitStops.ArmQueuedEntry(0, pitOpen: true, allowEmergencyEntry: true);
         pitTraffic.BeginStep(SessionRun.Elapsed + seconds);
+        UpdateDraftSpeed(seconds);
         for (int i = 0; i < cars.Length; i++)
         {
             trafficPaceSpeeds[i] = 0f;
@@ -2043,6 +2048,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             pitStops.ArmQueuedEntry(0, stages?.CanEnterPits(0, trafficCars[0]) ?? true,
                 allowEmergencyEntry: stages?.IsCaution != true);
         pitTraffic?.BeginStep((SessionRun?.Elapsed ?? previousElapsed) + seconds);
+        UpdateDraftSpeed(seconds);
         for (int i = 0; i < cars.Length; i++)
         {
             trafficPaceSpeeds[i] = 0f;
@@ -2063,8 +2069,6 @@ public sealed partial class TrackPreview : MonoBehaviour
             float preferredLineSpeedFactor = 1f;
             float speed = SessionRun == null ? CarSpeed(i)
                 : SpeedAt(i, trafficCars?[i]?.TrackDistance ?? sessionDistances[i], out preferredLineSpeedFactor);
-            if (DraftingActive)
-                speed += draft.SpeedBoost(i);
             float? paceSpeedCeiling = (definition.id is RichmondTrackId or NorthWilkesboroTrackId) &&
                 stages?.ControlsField == true && trafficCars[i].InPit == false ? speed : null;
             if (stages != null)
@@ -2209,9 +2213,47 @@ public sealed partial class TrackPreview : MonoBehaviour
         return false;
     }
 
-    private bool DraftingActive => TrafficLaneChangesEnabled && draft != null && stages?.ReducedFuelBurn != true &&
-        TrackState != SessionTrackState.Checkered && practice?.State != SessionTrackState.Caution;
+    private bool DraftSpeedActive => draft != null && drivingLanesReady && stages?.ReducedFuelBurn != true &&
+        TrackState is null or SessionTrackState.TrackOpen or SessionTrackState.WhiteFlag;
+
+    private bool PlateDraftLanesActive => definition.restrictorPlate && TrafficLaneChangesEnabled && draft != null &&
+        (simulation.Session.kind == RaceSessionKind.Race || behaviorModel is VehicleBehavior003) &&
+        stages?.ReducedFuelBurn != true && TrackState != SessionTrackState.Checkered &&
+        practice?.State != SessionTrackState.Caution;
+
+    private bool DraftBumpsActive => DraftSpeedActive && definition.restrictorPlate && SessionRun.IsRace &&
+        TrafficLaneChangesEnabled && collisionsEnabled && behaviorModel is VehicleBehavior003 &&
+        !BlendingStartLanes && stages?.ReleasingRestartLanes != true;
+
     private bool BlendingStartLanes => raceReleased && SessionRun.Elapsed < 3f;
+
+    private void UpdateDraftSpeed(float seconds)
+    {
+        if (draft == null)
+            return;
+        if (!DraftSpeedActive)
+        {
+            draft.ClearSpeed();
+            return;
+        }
+
+        for (int i = 0; i < cars.Length; i++)
+        {
+            var traffic = trafficCars?[i];
+            float distance = traffic?.TrackDistance ?? sessionDistances[i];
+            drivingDistances[i] = distance;
+            currentTrafficSpeeds[i] = SessionRun.CurrentSpeed(i);
+            draftPitApproach[i] = traffic == null ? float.PositiveInfinity
+                : Mathf.Min(traffic.NextEntry - distance, distance - traffic.LastExit);
+            draftEligible[i] = cars[i].gameObject.activeSelf && !iowaRecoveredCars[i].HasValue &&
+                !crashes[i].Active && !SessionRun.Retired(i) && SessionRun.FlatTireMask(i) == 0 &&
+                traffic?.InPit != true && traffic?.InGarage != true &&
+                traffic?.ApronEntryActive != true && traffic?.ApronExitActive != true;
+        }
+
+        draft.UpdateSpeed(lapLength, seconds, SessionRun, draftEligible, drivingDistances, drivingLanes,
+            currentTrafficSpeeds, draftPitApproach, definition.restrictorPlate);
+    }
 
     private void AvoidTrackTraffic(float seconds)
     {
@@ -2262,9 +2304,13 @@ public sealed partial class TrackPreview : MonoBehaviour
             TrackState001Stages.PreserveOrder(lapLength, stepSpeeds, seconds, practiceCarAhead, practiceGapAhead,
                 PracticeCarDistance, HoldsPracticePosition);
 
-        if (DraftingActive)
-            draft.Update(lapLength, seconds, SessionRun, onTrack, drivingDistances, drivingWidths, drivingLanes,
+        bool plateDraftLanes = PlateDraftLanesActive;
+        if (plateDraftLanes)
+            draft.UpdatePlateLanes(lapLength, SessionRun, onTrack, drivingDistances, drivingWidths, drivingLanes,
                 targetLanes, currentTrafficSpeeds, draftPitApproach, behaviorModel is VehicleBehavior003);
+        bool allowDraftBumps = DraftBumpsActive;
+        draft?.UpdateBumpIntent(lapLength, seconds, simulation?.Cars, drivingDistances, drivingLanes,
+            currentTrafficSpeeds, allowDraftBumps);
 
         if (!TrafficLaneChangesEnabled)
         {
@@ -2287,7 +2333,7 @@ public sealed partial class TrackPreview : MonoBehaviour
                 for (int i = 0; i < cars.Length; i++)
                 {
                     if (!onTrack[i] || crashes[i].Active || stepSpeeds[i] <= 0f ||
-                        (DraftingActive && draft.InLine[i]))
+                        (plateDraftLanes && draft.InLine[i]))
                         continue;
                     float distance = drivingDistances[i];
                     preferredLineAdvance[i] = SweepingLaneAdvance(i, distance, distance + stepSpeeds[i] * seconds,
@@ -2307,13 +2353,14 @@ public sealed partial class TrackPreview : MonoBehaviour
         bool protectRestartMerge = collisionsEnabled && !TrafficLaneChangesEnabled && stages?.ReleasingRestartLanes == true;
         bool allowPassing = !protectRestartMerge && !practiceYellow && stages?.ReducedFuelBurn != true;
         float brakingLimit = LapSpeedProfile.MaximumBraking(definition);
-        var draftLine = DraftingActive ? draft.InLine : null;
+        var draftLine = plateDraftLanes ? draft.InLine : null;
+        var draftLeaders = DraftSpeedActive && behaviorModel is VehicleBehavior003 ? draft.CloseFollowLeaders : null;
         bool respondToTraffic = TrafficLaneChangesEnabled || protectRestartMerge;
         if (behaviorModel is VehicleBehavior003 trafficBehavior)
             trafficBehavior.AvoidTraffic(trafficLaneControl, stabilizeTrafficLane, lapLength, inside, seconds, allowPassing,
                 drivingDistances, drivingWidths, onTrack, drivingLanes, targetLanes, currentTrafficSpeeds, stepSpeeds,
                 brakingLimit, draftLine, respondToTraffic, trafficBrakingFactors, trafficPaceSpeeds, collisionStartLanes,
-                trafficStartLaneSpeeds);
+                trafficStartLaneSpeeds, draftLeaders, allowDraftBumps ? draft.BumpIntent : null, definition.restrictorPlate);
         else
         {
             System.Array.Clear(trafficLaneControl, 0, trafficLaneControl.Length);
@@ -2371,7 +2418,8 @@ public sealed partial class TrackPreview : MonoBehaviour
         }
         for(int i=0;i<cars.Length;i++)
             if(stepSpeeds[i] < freeRunningSpeeds[i] - .0001f)
-                SessionRun.TrafficBrakeInput(i,stepSpeeds[i],seconds,LapSpeedProfile.MaximumBraking(definition)*trafficBrakingFactors[i]);
+                SessionRun.TrafficBrakeInput(i, stepSpeeds[i], seconds, brakingLimit * trafficBrakingFactors[i],
+                    drafting: draftLeaders != null && draftLeaders[i] >= 0 && trafficCars?[i]?.ApronEntryActive != true);
         drivingLanesReady = true;
     }
 
@@ -2494,11 +2542,17 @@ public sealed partial class TrackPreview : MonoBehaviour
         if (!collisionsEnabled)
             return;
 
+        bool allowDraftBumps = DraftBumpsActive;
         for (int i = 0; i < cars.Length; i++)
         {
             var traffic = trafficCars?[i];
             collisionParticipants[i] &= traffic?.InPit != true && (traffic?.FlatTireLaneBlend ?? 0f) == 0f;
             collisionEndDistances[i] = traffic?.TrackDistance ?? sessionDistances[i];
+            if (allowDraftBumps)
+                draftBumpEligible[i] = collisionParticipants[i] && draftEligible[i] &&
+                    !SessionRun.Finished(i) && traffic?.ApronEntryActive != true && traffic?.ApronExitActive != true &&
+                    (traffic == null || Mathf.Min(traffic.NextEntry - traffic.TrackDistance,
+                        traffic.TrackDistance - traffic.LastExit) > 15f);
             pitParticipants[i] &= traffic?.InPit == true && !traffic.InGarage && !traffic.BackExit;
             backExitParticipants[i] &= traffic?.InPit == true && !traffic.InGarage && traffic.BackExit;
             pitEnd[i] = backExitParticipants[i] ? traffic.ConnectorDistance : traffic?.PitDistance ?? 0f;
@@ -2528,7 +2582,8 @@ public sealed partial class TrackPreview : MonoBehaviour
                 pitStart, pitEnd, pitLaneStart, pitLaneEnd, wrap: false);
         }
         collisions.Resolve(SessionRun, lapLength, seconds, collisionParticipants, drivingDistances,
-            collisionEndDistances, collisionStartLanes, drivingLanes);
+            collisionEndDistances, collisionStartLanes, drivingLanes,
+            draftBumpEligible: allowDraftBumps ? draftBumpEligible : null);
         VehicleCollision001.Separate(lapLength, collisionParticipants, collisionEndDistances, drivingLanes, drivingWidths);
         for (int i=0;i<cars.Length;i++)
         {
@@ -2541,6 +2596,19 @@ public sealed partial class TrackPreview : MonoBehaviour
         }
         for (int i = 0; i < cars.Length; i++)
         {
+            if (allowDraftBumps)
+            {
+                float speedChange = collisions.DraftBumpSpeedChange(i);
+                if (speedChange != 0f)
+                    SessionRun.ApplyDraftBumpSpeedChange(i, speedChange);
+                if (collisions.GaveDraftBump(i))
+                {
+                    draftBumpsGiven[i]++;
+                    draft.FinishBump(i);
+                }
+                if (collisions.ReceivedDraftBump(i))
+                    draftBumpsReceived[i]++;
+            }
             if (collisions.HadImpact(i) || pitCollisions.HadImpact(i) || backExitCollisions?.HadImpact(i) == true)
                 collisionFlashRemaining[i] = CollisionFlashSeconds;
 
@@ -2607,6 +2675,9 @@ public sealed partial class TrackPreview : MonoBehaviour
             {
                 preferredLineSpeedFactor = PreferredLineSpeedFactor(i,distance),
                 preferredLaneMeters = PreferredLaneOffset(i, RoadWidths(distance).x, float.PositiveInfinity, racingLine(distance)),
+                draftBoostMph = DraftSpeedBoost(i, distance) * 3600f / TrackDefinition.MetersPerMile,
+                draftBumpsGiven = draftBumpsGiven[i],
+                draftBumpsReceived = draftBumpsReceived[i],
                 throttle = SessionRun.ThrottleInput(i),
                 brake = SessionRun.BrakeInput(i),
                 number = simulation.Cars[i].carNumber,
@@ -2686,11 +2757,14 @@ public sealed partial class TrackPreview : MonoBehaviour
 
     private float SpeedAt(int index, float distance, out float preferredLineSpeedFactor)
     {
-        float baseSpeed = CarSpeed(index) * SessionRun.SpeedFactor(index);
+        float baseSpeed = CarSpeed(index) * SessionRun.SpeedFactor(index) + DraftSpeedBoost(index, distance);
         float speed = lapSpeedProfile?.SpeedAt(distance, baseSpeed) ?? baseSpeed;
         preferredLineSpeedFactor = PreferredLineSpeedFactor(index, distance);
         return SessionRun.SetupAdjustedSpeed(index, distance, speed) * preferredLineSpeedFactor;
     }
+
+    private float DraftSpeedBoost(int index, float distance) =>
+        DraftSpeedActive && !(lapSpeedProfile?.BrakingLimitAt(distance) > 0f) ? draft.SpeedBoost(index) : 0f;
 
     private float PreferredLineSpeedFactor(int index, float distance)
     {
