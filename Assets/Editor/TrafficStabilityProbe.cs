@@ -72,6 +72,8 @@ public static class TrafficStabilityProbe
         HoldLaneBehindNearlyEqualCarAtGreen();
         RunCloselyAlongsideWithoutBraking();
         HoldPassSideUntilClear();
+        ReturnPartwayAfterPassing();
+        ReleaseStalledInsidePass();
         FollowPreferredLineOnClearTrack();
         ReleasePassToDraftLine();
     }
@@ -247,6 +249,87 @@ public static class TrafficStabilityProbe
             "Traffic stabilization changed the clear-track 006 line advance.");
     }
 
+    private static void ReturnPartwayAfterPassing()
+    {
+        // The pass is longitudinally clear, but another car overlaps alongside
+        // near the requested line. The lane between them is still usable.
+        const float insidePassLane = -5.046f;
+        const float preferred = 3.455f;
+        const float outsideLane = 3.881f;
+        const float pace = 54f;
+        const int blockedTicks = 240;
+        var traffic = new TrafficFixture(insidePassLane, -2.88f, outsideLane);
+        traffic.Targets[0] = preferred;
+        traffic.Targets[1] = traffic.Lanes[1];
+        traffic.Targets[2] = outsideLane;
+        traffic.CommitSubjectPass(1, 1);
+
+        float lastLateralSpeed = 0f;
+        float peakSpeedChange = 0f;
+        float lastSecondStart = insidePassLane;
+        for (int tick = 0; tick < blockedTicks; tick++)
+        {
+            float distance = 120f + pace * tick * Step;
+            traffic.Place(distance, -6f, pace, pace);
+            traffic.PlaceCar(2, distance - 1.744f, pace);
+            float previous = traffic.Lanes[0];
+            traffic.Advance();
+            float lateralSpeed = (traffic.Lanes[0] - previous) / Step;
+            peakSpeedChange = Mathf.Max(peakSpeedChange, Mathf.Abs(lateralSpeed - lastLateralSpeed));
+            lastLateralSpeed = lateralSpeed;
+            if (tick == blockedTicks - 60)
+                lastSecondStart = traffic.Lanes[0];
+            Require(lateralSpeed >= -.001f, $"Bristol #40 reversed during a partial return at tick {tick}.");
+            Require(traffic.SubjectPassSide >= 0, $"Bristol #40 switched to an outside pass while returning at tick {tick}.");
+            Require(traffic.Lanes[2] - traffic.Lanes[0] >= BodyWidth - .001f,
+                $"Bristol #40 crossed the alongside car's body clearance at tick {tick}.");
+        }
+
+        float partialLane = traffic.Lanes[0];
+        Require(partialLane >= outsideLane - BodyWidth - .65f,
+            $"Bristol #40 stopped at {partialLane:F3} m with a safe part of the return lane still open.");
+        Require(partialLane - lastSecondStart < .10f && peakSpeedChange < 1f,
+            $"Bristol #40 failed to settle smoothly near the alongside car (peak lateral speed change {peakSpeedChange:F3} m/s).");
+
+        for (int tick = blockedTicks; tick < blockedTicks + 180; tick++)
+        {
+            float distance = 120f + pace * tick * Step;
+            traffic.Place(distance, -6f, pace, pace);
+            traffic.PlaceCar(2, distance - 8f, pace);
+            traffic.Advance();
+        }
+        Require(Mathf.Abs(traffic.Lanes[0] - preferred) < .02f,
+            "Bristol #40 never finished returning after the alongside car cleared.");
+        Debug.Log($"Bristol #40 returned partway to {partialLane:F3} m while alongside, then reached the preferred line.");
+    }
+
+    private static void ReleaseStalledInsidePass()
+    {
+        // The blocker has moved onto the same inside lane as the committed car.
+        // It is pulling away, but remains inside the old pass-clear distance.
+        const float insidePassLane = -5.046f;
+        const float pace = 54f;
+        const float pullAwaySpeed = .35f;
+        var traffic = new TrafficFixture(insidePassLane, insidePassLane);
+        traffic.Targets[0] = 3.455f;
+        traffic.Targets[1] = insidePassLane;
+        traffic.CommitSubjectPass(1, 1);
+        for (int tick = 0; tick < 240; tick++)
+        {
+            float elapsed = tick * Step;
+            traffic.Place(120f + pace * elapsed, 6.29f + pullAwaySpeed * elapsed, pace, pace + pullAwaySpeed);
+            float previous = traffic.Lanes[0];
+            traffic.Advance();
+            Require(traffic.Lanes[0] >= previous - .0001f,
+                $"Bristol #40 steered back into a stalled inside pass at tick {tick}.");
+            Require(traffic.SubjectPassSide >= 0, $"Bristol #40 switched pass sides while yielding at tick {tick}.");
+        }
+
+        Require(traffic.SubjectPassSide == 0 && traffic.Lanes[0] > insidePassLane + 1.5f,
+            "Bristol #40 stayed committed to an inside pass with a pulling-away blocker and no room to pass.");
+        Debug.Log($"Bristol #40 released its stalled inside pass and moved {traffic.Lanes[0] - insidePassLane:F3} m toward the preferred line.");
+    }
+
     private static void ReleasePassToDraftLine()
     {
         const int approachTicks = 45;
@@ -288,53 +371,84 @@ public static class TrafficStabilityProbe
         private readonly MethodInfo avoidTraffic;
         private readonly Array laneControl;
         private readonly FieldInfo passSide;
+        private readonly FieldInfo passBlocker;
         private readonly object[] arguments;
-        private readonly float[] distances = new float[2];
-        private readonly float[] currentSpeeds = new float[2];
-        private readonly float[] stepSpeeds = new float[2];
-        private readonly float[] startLanes = new float[2];
-        private readonly float[] startLaneSpeeds = new float[2];
+        private readonly float[] distances;
+        private readonly float[] currentSpeeds;
+        private readonly float[] stepSpeeds;
+        private readonly float[] startLanes;
+        private readonly float[] startLaneSpeeds;
         private bool hasSample;
-        internal readonly float[] Targets = new float[2];
-        internal readonly float[] LineAdvance = new float[2];
-        internal readonly bool[] DraftLine = new bool[2];
+        internal readonly float[] Targets;
+        internal readonly float[] LineAdvance;
+        internal readonly bool[] DraftLine;
         internal readonly float[] Lanes;
         internal float SubjectStepSpeed => stepSpeeds[0];
         internal int SubjectPassSide => (int)passSide.GetValue(laneControl.GetValue(0));
 
-        internal TrafficFixture(float subjectLane, float blockerLane)
+        internal TrafficFixture(params float[] lanes)
         {
-            Lanes = new[] { subjectLane, blockerLane };
+            int count = lanes.Length;
+            Lanes = lanes;
+            Targets = new float[count];
+            LineAdvance = new float[count];
+            DraftLine = new bool[count];
+            distances = new float[count];
+            currentSpeeds = new float[count];
+            stepSpeeds = new float[count];
+            startLanes = new float[count];
+            startLaneSpeeds = new float[count];
+            var stabilize = new bool[count];
+            var onTrack = new bool[count];
+            var widths = new float[count];
+            var insideClearances = new float[count];
+            Array.Fill(stabilize, true);
+            Array.Fill(onTrack, true);
+            Array.Fill(widths, RoadWidth);
+            Array.Fill(insideClearances, .75f);
             var assembly = typeof(TrackPreview).Assembly;
             var baseType = assembly.GetType("VehicleBehavior003", true);
             var stateType = baseType.GetNestedType("TrafficLaneControl", BindingFlags.NonPublic);
             Require(stateType != null, "Shared session traffic state was not available to the probe.");
             Type stateArray = stateType.MakeArrayType();
-            laneControl = Array.CreateInstance(stateType, 2);
+            laneControl = Array.CreateInstance(stateType, count);
             passSide = stateType.GetField("PassSide", InternalInstance);
-            Require(passSide != null, "Pass commitment was not available to the probe.");
+            passBlocker = stateType.GetField("PassBlocker", InternalInstance);
+            Require(passSide != null && passBlocker != null, "Pass commitment was not available to the probe.");
             var behaviorType = assembly.GetType("VehicleBehavior006", true);
             behavior = Activator.CreateInstance(behaviorType, true);
             var sweepingType = behaviorType.BaseType;
             sweepingType.GetProperty("PreferredLineAdvance", InternalInstance).SetValue(behavior, LineAdvance);
-            sweepingType.GetProperty("PreferredInsideClearance", InternalInstance).SetValue(behavior, new[] { .75f, .75f });
+            sweepingType.GetProperty("PreferredInsideClearance", InternalInstance).SetValue(behavior, insideClearances);
             avoidTraffic = Array.Find(baseType.GetMethods(InternalInstance), method =>
                 method.Name == "AvoidTraffic" && method.GetParameters()[0].ParameterType == stateArray);
             Require(avoidTraffic != null, "Shared traffic controller overload was not available to the probe.");
             arguments = new object[]
             {
-                laneControl, new[] { true, true }, LapLength, -1f, Step, true,
-                distances, new[] { RoadWidth, RoadWidth }, new[] { true, true }, Lanes, Targets,
+                laneControl, stabilize, LapLength, -1f, Step, true,
+                distances, widths, onTrack, Lanes, Targets,
                 currentSpeeds, stepSpeeds, 8f, DraftLine, true, null, currentSpeeds, startLanes, startLaneSpeeds
             };
         }
 
         internal void Place(float distance, float gap, float subjectSpeed, float blockerSpeed)
         {
-            distances[0] = Mathf.Repeat(distance, LapLength);
-            distances[1] = Mathf.Repeat(distance + gap, LapLength);
-            currentSpeeds[0] = subjectSpeed;
-            currentSpeeds[1] = blockerSpeed;
+            PlaceCar(0, distance, subjectSpeed);
+            PlaceCar(1, distance + gap, blockerSpeed);
+        }
+
+        internal void PlaceCar(int index, float distance, float speed)
+        {
+            distances[index] = Mathf.Repeat(distance, LapLength);
+            currentSpeeds[index] = speed;
+        }
+
+        internal void CommitSubjectPass(int blocker, int side)
+        {
+            object state = laneControl.GetValue(0);
+            passBlocker.SetValue(state, blocker);
+            passSide.SetValue(state, side);
+            laneControl.SetValue(state, 0);
         }
 
         internal void Advance()
