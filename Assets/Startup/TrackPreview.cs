@@ -1757,11 +1757,14 @@ public sealed partial class TrackPreview : MonoBehaviour
         float pacedMeters = raceStart.FormationProgress - beforePacing;
         if (pacedMeters > 0f)
         {
+            bool releasingField = raceStart.State == SessionTrackState.TrackOpen;
             for (int i = 0; i < cars.Length; i++)
             {
                 var grid = raceStart.GridPosition(i, 0f);
                 float travel = raceStart.PacedMeters(i, pacedMeters);
-                SessionRun.RecordTravel(i, travel, travel / SessionStep, grid.Distance,
+                // The green marker can cut this step's travel short without slowing the cars.
+                float speed = releasingField && !grid.OnPitRoad ? TrackState001RaceStart.PaceSpeed : travel / SessionStep;
+                SessionRun.RecordTravel(i, travel, speed, grid.Distance,
                     reducedBurn: true, onTrack: !grid.OnPitRoad);
             }
             UpdateInitialPacingLanes(SessionStep);
@@ -2288,6 +2291,9 @@ public sealed partial class TrackPreview : MonoBehaviour
 
     private bool BlendingStartLanes => raceReleased && SessionRun.Elapsed < 3f;
 
+    private bool IgnorePreferredDrivingLine => definition.restrictorPlate &&
+        (simulation?.Session?.kind is RaceSessionKind.Practice or RaceSessionKind.Race);
+
     private void UpdateDraftSpeed(float seconds)
     {
         if (draft == null)
@@ -2400,7 +2406,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         if (sweeping != null)
         {
             System.Array.Clear(preferredLineAdvance, 0, preferredLineAdvance.Length);
-            if (sweepingLineTracking != null && !practiceYellow && stages?.ControlsField != true)
+            if (sweepingLineTracking != null && !IgnorePreferredDrivingLine && !practiceYellow && stages?.ControlsField != true)
             {
                 for (int i = 0; i < cars.Length; i++)
                 {
@@ -3237,12 +3243,22 @@ public sealed partial class TrackPreview : MonoBehaviour
             : Mathf.Min(traffic.NextEntry - distance, distance - traffic.LastExit);
         float mergeLength = definition.id == BristolTrackId ? 60f : 15f;
         bool useBottomLaneMerge = traffic != null && UsesBottomLanePitMerge(definition.id) && toMerge < mergeLength;
-        float lane = PreferredLaneOffset(i, RoadWidths(distance).x,
-            useBottomLaneMerge ? float.PositiveInfinity : toMerge, racingLine(distance));
-        if (BlendingStartLanes)
+        bool blendStart = BlendingStartLanes;
+        float gridLane = blendStart ? raceStart.GridPosition(i, Mathf.Min(1.35f, definition.pitRoad.widthMeters * 0.25f)).Lane : 0f;
+        float lane;
+        if (IgnorePreferredDrivingLine)
         {
-            float gridLane = raceStart.GridPosition(i, Mathf.Min(1.35f, definition.pitRoad.widthMeters * 0.25f)).Lane;
-            lane = Mathf.Lerp(gridLane, lane, SessionRun.Elapsed / 3f);
+            // Lane variation is applied by the traffic controller after choosing a target.
+            lane = drivingLanesReady && traffic?.InPit != true
+                ? drivingLanes[i] - (draft?.AppliedLaneOffsets[i] ?? 0f)
+                : gridLane;
+        }
+        else
+        {
+            lane = PreferredLaneOffset(i, RoadWidths(distance).x,
+                useBottomLaneMerge ? float.PositiveInfinity : toMerge, racingLine(distance));
+            if (blendStart)
+                lane = Mathf.Lerp(gridLane, lane, SessionRun.Elapsed / 3f);
         }
         if (stages != null)
             lane = stages.Lane(i, lane, Mathf.Min(1.35f, RoadWidths(distance).x * 0.2f), customLayout?.InsideSign ?? -1f);

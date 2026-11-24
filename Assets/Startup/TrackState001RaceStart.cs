@@ -4,7 +4,7 @@ using UnityEngine;
 internal sealed class TrackState001RaceStart
 {
     private const double OpeningDelay = 5.0;
-    private const float PaceSpeed = 32f;
+    internal const float PaceSpeed = 32f;
     private const float FormationPositionVariation = .55f;
     private const float VariationFadeDistance = 120f;
     private readonly TrackPitTraffic pit;
