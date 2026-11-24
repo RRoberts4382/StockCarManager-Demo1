@@ -750,6 +750,8 @@ public sealed class StartupMenu : MonoBehaviour
         };
         career.InitializeCars(new System.Random(developmentTrackId), randomizeRivals: true);
         var car = career.cars[0];
+        if (testRace)
+            car.setup = RivalSetup001.Create(definition, car.chassisNumber ?? car.number.ToString());
         foreach (var entry in career.AllCars)
             entry.modelResource = modelResource;
         var session = testRace

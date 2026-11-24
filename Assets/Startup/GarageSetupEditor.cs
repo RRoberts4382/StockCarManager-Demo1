@@ -239,10 +239,11 @@ internal sealed class GarageSetupEditor
         }
         slider.AddToClassList(vertical ? "garage-redesign-vertical" : "garage-redesign-horizontal");
         slider.SetValueWithoutNotify(Snap(raw));
-        slider.SetEnabled(enabled ?? !locked());
+        bool canAdjust = enabled ?? !locked();
+        slider.SetEnabled(canAdjust);
         value.tooltip = tooltip + " Current setting.";
         previous.tooltip = "Value used at the start of the last on-track run.";
-        Display(slider.value);
+        Display(canAdjust ? slider.value : raw);
         if (!vertical || !shock && corner % 2 == 0)
         {
             group.Add(values);
