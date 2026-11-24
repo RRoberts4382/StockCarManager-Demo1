@@ -68,8 +68,7 @@
         "ChevroletCupCamaroShortTrackLOD3",
         "ChevroletCupCamaroShortTrackLOD4",
         "ChevroletCupCamaroShortTrack"
-      ],
-      "fullDetailInteriorModel": "ChevroletCupCamaroInterior"
+      ]
     },
     {
       "model": "ChevroletCupCamaroRoadLeft",
@@ -79,8 +78,7 @@
         "ChevroletCupCamaroRoadLeftLOD3",
         "ChevroletCupCamaroRoadLeftLOD4",
         "ChevroletCupCamaroRoadLeft"
-      ],
-      "fullDetailInteriorModel": "ChevroletCupCamaroInterior"
+      ]
     },
     {
       "model": "ChevroletCupCamaroRoadRight",
@@ -90,9 +88,7 @@
         "ChevroletCupCamaroRoadRightLOD3",
         "ChevroletCupCamaroRoadRightLOD4",
         "ChevroletCupCamaroRoadRight"
-      ],
-      "fullDetailInteriorModel": "ChevroletCupCamaroRoadRightInterior"
+      ]
     }
-  ],
-  "fullDetailInteriorModel": "ChevroletCupCamaroInterior"
+  ]
 }

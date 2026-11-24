@@ -68,8 +68,7 @@
         "ToyotaCupCamryShortTrackLOD3",
         "ToyotaCupCamryShortTrackLOD4",
         "ToyotaCupCamryShortTrack"
-      ],
-      "fullDetailInteriorModel": "ToyotaCupCamryInterior"
+      ]
     },
     {
       "model": "ToyotaCupCamryRoadLeft",
@@ -79,8 +78,7 @@
         "ToyotaCupCamryRoadLeftLOD3",
         "ToyotaCupCamryRoadLeftLOD4",
         "ToyotaCupCamryRoadLeft"
-      ],
-      "fullDetailInteriorModel": "ToyotaCupCamryInterior"
+      ]
     },
     {
       "model": "ToyotaCupCamryRoadRight",
@@ -90,9 +88,7 @@
         "ToyotaCupCamryRoadRightLOD3",
         "ToyotaCupCamryRoadRightLOD4",
         "ToyotaCupCamryRoadRight"
-      ],
-      "fullDetailInteriorModel": "ToyotaCupCamryRoadRightInterior"
+      ]
     }
-  ],
-  "fullDetailInteriorModel": "ToyotaCupCamryInterior"
+  ]
 }
