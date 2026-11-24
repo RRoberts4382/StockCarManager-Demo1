@@ -1007,6 +1007,8 @@ internal sealed class RaceSessionRun
     private static float TimeGap(CarTiming ahead, float position, float distance, float time)
     {
         var history = ahead.History;
+        if (history.Count == 0)
+            return float.NaN;
         if (position < history[0].Distance)
             return ahead.Speed > 0f ? distance / ahead.Speed : float.NaN;
 

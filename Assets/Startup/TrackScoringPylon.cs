@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -245,15 +246,20 @@ public sealed partial class TrackPreview
         bool changed = lap != pylonLap;
         int row = 0;
         if (timing != null)
-            foreach (var standing in timing.RunningOrder())
+        {
+            var orderedCars = timing.IsRace
+                ? timing.RunningOrder().Select(standing => standing.Car)
+                : timing.FastestLaps();
+            foreach (var car in orderedCars)
             {
                 if (row >= pylonOrder.Length)
                     break;
-                int carIndex = timing.IndexOfCar(standing.Car);
-                changed |= pylonOrder[row] != standing.Car.DisplayCarNumber || pylonCarIndices[row] != carIndex;
-                pylonOrder[row] = standing.Car.DisplayCarNumber;
+                int carIndex = timing.IndexOfCar(car);
+                changed |= pylonOrder[row] != car.DisplayCarNumber || pylonCarIndices[row] != carIndex;
+                pylonOrder[row] = car.DisplayCarNumber;
                 pylonCarIndices[row++] = carIndex;
             }
+        }
         for (; row < pylonOrder.Length; row++)
         {
             changed |= pylonOrder[row] != null;
