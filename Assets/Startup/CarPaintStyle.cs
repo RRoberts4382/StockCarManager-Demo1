@@ -248,7 +248,7 @@ internal readonly struct CarPaintStyle
     }
 
     public static bool Apply(Transform car, Material primary, Material secondary, CarPaintStyle paint,
-        Action<Texture2D> retainTexture, Texture2D template = null)
+        Action<Texture2D> retainTexture, Texture2D template = null, Texture2D generatedTexture = null)
     {
         if (template == null && (!paint.HasWrap || retainTexture == null))
             return false;
@@ -270,8 +270,8 @@ internal readonly struct CarPaintStyle
         foreach (var filter in paintedMeshes)
             ProjectMesh(car, filter);
 
-        var texture = template ?? paint.BuildTexture();
-        if (template == null)
+        var texture = template ?? generatedTexture ?? paint.BuildTexture();
+        if (template == null && generatedTexture == null)
             retainTexture(texture);
         SetPaintTexture(secondary);
         if (!classic)

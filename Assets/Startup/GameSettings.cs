@@ -201,7 +201,7 @@ internal sealed class GameSettings
         lodField.AddToClassList("settings-field");
         lodField.Add(SettingsFormStyle.Label("Car LOD", "settings-note"));
         carLodButton = SettingsFormStyle.Button(CarLodLabel(draftCarLod), () => OpenCarLodPicker(frame));
-        carLodButton.tooltip = "Choose car geometry detail from 1 (lowest) to 5 (full). Applies to the whole field. Level 3 is the default.";
+        carLodButton.tooltip = "Set the maximum Track View car detail. Distant cars use simpler models when available. Level 3 is the default.";
         lodField.Add(carLodButton);
         display.Add(lodField);
         var msaaField = new VisualElement();
@@ -574,7 +574,7 @@ internal sealed class GameSettings
         dialog.style.borderTopColor = dialog.style.borderBottomColor =
             dialog.style.borderLeftColor = dialog.style.borderRightColor = trim;
         dialog.Add(SettingsFormStyle.Label("Car LOD", "settings-group-heading"));
-        dialog.Add(SettingsFormStyle.Label("Higher levels show more geometry and require more rendering work. Applies to cars in the track view. Other car displays use their highest configured LOD.", "settings-note"));
+        dialog.Add(SettingsFormStyle.Label("Set the highest detail in Track View. Distant cars use lower levels. Other car displays use their highest configured detail.", "settings-note"));
         for (int level = 1; level <= 5; level++)
         {
             int selected = level;
@@ -585,7 +585,7 @@ internal sealed class GameSettings
                 RefreshRevert();
                 Close();
             });
-            row.tooltip = "Use " + CarLodLabel(level) + " after saving settings.";
+            row.tooltip = "Use " + CarLodLabel(level) + " as the maximum after saving.";
             dialog.Add(row);
         }
         dialog.Add(SettingsFormStyle.Button("Cancel", Close));

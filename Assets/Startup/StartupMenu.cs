@@ -6502,7 +6502,7 @@ public sealed class StartupMenu : MonoBehaviour
         dialog.style.borderTopColor = dialog.style.borderBottomColor =
             dialog.style.borderLeftColor = dialog.style.borderRightColor = trim;
         dialog.Add(SettingsFormStyle.Label("Car Detail", "settings-group-heading"));
-        dialog.Add(SettingsFormStyle.Label(saveSetting ? "Choose a saved LOD level for cars in the track view." : "Applies to every car in this practice session. Testing goal 120 FPS, minimum 100 FPS.", "settings-note"));
+        dialog.Add(SettingsFormStyle.Label(saveSetting ? "Set the saved maximum detail for cars in Track View." : "Set the maximum detail for this practice session. Testing goal 120 FPS, minimum 100 FPS.", "settings-note"));
         var error = SettingsFormStyle.Label("", "settings-validation-summary");
         dialog.Add(error);
         for (int i = 0; i < TrackPreview.CarDetailLabels.Length; i++)
@@ -6521,7 +6521,7 @@ public sealed class StartupMenu : MonoBehaviour
                 UpdateTrackDisplayControls();
                 Close();
             });
-            button.tooltip = "Use level " + (i + 1) + " for the field. Cars with one model use it at every level.";
+            button.tooltip = "Allow up to level " + (i + 1) + " in Track View.";
             dialog.Add(button);
         }
         var cancelFooter = new VisualElement();

@@ -40,7 +40,7 @@ internal sealed class RaceWheelAnimation
                     brake.transform.SetParent(steer, true);
             }
 
-            wheels.Add(new Wheel(steer, spin, bounds.extents.y, front));
+            wheels.Add(new Wheel(renderer.name, steer, spin, bounds.extents.y, front));
         }
 
         return wheels.Count == 0 ? null : new RaceWheelAnimation(wheels.ToArray());
@@ -109,6 +109,27 @@ internal sealed class RaceWheelAnimation
         }
     }
 
+    public void CopyMotionFrom(RaceWheelAnimation source)
+    {
+        if (source == null)
+        {
+            Reset();
+            return;
+        }
+
+        initialized = source.initialized;
+        previousPosition = source.previousPosition;
+        previousRotation = source.previousRotation;
+        foreach (var wheel in wheels)
+        {
+            var prior = Array.Find(source.wheels, candidate => candidate.Name == wheel.Name);
+            wheel.Angle = prior?.Angle ?? 0f;
+            wheel.SteeringAngle = prior?.SteeringAngle ?? 0f;
+            wheel.FilteredSteering = prior?.FilteredSteering ?? 0f;
+        }
+        Present();
+    }
+
     public float FrontSteeringAngle
     {
         get
@@ -160,6 +181,7 @@ internal sealed class RaceWheelAnimation
 
     private sealed class Wheel
     {
+        public readonly string Name;
         public readonly Transform Steer;
         public readonly Transform Spin;
         public readonly Vector3 Center;
@@ -171,8 +193,9 @@ internal sealed class RaceWheelAnimation
         public float PresentedAngle;
         public float PresentedSteering;
 
-        public Wheel(Transform steer, Transform spin, float radius, bool front)
+        public Wheel(string name, Transform steer, Transform spin, float radius, bool front)
         {
+            Name = name;
             Steer = steer;
             Spin = spin;
             Center = steer.localPosition;

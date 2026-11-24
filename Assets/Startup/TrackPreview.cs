@@ -72,12 +72,10 @@ public sealed partial class TrackPreview : MonoBehaviour
     internal IReadOnlyList<Vector2[]> MapPitRibbons => mapPitRibbons;
     private readonly RearAxleHeading[] carHeadings = new RearAxleHeading[CarCount];
     internal static readonly string[] CarDetailLabels = { "Low", "Medium", "High", "Very High", "Full" };
-    private readonly List<System.Action<int>> detailRebuilders = new();
     internal bool SupportsCarDetail { get; private set; }
     internal bool SupportsGrandstands => grandstandScenery != null;
     internal bool GrandstandsVisible => SupportsGrandstands && grandstandScenery.activeSelf;
     internal int CarDetailIndex { get; private set; }
-    private readonly string[] renderCarTypeResources = new string[CarCount];
     private readonly CarTypeDefinition[] carTypes = new CarTypeDefinition[CarCount];
 
     private readonly RaceWheelAnimation[] raceWheels = new RaceWheelAnimation[CarCount];
@@ -601,7 +599,6 @@ public sealed partial class TrackPreview : MonoBehaviour
         definition = track;
         SupportsCarDetail = true;
         CarDetailIndex = SupportsCarDetail ? Mathf.Clamp(PlayerPrefs.GetInt("StockCarManager.Settings.CarLOD", 3), 1, 5) - 1 : 0;
-        detailRebuilders.Clear();
         bool bristolNight = night && track.id == BristolTrackId;
         simulationModel = CarSimulationModels.Default;
         simulation = new CarSimulationContext(track, null, null, System.Array.Empty<SessionCarResult>());
@@ -765,7 +762,6 @@ public sealed partial class TrackPreview : MonoBehaviour
             var liveryCar = i == 0 ? playerCar : rivalCars?.FirstOrDefault(car => car.number == i);
             string modelResource = liveryCar?.modelResource ?? playerCar?.modelResource;
             var carType = CarTypeDefinition.ForModel(modelResource);
-            renderCarTypeResources[i] = modelResource;
             carTypes[i] = carType;
             if (liveryCar != null)
             {
@@ -776,78 +772,13 @@ public sealed partial class TrackPreview : MonoBehaviour
             }
             renderedCarPaint[i] = (hoodAndTrunkPaint.color, bodyPaint.color);
             scoringPaint[i] = playerPaint;
-            int firstPaintTexture = carPaintTextures.Count;
-            string visualModelResource = track.CarModelForTrack(modelResource, CarDetailIndex + 1);
-            string referenceModel = carType.HasTrackModelLods ? track.CarModelForTrack(modelResource) : null;
             string numberText = gridNumbers[i] > 99 ? liveryCar?.rivalRaceNumberText : null;
-            BuildCar(cars[i], gridNumbers[i],
-                hoodAndTrunkPaint, bodyPaint, glass, rubber, i == 0 ? sponsorNames : null, playerPaint, carPaintTextures.Add,
-                modelResource, carLodLevel: CarDetailIndex + 1,
-                measureHalfWidth: halfWidth => raceCarHalfWidths[i] = halfWidth, visualModelResource: visualModelResource,
-                numberText: numberText, referenceModel: referenceModel);
-            raceWheels[i] = RaceWheelAnimation.Bind(cars[i]);
-            if (SupportsCarDetail)
-            {
-                int carIndex = i;
-                int number = gridNumbers[i];
-                var sponsors = i == 0 ? sponsorNames : null;
-                string currentVisualResource = visualModelResource;
-                var visualTextures = carPaintTextures.GetRange(firstPaintTexture, carPaintTextures.Count - firstPaintTexture);
-                var visualChildren = new List<Transform>();
-                foreach (Transform child in cars[i])
-                    visualChildren.Add(child);
-                detailRebuilders.Add(level =>
-                {
-                    string resource = track.CarModelForTrack(modelResource, level);
-                    if (resource == currentVisualResource)
-                        return;
-                    bool wasActive = cars[carIndex].gameObject.activeSelf;
-                    cars[carIndex].gameObject.SetActive(true);
-                    try
-                    {
-                        foreach (var child in visualChildren)
-                        {
-                            if (child == null) continue;
-                            child.gameObject.SetActive(false);
-                            child.SetParent(null, true);
-                            Destroy(child.gameObject);
-                        }
-                        visualChildren.Clear();
-                        foreach (var texture in visualTextures)
-                        {
-                            carPaintTextures.Remove(texture);
-                            Destroy(texture);
-                        }
-                        visualTextures.Clear();
-                        var retained = new HashSet<Transform>();
-                        foreach (Transform child in cars[carIndex])
-                            retained.Add(child);
-                        BuildCar(cars[carIndex], number, hoodAndTrunkPaint, bodyPaint, glass, rubber,
-                            sponsors, playerPaint, texture =>
-                            {
-                                carPaintTextures.Add(texture);
-                                visualTextures.Add(texture);
-                            }, modelResource, carLodLevel: level,
-                            measureHalfWidth: referenceModel == null ? halfWidth => raceCarHalfWidths[carIndex] = halfWidth : null,
-                            visualModelResource: resource, numberText: numberText, referenceModel: referenceModel);
-                        currentVisualResource = resource;
-                        raceWheels[carIndex] = RaceWheelAnimation.Bind(cars[carIndex]);
-                        foreach (Transform child in cars[carIndex])
-                            if (!retained.Contains(child))
-                                visualChildren.Add(child);
-                        if (definition.id is IowaTrackId or PhoenixTrackId or RichmondTrackId or NorthWilkesboroTrackId or MichiganTrackId)
-                            CacheIowaVehicleLighting(cars[carIndex]);
-                        else if (bristolSun != null)
-                            AssignBristolLighting(cars[carIndex]);
-                        }
-                    finally
-                    {
-                        cars[carIndex].gameObject.SetActive(wasActive);
-                    }
-                });
-            }
+            InitializeCarVisualLods(i, modelResource, gridNumbers[i], numberText, hoodAndTrunkPaint, bodyPaint,
+                glass, rubber, i == 0 ? sponsorNames : null, playerPaint);
         }
-        ConfigureOnboardCameras(glass);
+        carGlass = glass;
+        for (int i = 0; i < cars.Length; i++)
+            ConfigureOnboardCamera(i);
         if (track.id == IowaTrackId && importedTrackGeometry && pitRoute != null)
         {
             AddIowaScoringPylon();
@@ -896,21 +827,22 @@ public sealed partial class TrackPreview : MonoBehaviour
             return false;
         if (index == CarDetailIndex)
             return true;
-        var resources = renderCarTypeResources.Distinct().Select(model => definition.CarModelForTrack(model, index + 1)).Distinct();
-        if (resources.Any(resource => Resources.Load<GameObject>("Startup/" + resource) == null))
-            return false;
+        int maximum = index + 1;
+        foreach (var state in carVisualLods)
+        {
+            string resource = state.Resources[index];
+            if (resource == state.Current.Resource || loadedCarLodResources.Contains(resource))
+                continue;
+            if (Resources.Load<GameObject>("Startup/" + resource) == null)
+                return false;
+            loadedCarLodResources.Add(resource);
+        }
 
-        foreach (var renderer in hiddenCockpitGlass)
-            if (renderer != null)
-                renderer.forceRenderingOff = false;
-        hiddenCockpitGlass.Clear();
-        cockpitGlassCar = null;
-        foreach (var rebuild in detailRebuilders)
-            rebuild(index + 1);
         CarDetailIndex = index;
-        BuildPreferredLineOverlay();
-        ConfigureOnboardCameras(carGlass);
-        UpdateCockpitGlass();
+        for (int i = 0; i < cars.Length; i++)
+            if (carVisualLods[i].Level > maximum || UsesMaximumCarLod(i))
+                ApplyCarVisualLod(i, maximum);
+        ApplyCameraPose();
         return true;
     }
 
@@ -1058,22 +990,19 @@ public sealed partial class TrackPreview : MonoBehaviour
     {
         followedCar = car;
         cameraFocus = Vector3.zero;
+        KeepOnboardCarLod();
         UpdateCockpitGlass();
         ApplyCameraPose();
     }
 
-    private void ConfigureOnboardCameras(Material glass)
+    private void ConfigureOnboardCamera(int index)
     {
-        carGlass = glass;
-        for (int i = 0; i < cars.Length; i++)
-        {
-            var car = cars[i];
-            var anchors = car.GetComponentsInChildren<Transform>(true);
-            var hood = System.Array.Find(anchors, child => child.name == "HoodSponsor");
-            Vector3 hoodOffset = hood == null ? new Vector3(0f, 0.8f, 0.975f) :
-                car.InverseTransformPoint(hood.position) + Vector3.up * 0.12f;
-            onboardCameraOffsets[i] = (hoodOffset, carTypes[i].inCarCamera.Resolve(car, anchors));
-        }
+        var car = cars[index];
+        var anchors = carVisualLods[index].Current.Root.GetComponentsInChildren<Transform>(true);
+        var hood = System.Array.Find(anchors, child => child.name == "HoodSponsor");
+        Vector3 hoodOffset = hood == null ? new Vector3(0f, 0.8f, 0.975f) :
+            car.InverseTransformPoint(hood.position) + Vector3.up * 0.12f;
+        onboardCameraOffsets[index] = (hoodOffset, carTypes[index].inCarCamera.Resolve(car, anchors));
     }
 
     private void UpdateCockpitGlass()
@@ -1083,13 +1012,15 @@ public sealed partial class TrackPreview : MonoBehaviour
             return;
 
         foreach (var renderer in hiddenCockpitGlass)
-            renderer.forceRenderingOff = false;
+            if (renderer != null)
+                renderer.forceRenderingOff = false;
         hiddenCockpitGlass.Clear();
         cockpitGlassCar = subject;
         if (subject == null)
             return;
 
-        foreach (var renderer in subject.GetComponentsInChildren<MeshRenderer>(true))
+        var visuals = carVisualLods[SelectedCarIndex].Current.Root;
+        foreach (var renderer in visuals.GetComponentsInChildren<MeshRenderer>(true))
         {
             var materials = renderer.sharedMaterials;
             if (materials.Length == 0 || !System.Array.TrueForAll(materials, material =>
@@ -1141,6 +1072,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             CameraAngle.PitBox => 42f,
             _ => 55f
         };
+        KeepOnboardCarLod();
         UpdateCockpitGlass();
         UpdateRearViewRendering();
         ApplyCameraPose();
@@ -1178,6 +1110,7 @@ public sealed partial class TrackPreview : MonoBehaviour
 
         cameraFocus += CarFocus();
         followedCar = null;
+        UpdateCockpitGlass();
     }
 
     private Vector3 CarFocus()
@@ -1668,6 +1601,7 @@ public sealed partial class TrackPreview : MonoBehaviour
 
     private void LateUpdate()
     {
+        UpdateAdaptiveCarLods();
         UpdateScoringPylon();
         RenderIowaFlagStand();
         UpdateIowaSafetyLights();
@@ -5173,7 +5107,8 @@ public sealed partial class TrackPreview : MonoBehaviour
         Material glass, Material rubber, string[] sponsorNames = null,
         CarPaintStyle? paintStyle = null, System.Action<Texture2D> retainPaint = null, string modelResource = null,
         string carTypeModelResource = null, int? carLodLevel = null, System.Action<float> measureHalfWidth = null,
-        string visualModelResource = null, string numberText = null, string referenceModel = null)
+        string visualModelResource = null, string numberText = null, string referenceModel = null,
+        Texture2D generatedPaintTexture = null)
     {
         string typeResource = carTypeModelResource ?? modelResource;
         var carType = CarTypeDefinition.ForModel(typeResource);
@@ -5207,7 +5142,8 @@ public sealed partial class TrackPreview : MonoBehaviour
             Box("Rear tires", car, new Vector3(0f, 0.22f, -0.87f), new Vector3(1.8f, 0.41f, 0.5f), rubber);
         }
         bool wrapped = !useFordAtlas && paintStyle.HasValue &&
-            CarPaintStyle.Apply(car, hoodAndTrunkPaint, bodyPaint, paintStyle.Value, retainPaint, template?.Texture);
+            CarPaintStyle.Apply(car, hoodAndTrunkPaint, bodyPaint, paintStyle.Value, retainPaint,
+                template?.Texture, generatedPaintTexture);
         var font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         if (font == null)
             return;
