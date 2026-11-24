@@ -219,23 +219,67 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
 
     protected virtual float PreferredLaneEdgeClearance(int index, float lane, float inside) => 1.05f;
 
+    internal struct TrafficLaneControl
+    {
+        internal int PassBlocker;
+        internal int PassSide;
+        internal bool PassOnPreferredLine;
+        internal int FollowingCar;
+        internal float PassingOpportunitySeconds;
+        internal bool Easing;
+        internal bool WaitingForRoom;
+        internal bool HasLane;
+        internal float LateralSpeed;
+        internal float LastLane;
+    }
+
+    private const float PassReturnBuffer = .35f;
+    private const float PassingSpeedAdvantage = .65f;
+    private const float PassingOpportunityDuration = .20f;
+    private const float FollowReleaseMargin = .12f;
+    private const float ParallelClearanceMargin = .06f;
+    private const float TrafficLookAheadSeconds = .3f;
+    private const float TrafficEaseDistance = .35f;
+    private const float TrafficLongitudinalEaseDistance = 1f;
+    private const float TrafficClearanceReserve = .04f;
+    private const float TrafficResumeClearance = .12f;
+    private const float TrafficLateralAcceleration = 10f;
+
     public void AvoidTraffic(float lapLength, float inside, float seconds, bool allowPassing,
         float[] distances, float[] widths, bool[] onTrack, float[] lanes, float[] targets,
         float[] currentSpeeds, float[] speeds, float brakingLimit, bool[] draftLine = null, bool respondToTraffic = true, float[] brakingFactors = null)
     {
-        const float carLength = 2.9f;
-        const float carWidth = 1.8f;
+        AvoidTraffic(null, null, lapLength, inside, seconds, allowPassing, distances, widths, onTrack, lanes,
+            targets, currentSpeeds, speeds, brakingLimit, draftLine, respondToTraffic, brakingFactors);
+    }
+
+    internal void AvoidTraffic(TrafficLaneControl[] laneControl, bool[] stabilizeLane,
+        float lapLength, float inside, float seconds, bool allowPassing,
+        float[] distances, float[] widths, bool[] onTrack, float[] lanes, float[] targets,
+        float[] currentSpeeds, float[] speeds, float brakingLimit, bool[] draftLine, bool respondToTraffic, float[] brakingFactors,
+        float[] paceSpeeds = null, float[] startLanes = null, float[] startLaneSpeeds = null)
+    {
+        const float carLength = VehicleCollision001.ContactLength;
+        const float carWidth = VehicleCollision001.ContactWidth;
         const float passLookAhead = 2f * carLength; // One car length between bumpers.
         // Aggression changes the driver's caution, never the physical collision footprint.
         // Retain neutral clearances when overtaking is prohibited (yellow flags).
         float Risk(int index) => allowPassing ? Aggression(index) : .5f;
         for (int i = 0; i < lanes.Length; i++)
         {
+            bool stabilize = laneControl != null && stabilizeLane[i] && respondToTraffic && allowPassing &&
+                draftLine?[i] != true && onTrack[i] && speeds[i] > 0f && seconds > 0f;
+            var control = stabilize ? laneControl[i] : default;
+            float lane = lanes[i];
+            if (laneControl != null && !stabilize)
+                laneControl[i] = default;
+            if (control.HasLane && Mathf.Abs(lane - control.LastLane) > .001f)
+                control = default;
             if (!onTrack[i] || speeds[i] <= 0f)
                 continue;
 
             float aggression = Risk(i);
-            float lateralClearance = carWidth + Mathf.Lerp(.4f, .02f, aggression);
+            float comfortMargin = Mathf.Lerp(.4f, .02f, aggression);
             float carSpacing = carLength + Mathf.Lerp(.9f, .08f, aggression);
             float rearClearance = carLength + Mathf.Lerp(3f * TrackDefinition.MetersPerFoot, .08f, aggression);
             float anticipation = Mathf.Lerp(1f, .2f, aggression);
@@ -245,43 +289,197 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
                 lanes[i] = StepTowardPreferredLane(i, lanes[i], target, seconds);
                 continue;
             }
-            float nearest = float.PositiveInfinity;
-            int blocker = -1;
-            for (int j = 0; j < lanes.Length; j++)
+
+            float passOffset = carWidth + comfortMargin + Mathf.Lerp(.3f, .02f, aggression);
+            bool holdingPass = false;
+            if (control.PassSide != 0)
             {
-                if (i == j || !onTrack[j])
-                    continue;
-                float gap = Mathf.Repeat(distances[j] - distances[i], lapLength);
-                if (gap < nearest && gap <= passLookAhead && Mathf.Abs(lanes[i] - lanes[j]) < lateralClearance &&
-                    speeds[i] > speeds[j])
+                int previousBlocker = control.PassBlocker;
+                float gap = TrackGap(previousBlocker);
+                bool finished = !onTrack[previousBlocker] || gap < -rearClearance - PassReturnBuffer ||
+                    gap > passLookAhead + carSpacing;
+                if (finished && LaneClear(target, carSpacing, followingPreferred: true, comfort: true,
+                        lateralBuffer: PassReturnBuffer))
                 {
-                    nearest = gap;
-                    blocker = j;
+                    control.PassSide = 0;
+                    control.Easing = true;
+                }
+                else
+                {
+                    holdingPass = true;
+                    target = finished ? lane : PassLane(previousBlocker, control.PassSide, control.PassOnPreferredLine);
                 }
             }
 
-            if (allowPassing && blocker >= 0 && draftLine?[i] != true)
+            float nearest = float.PositiveInfinity;
+            int leader = -1;
+            if (stabilize && !holdingPass)
             {
-                float inner = lanes[blocker] + inside * (lateralClearance + Mathf.Lerp(.3f, .02f, aggression));
-                float outer = lanes[blocker] - inside * (lateralClearance + Mathf.Lerp(.3f, .02f, aggression));
-                if (Mathf.Abs(target-lanes[blocker]) >= lateralClearance && LaneClear(target,nearest+carSpacing))
-                { /* The preferred line itself provides the pass; avoid an unnecessary detour. */ }
-                else if (LaneClear(inner, nearest + carSpacing))
-                    target = inner;
-                else if (LaneClear(outer, nearest + carSpacing))
-                    target = outer;
+                for (int j = 0; j < lanes.Length; j++)
+                {
+                    if (i == j || !onTrack[j])
+                        continue;
+                    float gap = Mathf.Repeat(distances[j] - distances[i], lapLength);
+                    float releaseMargin = control.FollowingCar == j + 1 ? FollowReleaseMargin : 0f;
+                    float side = OtherLane(j) - lane;
+                    if (gap > 0f && gap < nearest && gap <= passLookAhead + releaseMargin &&
+                        Mathf.Abs(side) < ComfortClearance(j, gap, side) + releaseMargin)
+                    {
+                        nearest = gap;
+                        leader = j;
+                    }
+                }
             }
 
-            // Move toward the preferred line as soon as the next swept step is safe.
-            // Do not wait for the entire lateral corridor to be empty.
+            bool followingLeader = leader >= 0;
+            if (followingLeader)
+            {
+                if (control.FollowingCar != leader + 1)
+                    control.PassingOpportunitySeconds = 0f;
+                control.FollowingCar = leader + 1;
+                float currentAdvantage = currentSpeeds[i] - currentSpeeds[leader];
+                float paceAdvantage = paceSpeeds == null ? speeds[i] - speeds[leader] : paceSpeeds[i] - paceSpeeds[leader];
+                if (Mathf.Max(currentAdvantage, paceAdvantage) >= PassingSpeedAdvantage)
+                    control.PassingOpportunitySeconds += seconds;
+                else
+                    control.PassingOpportunitySeconds = 0f;
 
-            float next = target == targets[i]
-                ? StepTowardPreferredLane(i, lanes[i], target, seconds)
-                : Mathf.MoveTowards(lanes[i], target, MaximumLateralSpeed * seconds);
-            if (LaneClear(next, carSpacing, followingPreferred: target == targets[i]))
+                if (control.PassingOpportunitySeconds >= PassingOpportunityDuration)
+                {
+                    float leaderLane = OtherLane(leader);
+                    float side = leaderLane - lane;
+                    float ahead = nearest + carSpacing;
+                    float clearance = ComfortClearance(leader, nearest, side);
+                    int preferredSide = (target - leaderLane) * inside > 0f ? 1 : -1;
+                    if (Mathf.Abs(target - leaderLane) >= clearance && PassCorridorClear(preferredSide, usePreferredLine: true))
+                    {
+                        CommitPass(preferredSide, usePreferredLine: true);
+                    }
+                    else if (PassCorridorClear(1))
+                        CommitPass(1);
+                    else if (PassCorridorClear(-1))
+                        CommitPass(-1);
+
+                    bool PassCorridorClear(int passSide, bool usePreferredLine = false)
+                    {
+                        float destination = PassLane(leader, passSide, usePreferredLine);
+                        return (destination - leaderLane) * inside * passSide >= clearance &&
+                            LaneClear(destination, ahead, comfort: true);
+                    }
+                }
+
+                if (followingLeader)
+                {
+                    target = lane;
+                    control.Easing = true;
+                }
+            }
+            else
+            {
+                control.FollowingCar = 0;
+                control.PassingOpportunitySeconds = 0f;
+            }
+
+            bool followingPreferred = target == targets[i] && !holdingPass && !followingLeader;
+            float next = followingPreferred
+                ? StepTowardPreferredLane(i, lane, target, seconds)
+                : Mathf.MoveTowards(lane, target, MaximumLateralSpeed * seconds);
+            bool nearTraffic = false;
+            if (stabilize && next != lane)
+            {
+                float direction = Mathf.Sign(next - lane);
+                float room = TrafficRoom(direction);
+                nearTraffic = room <= TrafficClearanceReserve + TrafficEaseDistance;
+                if (room <= TrafficClearanceReserve)
+                    control.WaitingForRoom = true;
+                else if (room >= TrafficResumeClearance)
+                    control.WaitingForRoom = false;
+                if (nearTraffic || control.Easing)
+                {
+                    float desiredSpeed = Mathf.Abs(next - lane) / seconds;
+                    float safeRoom = control.WaitingForRoom ? 0f : Mathf.Max(0f, room - TrafficClearanceReserve);
+                    float roomSpeed = desiredSpeed * Mathf.SmoothStep(0f, 1f, safeRoom / TrafficEaseDistance);
+                    float rampSpeed = Mathf.Max(0f, direction * control.LateralSpeed) + TrafficLateralAcceleration * seconds;
+                    float movement = Mathf.Min(safeRoom, Mathf.Min(roomSpeed, rampSpeed) * seconds);
+                    control.Easing = movement < Mathf.Abs(next - lane) - .00001f;
+                    next = lane + direction * movement;
+                }
+            }
+
+            // The existing swept check remains authoritative for the final movement.
+            bool safe = LaneClear(next, carSpacing, followingPreferred);
+            if (safe)
                 lanes[i] = next;
 
-            bool LaneClear(float candidate, float ahead, bool followingPreferred = false)
+            if (stabilize)
+            {
+                control.Easing |= !safe && nearTraffic;
+                control.LateralSpeed = (lanes[i] - lane) / seconds;
+                control.LastLane = lanes[i];
+                control.HasLane = true;
+                laneControl[i] = control;
+            }
+
+            void CommitPass(int side, bool usePreferredLine = false)
+            {
+                control.PassBlocker = leader;
+                control.PassSide = side;
+                control.PassOnPreferredLine = usePreferredLine;
+                control.Easing = true;
+                control.FollowingCar = 0;
+                control.PassingOpportunitySeconds = 0f;
+                followingLeader = false;
+                holdingPass = true;
+                target = PassLane(leader, side, usePreferredLine);
+            }
+
+            float PassLane(int other, int side, bool usePreferredLine)
+            {
+                float direction = inside * side;
+                float offset = OtherLane(other) + direction * passOffset;
+                float preferred = targets[i];
+                if (usePreferredLine && (preferred - offset) * direction > 0f)
+                    offset = preferred;
+                float edge = Mathf.Max(0f, widths[i] * .5f - 1.05f);
+                return Mathf.Clamp(offset, -edge, edge);
+            }
+
+            float OtherLane(int other) => startLanes == null ? lanes[other] : startLanes[other];
+            float TrackGap(int other) => Mathf.Repeat(distances[other] - distances[i] + lapLength * .5f, lapLength) -
+                lapLength * .5f;
+
+            float ComfortClearance(int other, float gap, float side) => LateralComfortClearance(
+                comfortMargin, gap, side, currentSpeeds[i], currentSpeeds[other],
+                startLaneSpeeds?[i] ?? control.LateralSpeed, startLaneSpeeds?[other] ?? 0f);
+
+            float TrafficRoom(float direction)
+            {
+                float room = float.PositiveInfinity;
+                for (int j = 0; j < lanes.Length; j++)
+                {
+                    if (j == i || !onTrack[j])
+                        continue;
+                    float separation = OtherLane(j) - lane;
+                    float side = separation * direction;
+                    if (side <= 0f)
+                        continue;
+                    float gap = TrackGap(j);
+                    float future = gap + (currentSpeeds[j] - currentSpeeds[i]) * TrafficLookAheadSeconds;
+                    float longitudinalRoom = Mathf.Max(Mathf.Min(gap, future) - carSpacing,
+                        -rearClearance - Mathf.Max(gap, future));
+                    if (longitudinalRoom >= TrafficLongitudinalEaseDistance)
+                        continue;
+                    float lateralRoom = side - ComfortClearance(j, gap, separation);
+                    if (longitudinalRoom > 0f)
+                        lateralRoom = Mathf.Max(lateralRoom, Mathf.Lerp(0f, TrafficEaseDistance + TrafficClearanceReserve,
+                            longitudinalRoom / TrafficLongitudinalEaseDistance));
+                    room = Mathf.Min(room, lateralRoom);
+                }
+                return room;
+            }
+
+            bool LaneClear(float candidate, float ahead, bool followingPreferred = false, bool comfort = false,
+                float lateralBuffer = 0f)
             {
                 float clearance = followingPreferred ? PreferredLaneEdgeClearance(i, candidate, inside) : 1.05f;
                 if (Mathf.Abs(candidate) > Mathf.Max(0f, widths[i] * 0.5f - clearance))
@@ -290,17 +488,19 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
                 {
                     if (j == i || !onTrack[j])
                         continue;
-                    float gap = Mathf.Repeat(distances[j] - distances[i] + lapLength * .5f, lapLength) - lapLength * .5f;
+                    float gap = TrackGap(j);
                     float horizon = Mathf.Max(seconds, Mathf.Min(anticipation, Mathf.Abs(candidate-lanes[i])/3f * anticipation));
                     float futureGap = gap + (currentSpeeds[j]-currentSpeeds[i])*horizon;
                     // Check the swept longitudinal interval and the whole lane-change corridor.
                     if (Mathf.Min(gap,futureGap) > ahead || Mathf.Max(gap,futureGap) < -rearClearance)
                         continue;
-                    float low = Mathf.Min(lanes[i],candidate), high = Mathf.Max(lanes[i],candidate);
-                    float separation = lanes[j] < low ? low-lanes[j] : lanes[j] > high ? lanes[j]-high : 0f;
-                    bool escaping = Mathf.Abs(candidate-lanes[j]) > Mathf.Abs(lanes[i]-lanes[j]) &&
-                        (candidate-lanes[j])*(lanes[i]-lanes[j]) >= 0f;
-                    if (separation < lateralClearance && !escaping)
+                    float before = OtherLane(j) - lane;
+                    float after = (comfort ? OtherLane(j) : lanes[j]) - candidate;
+                    bool sameSide = before * after >= 0f;
+                    float separation = sameSide ? Mathf.Min(Mathf.Abs(before), Mathf.Abs(after)) : 0f;
+                    bool escaping = sameSide && Mathf.Abs(after) > Mathf.Abs(before);
+                    float required = comfort ? ComfortClearance(j, gap, before) : carWidth + (stabilize ? 0f : comfortMargin);
+                    if (separation < required + lateralBuffer && !escaping)
                         return false;
                 }
                 return true;
@@ -318,14 +518,21 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
                 if (!onTrack[i] || speeds[i] <= 0f)
                     continue;
                 float aggression = Risk(i);
-                float lateralClearance = carWidth + Mathf.Lerp(.4f, .02f, aggression);
+                float comfortMargin = Mathf.Lerp(.4f, .02f, aggression);
                 float carSpacing = carLength + Mathf.Lerp(.9f, .08f, aggression);
                 for (int j = 0; j < lanes.Length; j++)
                 {
-                    if (j == i || !onTrack[j] || Mathf.Abs(lanes[i] - lanes[j]) >= lateralClearance)
+                    if (j == i || !onTrack[j])
                         continue;
                     float gap = Mathf.Repeat(distances[j] - distances[i], lapLength);
                     if (gap == 0f && j > i)
+                        continue;
+                    float side = lanes[j] - lanes[i];
+                    float lateralClearance = allowPassing && stabilizeLane?[i] == true
+                        ? LateralComfortClearance(comfortMargin, gap, side, currentSpeeds[i], currentSpeeds[j],
+                            laneControl[i].LateralSpeed, laneControl[j].LateralSpeed)
+                        : carWidth + comfortMargin;
+                    if (Mathf.Abs(side) >= lateralClearance)
                         continue;
                     float clearance = Mathf.Max(0f, gap - carSpacing);
                     float carBrakingLimit = brakingLimit * (brakingFactors == null ? 1f : brakingFactors[i]);
@@ -342,6 +549,16 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
             if (!changed)
                 break;
         }
+    }
+
+    private static float LateralComfortClearance(float comfortMargin, float gap, float side, float speed,
+        float otherSpeed, float lateralSpeed, float otherLateralSpeed)
+    {
+        float longitudinalClosing = Mathf.Max(0f, (speed - otherSpeed) * Mathf.Sign(gap));
+        float lateralClosing = Mathf.Max(0f, (lateralSpeed - otherLateralSpeed) * Mathf.Sign(side));
+        float convergence = Mathf.Max(longitudinalClosing / 3f, lateralClosing / 1.25f);
+        return VehicleCollision001.ContactWidth + Mathf.Lerp(Mathf.Min(comfortMargin, ParallelClearanceMargin),
+            comfortMargin, convergence);
     }
 
     internal static float FollowingSpeedLimit(float currentSpeed, float leaderNextSpeed, float clearance,

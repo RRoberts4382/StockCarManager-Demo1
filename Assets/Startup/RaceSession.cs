@@ -664,8 +664,13 @@ internal sealed class RaceSessionRun
     }
 
     public float ConditionLimitedSpeed(int index, float speed, float seconds, float brakingLimit = 0f,
+        bool allowMechanicalFailure = false, float? paceSpeedCeiling = null) =>
+        ConditionLimitedSpeedAndPace(index, speed, seconds, out _, brakingLimit, allowMechanicalFailure, paceSpeedCeiling);
+
+    internal float ConditionLimitedSpeedAndPace(int index, float speed, float seconds, out float pace, float brakingLimit = 0f,
         bool allowMechanicalFailure = false, float? paceSpeedCeiling = null)
     {
+        pace = 0f;
         var car = cars[index];
         throttleInputs[index]=brakeInputs[index]=0f;
         float damage = (car.Result.car?.Damage ?? 0f) + car.SimulatedContactDamage;
@@ -700,6 +705,7 @@ internal sealed class RaceSessionRun
             float target = paceSpeedCeiling.HasValue
                 ? Math.Min(speed, paceSpeedCeiling.Value * damageFactor)
                 : speed * damageFactor;
+            pace = target;
             if (thermalOnTrack[index] && brakingLimit <= 0f && inputSpeedProfile.FullThrottleAt(thermalDistances[index]))
             {
                 throttleInputs[index]=1f;

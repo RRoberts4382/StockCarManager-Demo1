@@ -3,8 +3,8 @@ using UnityEngine;
 
 internal sealed class VehicleCollision001
 {
-    private const float ContactLength = 2.9f;
-    private const float ContactWidth = 1.8f;
+    internal const float ContactLength = 2.9f;
+    internal const float ContactWidth = 1.8f;
     private readonly bool[,] touching;
     private readonly float[] impactDamage;
     private readonly float[] crashImpulse;
