@@ -664,11 +664,12 @@ internal sealed class RaceSessionRun
     }
 
     public float ConditionLimitedSpeed(int index, float speed, float seconds, float brakingLimit = 0f,
-        bool allowMechanicalFailure = false, float? paceSpeedCeiling = null) =>
-        ConditionLimitedSpeedAndPace(index, speed, seconds, out _, brakingLimit, allowMechanicalFailure, paceSpeedCeiling);
+        bool allowMechanicalFailure = false, float? paceSpeedCeiling = null, float preferredLineSpeedFactor = 1f) =>
+        ConditionLimitedSpeedAndPace(index, speed, seconds, out _, brakingLimit, allowMechanicalFailure,
+            paceSpeedCeiling, preferredLineSpeedFactor);
 
     internal float ConditionLimitedSpeedAndPace(int index, float speed, float seconds, out float pace, float brakingLimit = 0f,
-        bool allowMechanicalFailure = false, float? paceSpeedCeiling = null)
+        bool allowMechanicalFailure = false, float? paceSpeedCeiling = null, float preferredLineSpeedFactor = 1f)
     {
         pace = 0f;
         var car = cars[index];
@@ -692,12 +693,14 @@ internal sealed class RaceSessionRun
         {
             float currentSpeed = (float)car.Result.InstantSpeed;
             float acceleration = ReferenceAcceleration(currentSpeed);
+            float brakingGrip = 1f;
             if (usesSpringPerformance)
             {
                 float weightFactor = VehicleSpeed003.WeightForceFactor(car.Result.Fuel);
                 var setup = SetupForCar(index);
                 acceleration *= UnityEngine.Mathf.Min(1f, weightFactor * VehicleSpeed003.DistributionAccelerationFactor(setup, car.Result.Fuel));
-                brakingLimit *= UnityEngine.Mathf.Min(1f, weightFactor * VehicleSpeed003.DistributionBrakingFactor(setup, car.Result.Fuel)) * Weather.GripFactor;
+                brakingGrip = UnityEngine.Mathf.Min(1f, weightFactor * VehicleSpeed003.DistributionBrakingFactor(setup, car.Result.Fuel)) * Weather.GripFactor;
+                brakingLimit *= brakingGrip;
             }
             float damageFactor = 1f - damage / 100f;
             // A paced car should be able to hold the commanded speed if it is
@@ -706,22 +709,44 @@ internal sealed class RaceSessionRun
                 ? Math.Min(speed, paceSpeedCeiling.Value * damageFactor)
                 : speed * damageFactor;
             pace = target;
+            float nextSpeed;
             if (thermalOnTrack[index] && brakingLimit <= 0f && inputSpeedProfile.FullThrottleAt(thermalDistances[index]))
             {
                 throttleInputs[index]=1f;
-                return FullThrottleSpeed(currentSpeed,target,acceleration,seconds);
+                nextSpeed = FullThrottleSpeed(currentSpeed, target, acceleration, seconds);
             }
-            if (target < currentSpeed)
+            else if (target < currentSpeed)
             {
                 float deceleration=brakingLimit>0f ? brakingLimit : CoastingDeceleration;
                 if(brakingLimit>0f) brakeInputs[index]=UnityEngine.Mathf.Clamp01((currentSpeed-target)/Math.Max(.0001f,seconds*brakingLimit));
-                return Math.Max(target,currentSpeed-deceleration*seconds);
+                nextSpeed = Math.Max(target, currentSpeed - deceleration * seconds);
             }
-            // Racing-speed ceiling represents available performance, not a partial-throttle command.
-            // Traffic avoidance may override this request after the speed profile is evaluated.
-            throttleInputs[index]=inputSpeedProfile.FullThrottleAt(thermalDistances[index]) ? 1f :
-                UnityEngine.Mathf.Clamp01(.25f+(target-currentSpeed)/Math.Max(.0001f,acceleration*seconds));
-            return Math.Min(target, currentSpeed + acceleration * seconds);
+            else
+            {
+                // Racing-speed ceiling represents available performance, not a partial-throttle command.
+                // Traffic avoidance may override this request after the speed profile is evaluated.
+                throttleInputs[index]=inputSpeedProfile.FullThrottleAt(thermalDistances[index]) ? 1f :
+                    UnityEngine.Mathf.Clamp01(.25f+(target-currentSpeed)/Math.Max(.0001f,acceleration*seconds));
+                return Math.Min(target, currentSpeed + acceleration * seconds);
+            }
+
+            if (preferredLineSpeedFactor < 1f && nextSpeed > target && seconds > 0f && !paceSpeedCeiling.HasValue)
+            {
+                // Each 10% of corner target-speed penalty adds up to 1 mph/s of deceleration.
+                const float decelerationPerFullPenalty = 10f * TrackDefinition.MetersPerMile / 3600f;
+                float extraLoss = (1f - preferredLineSpeedFactor) * decelerationPerFullPenalty * seconds;
+                float maxLoss = LapSpeedProfile.MaximumBraking(simulationContext.Track) * brakingGrip * seconds;
+                float remainingLoss = Math.Max(0f, maxLoss - (currentSpeed - nextSpeed));
+                float slowedSpeed = Math.Max(target, nextSpeed - Math.Min(extraLoss, remainingLoss));
+                if (slowedSpeed < nextSpeed)
+                {
+                    throttleInputs[index] = 0f;
+                    brakeInputs[index] = Math.Max(brakeInputs[index],
+                        UnityEngine.Mathf.Clamp01((currentSpeed - slowedSpeed) / maxLoss));
+                    nextSpeed = slowedSpeed;
+                }
+            }
+            return nextSpeed;
         }
 
         float coastingSpeed = Math.Max(0f, (float)car.Result.InstantSpeed - 6f * seconds);

@@ -610,13 +610,11 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
         return Mathf.Max(limit, Mathf.Max(0f, currentSpeed - brakingLimit * seconds));
     }
 
-    internal static float OffLineSpeedFactor(float distanceFromLine, float turnWeight, bool outside = false)
+    internal static float OffLineSpeedFactor(float distanceFromLine, float turnWeight)
     {
-        float offset = Mathf.Max(0f,Mathf.Abs(distanceFromLine)-.3f);
-        float general = .10f * Mathf.SmoothStep(0f,1f,offset/3.3f);
-        // Continue increasing the loss into the outer lanes of a wide pack.
-        float outer = outside ? .10f * Mathf.SmoothStep(0f,1f,offset/6.9f) : 0f;
-        return 1f - (general+outer) * Mathf.Clamp01(turnWeight);
+        const float distanceForTenPercentPenalty = 12f * TrackDefinition.MetersPerFoot;
+        float penalty = .10f * (Mathf.Abs(distanceFromLine) / distanceForTenPercentPenalty) * Mathf.Clamp01(turnWeight);
+        return Mathf.Clamp01(1f - penalty);
     }
 
     internal static float RestrictorPlateRacingLine(float inside) => inside * .90f;

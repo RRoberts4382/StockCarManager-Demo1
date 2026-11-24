@@ -33,7 +33,8 @@ internal sealed class TrackState001Qualifying
             Car.NextEntry = float.PositiveInfinity;
     }
 
-    public void Advance(RaceSessionRun timing, float seconds, float speed, float brakingLimit)
+    public void Advance(RaceSessionRun timing, float seconds, float speed, float brakingLimit,
+        float preferredLineSpeedFactor)
     {
         if (Car.InGarage)
         {
@@ -51,8 +52,11 @@ internal sealed class TrackState001Qualifying
                     : TrackPitTraffic.ApproachLimit(0f, remaining, seconds));
         }
         bool activeOnTrack = !Car.InPit && State != SessionTrackState.Checkered;
+        if (!activeOnTrack || State != SessionTrackState.TrackOpen || Car.ApronExitActive || Car.ApronEntryActive)
+            preferredLineSpeedFactor = 1f;
         speed = timing.ConditionLimitedSpeed(0, speed, seconds,
-            State == SessionTrackState.Checkered ? 0f : brakingLimit, activeOnTrack);
+            State == SessionTrackState.Checkered ? 0f : brakingLimit, activeOnTrack,
+            preferredLineSpeedFactor: preferredLineSpeedFactor);
         bool failed = timing.HasTerminalFailure(0);
         if (failed)
             Car.NextEntry = float.PositiveInfinity;

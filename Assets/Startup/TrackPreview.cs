@@ -1701,9 +1701,11 @@ public sealed partial class TrackPreview : MonoBehaviour
         float before = car.TrackDistance;
         if (definition.id == PhoenixTrackId || UsesEarlyLowLanePitApproach)
             collisionStartLanes[0] = drivingLanes[0];
-        float speed = LimitNorthWilkesboroApronSpeed(car, SpeedAt(0, car.TrackDistance));
-        qualifying.Advance(SessionRun, SessionStep, speed,
-            car.InPit ? 0f : lapSpeedProfile?.BrakingLimitAt(car.TrackDistance) ?? 0f);
+        float speed = SpeedAt(0, car.TrackDistance, out float preferredLineSpeedFactor);
+        float limitedSpeed = LimitNorthWilkesboroApronSpeed(car, speed);
+        qualifying.Advance(SessionRun, SessionStep, limitedSpeed,
+            car.InPit ? 0f : lapSpeedProfile?.BrakingLimitAt(car.TrackDistance) ?? 0f,
+            limitedSpeed < speed ? 1f : preferredLineSpeedFactor);
 
         if ((definition.id is NorthWilkesboroTrackId or PhoenixTrackId) || UsesEarlyLowLanePitApproach)
         {
@@ -1860,23 +1862,30 @@ public sealed partial class TrackPreview : MonoBehaviour
         return true;
     }
 
-    private float PitAdjustedSpeed(int index, float freeSpeed, float seconds, float braking, float? paceSpeedCeiling = null)
+    private float PitAdjustedSpeed(int index, float freeSpeed, float seconds, float braking,
+        float preferredLineSpeedFactor, float? paceSpeedCeiling = null)
     {
         var car = trafficCars?[index];
         bool activeOnTrack = car?.InPit != true && car?.InGarage != true &&
             (practice == null || practice.State is SessionTrackState.TrackOpen or SessionTrackState.Caution);
+        if (!activeOnTrack)
+            preferredLineSpeedFactor = 1f;
         if (car == null || pitTraffic == null)
             return SessionRun.ConditionLimitedSpeedAndPace(index, freeSpeed, seconds, out trafficPaceSpeeds[index],
-                braking, activeOnTrack, paceSpeedCeiling);
+                braking, activeOnTrack, paceSpeedCeiling, preferredLineSpeedFactor);
         float stopAt = float.PositiveInfinity;
         if (practice?.State == SessionTrackState.ReturnToPits)
             stopAt = practice.ParkingTarget(index);
         else if (pitStops != null)
             stopAt = pitStops.StopTarget(index);
         float target = pitTraffic.PlannedSpeed(car, LimitNorthWilkesboroApronSpeed(car, freeSpeed), stopAt, seconds);
-        if (target < freeSpeed) braking = Mathf.Max(braking, TrackPitTraffic.PitApproachDeceleration);
+        if (target < freeSpeed)
+        {
+            braking = Mathf.Max(braking, TrackPitTraffic.PitApproachDeceleration);
+            preferredLineSpeedFactor = 1f;
+        }
         float limited = SessionRun.ConditionLimitedSpeedAndPace(index, target, seconds, out trafficPaceSpeeds[index],
-            braking, activeOnTrack, paceSpeedCeiling);
+            braking, activeOnTrack, paceSpeedCeiling, preferredLineSpeedFactor);
         if (SessionRun.HasTerminalFailure(index))
             car.NextEntry = float.PositiveInfinity;
         return limited;
@@ -1894,9 +1903,11 @@ public sealed partial class TrackPreview : MonoBehaviour
         for (int i = 0; i < cars.Length; i++)
         {
             trafficPaceSpeeds[i] = 0f;
+            float preferredLineSpeedFactor = 1f;
             stepSpeeds[i] = SessionRun.Retired(i) ? 0f : crashes[i].Active ? crashes[i].ForwardSpeed :
-                PitAdjustedSpeed(i, yellow ? TrackState001Stages.PaceSpeed : SpeedAt(i, trafficCars[i].TrackDistance),
-                    seconds, yellow ? LapSpeedProfile.MaximumBraking(definition) : trackOpen ? TrackBrakingLimit(i) : 0f);
+                PitAdjustedSpeed(i, yellow ? TrackState001Stages.PaceSpeed : SpeedAt(i, trafficCars[i].TrackDistance, out preferredLineSpeedFactor),
+                    seconds, yellow ? LapSpeedProfile.MaximumBraking(definition) : trackOpen ? TrackBrakingLimit(i) : 0f,
+                    preferredLineSpeedFactor);
             stepSpeeds[i] = SessionRun.FlatTireSpeed(stepSpeeds[i], SessionRun.FlatTireMask(i));
         }
         AvoidTrackTraffic(seconds);
@@ -2049,7 +2060,9 @@ public sealed partial class TrackPreview : MonoBehaviour
                 continue;
             }
 
-            float speed = SessionRun == null ? CarSpeed(i) : SpeedAt(i, trafficCars?[i]?.TrackDistance ?? sessionDistances[i]);
+            float preferredLineSpeedFactor = 1f;
+            float speed = SessionRun == null ? CarSpeed(i)
+                : SpeedAt(i, trafficCars?[i]?.TrackDistance ?? sessionDistances[i], out preferredLineSpeedFactor);
             if (DraftingActive)
                 speed += draft.SpeedBoost(i);
             float? paceSpeedCeiling = (definition.id is RichmondTrackId or NorthWilkesboroTrackId) &&
@@ -2060,7 +2073,7 @@ public sealed partial class TrackPreview : MonoBehaviour
                 speed = stages.CarSpeed(i, trafficCars, speed, seconds);
             }
             if (SessionRun != null)
-                speed = PitAdjustedSpeed(i, speed, seconds, TrackBrakingLimit(i), paceSpeedCeiling);
+                speed = PitAdjustedSpeed(i, speed, seconds, TrackBrakingLimit(i), preferredLineSpeedFactor, paceSpeedCeiling);
             if (pitStops != null)
                 speed = SessionRun.FlatTireSpeed(speed, SessionRun.FlatTireMask(i));
 
@@ -2671,11 +2684,12 @@ public sealed partial class TrackPreview : MonoBehaviour
         return lapSpeedProfile.BrakingLimitAt(trafficCars?[index]?.TrackDistance ?? sessionDistances[index]);
     }
 
-    private float SpeedAt(int index, float distance)
+    private float SpeedAt(int index, float distance, out float preferredLineSpeedFactor)
     {
         float baseSpeed = CarSpeed(index) * SessionRun.SpeedFactor(index);
         float speed = lapSpeedProfile?.SpeedAt(distance, baseSpeed) ?? baseSpeed;
-        return SessionRun.SetupAdjustedSpeed(index, distance, speed) * PreferredLineSpeedFactor(index,distance);
+        preferredLineSpeedFactor = PreferredLineSpeedFactor(index, distance);
+        return SessionRun.SetupAdjustedSpeed(index, distance, speed) * preferredLineSpeedFactor;
     }
 
     private float PreferredLineSpeedFactor(int index, float distance)
@@ -2687,10 +2701,10 @@ public sealed partial class TrackPreview : MonoBehaviour
             practice?.State == SessionTrackState.Caution) return 1f;
         // Exclude the pit entry/exit merge corridor, where the prescribed line is different.
         if (traffic != null && Mathf.Min(traffic.NextEntry-distance,distance-traffic.LastExit)<15f) return 1f;
+        float turnWeight = lapSpeedProfile.TurnWeightAt(distance);
+        if (turnWeight <= 0f) return 1f;
         float preferred = PreferredLaneOffset(index, RoadWidths(distance).x, float.PositiveInfinity, racingLine(distance));
-        float offset=drivingLanes[index]-preferred;
-        bool outside=definition.majorStyle == "Oval" && offset*(customLayout?.InsideSign ?? -1f)<0f;
-        return VehicleBehavior003.OffLineSpeedFactor(offset,lapSpeedProfile.TurnWeightAt(distance),outside);
+        return VehicleBehavior003.OffLineSpeedFactor(drivingLanes[index] - preferred, turnWeight);
     }
 
     private float CarSpeed(int index) => baseSpeeds[index];
