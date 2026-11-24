@@ -21,6 +21,7 @@ public sealed class StartupMenu : MonoBehaviour
     private ChassisType? usedTypeFilter;
     private long? usedMaxPriceFilter;
     private const string TrackCameraAnglePreference = "StockCarManager.TrackCameraAngle";
+    private const string PreferredLinePreference = "StockCarManager.Settings.PreferredLineVisible";
     private const double CameraCycleIntervalSeconds = 8d;
     private const long CameraMenuHoldMs = 350;
     private static readonly TrackPreview.CameraAngle[] TrackCameraChoices =
@@ -116,8 +117,6 @@ public sealed class StartupMenu : MonoBehaviour
     private VisualElement throttleDisplay, brakeDisplay, fuelDisplay;
     private VisualElement throttleFill, brakeFill, fuelFill;
     private Label drivingInputMph, drivingInputRpm, drivingInputGear;
-    private bool trackCollisionsEnabled;
-    private bool trafficInteractionsEnabled;
     private VisualElement practiceFlags;
     private VisualElement primaryPracticeFlag;
     private VisualElement blackPracticeFlag;
@@ -380,8 +379,6 @@ public sealed class StartupMenu : MonoBehaviour
         requestCautionButton = trackScreen.Q<Button>("requestCautionButton");
         requestCautionButton.clicked += CallCaution;
         requestCautionButton.SetEnabled(false);
-        trackCollisionsEnabled = PlayerPrefs.GetInt("StockCarManager.Settings.TrackCollisions", 0) != 0;
-        trafficInteractionsEnabled = PlayerPrefs.GetInt("StockCarManager.Settings.TrafficInteractions", 0) != 0;
         startRaceButton = garageScreen.Q<Button>("startRaceButton");
         startRaceButton.clicked += OpenSelectedEvent;
         simulateEventButton = garageScreen.Q<Button>("simulateEventButton");
@@ -6553,14 +6550,19 @@ public sealed class StartupMenu : MonoBehaviour
     private void OpenTrackSettings()
     {
         var menu = new GenericDropdownMenu();
-        var weather = trackPreview?.SessionRun?.Weather;
-        if (weather != null && weather.CanLock)
-            menu.AddItem("Lock Weather", weather.IsLocked, () => weather.SetLocked(!weather.IsLocked));
+        var preview = trackPreview;
+        if (preview?.HasPreferredLineOverlay == true)
+        {
+            menu.AddItem("Preferred Line", preview.PreferredLineVisible, () =>
+            {
+                bool visible = !preview.PreferredLineVisible;
+                preview.SetPreferredLineVisible(visible);
+                PlayerPrefs.SetInt(PreferredLinePreference, visible ? 1 : 0);
+                PlayerPrefs.Save();
+            });
+        }
         else
-            menu.AddDisabledItem("Lock Weather", false);
-        menu.AddItem("Traffic Interactions", trafficInteractionsEnabled,
-            () => SetTrafficInteractions(!trafficInteractionsEnabled));
-        menu.AddItem("Collisions", trackCollisionsEnabled, () => SetTrackCollisions(!trackCollisionsEnabled));
+            menu.AddDisabledItem("Preferred Line", false);
         if (trackPreview != null && trackPreview.SupportsCarDetail)
             menu.AddItem("Car LOD - " + (trackPreview.CarDetailIndex + 1), false, () => OpenCarDetailSelection(true));
         if (trackPreview != null)
@@ -6584,30 +6586,6 @@ public sealed class StartupMenu : MonoBehaviour
                 sessionPaused = wasPaused;
                 ApplySessionPlayback();
             });
-    }
-
-    private void SetTrafficInteractions(bool enabled)
-    {
-        if (trafficInteractionsEnabled == enabled)
-            return;
-
-        trafficInteractionsEnabled = enabled;
-        PlayerPrefs.SetInt("StockCarManager.Settings.TrafficInteractions", enabled ? 1 : 0);
-        PlayerPrefs.Save();
-        if (trackPreview != null)
-            trackPreview.TrafficLaneChangesEnabled = enabled;
-    }
-
-    private void SetTrackCollisions(bool enabled)
-    {
-        if (trackCollisionsEnabled == enabled)
-            return;
-
-        trackCollisionsEnabled = enabled;
-        PlayerPrefs.SetInt("StockCarManager.Settings.TrackCollisions", enabled ? 1 : 0);
-        PlayerPrefs.Save();
-        if (trackPreview != null)
-            trackPreview.SetCollisionsEnabled(enabled);
     }
 
     private void ApplySessionPlayback()
@@ -7156,8 +7134,9 @@ public sealed class StartupMenu : MonoBehaviour
             trackStandings.style.minWidth = StyleKeyword.Null;
             trackTimingRows.Clear();
             trackPreview = preview.AddComponent<TrackPreview>();
-            trackPreview.SetCollisionsEnabled(trackCollisionsEnabled);
-            trackPreview.TrafficLaneChangesEnabled = trafficInteractionsEnabled;
+            trackPreview.SetCollisionsEnabled(true);
+            trackPreview.TrafficLaneChangesEnabled = true;
+            trackPreview.SetPreferredLineVisible(PlayerPrefs.GetInt(PreferredLinePreference, 1) != 0);
             trackPreview.Initialize(track.Definition, carNumber, ActiveSponsorNames(), playerCar ?? EventCar(activeRace), night,
                 rivalCars: EventServiceCareer?.rivalCars);
             previewTrack = track;

@@ -63,6 +63,7 @@ public sealed partial class TrackPreview : MonoBehaviour
     private readonly List<Texture2D> carPaintTextures = new List<Texture2D>();
     private readonly List<Mesh> roadMeshes = new List<Mesh>();
     private Mesh preferredLineMesh;
+    private MeshRenderer preferredLineRenderer;
     internal const int CarCount = 40;
     private readonly Transform[] cars = new Transform[CarCount];
     private readonly (Color HoodAndTrunk, Color RoofAndSides)[] renderedCarPaint =
@@ -3697,6 +3698,16 @@ public sealed partial class TrackPreview : MonoBehaviour
     private Vector2 RoadWidths(float distance) => customLayout?.Widths(Mathf.Repeat(distance, lapLength))
         ?? new Vector2(roadHalfWidth * 2f, 0f);
 
+    internal bool HasPreferredLineOverlay => preferredLineRenderer != null;
+    internal bool PreferredLineVisible { get; private set; } = true;
+
+    internal void SetPreferredLineVisible(bool visible)
+    {
+        PreferredLineVisible = visible;
+        if (preferredLineRenderer != null)
+            preferredLineRenderer.enabled = visible;
+    }
+
     private void BuildPreferredLineOverlay()
     {
         if (definition.majorStyle != "Oval" || racingLine == null || lapLength <= 0f)
@@ -3712,6 +3723,8 @@ public sealed partial class TrackPreview : MonoBehaviour
             var stripe = CreateObject(label, transform);
             stripe.AddComponent<MeshFilter>().sharedMesh = preferredLineMesh;
             var renderer = stripe.AddComponent<MeshRenderer>();
+            preferredLineRenderer = renderer;
+            renderer.enabled = PreferredLineVisible;
             var unlit = Shader.Find("Universal Render Pipeline/Unlit");
             Material material = unlit != null ? new Material(unlit) : new Material(surfaceMaterial);
             material.SetColor("_BaseColor", Color.magenta);
