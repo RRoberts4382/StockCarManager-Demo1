@@ -21,7 +21,10 @@ internal static class CarTypeSettingsStore
             }
             if (!File.Exists(path)) return defaults;
             var definition = JsonUtility.FromJson<CarTypeDefinition>(JsonUtility.ToJson(defaults));
-            JsonUtility.FromJsonOverwrite(File.ReadAllText(path), definition);
+            JsonUtility.FromJsonOverwrite(File.ReadAllText(path, System.Text.Encoding.UTF8), definition);
+            // LODs are bundled assets, not editable car type settings.
+            definition.lodModels = defaults.lodModels;
+            definition.trackModelLods = defaults.trackModelLods;
             if (model == "TourModified" && definition.displayName == "Tour Modified Detailed")
                 definition.displayName = "Tour Modified";
             string error = Validate(definition);

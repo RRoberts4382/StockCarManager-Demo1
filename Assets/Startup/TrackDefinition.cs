@@ -66,7 +66,8 @@ public sealed class TrackDefinition
                 RoadCourseFuelFillSide() == TrackFuelFillSide.Right ? car.roadCourseRightModel : car.roadCourseLeftModel,
             _ => null
         };
-        return string.IsNullOrWhiteSpace(variant) ? car.ModelForLod(modelResource, lod) : variant;
+        return string.IsNullOrWhiteSpace(variant) ? car.ModelForLod(modelResource, lod) :
+            car.ModelForTrackLod(variant, lod);
     }
 
     internal TrackFuelFillSide RoadCourseFuelFillSide()

@@ -778,11 +778,13 @@ public sealed partial class TrackPreview : MonoBehaviour
             scoringPaint[i] = playerPaint;
             int firstPaintTexture = carPaintTextures.Count;
             string visualModelResource = track.CarModelForTrack(modelResource, CarDetailIndex + 1);
+            string referenceModel = carType.HasTrackModelLods ? track.CarModelForTrack(modelResource) : null;
             string numberText = gridNumbers[i] > 99 ? liveryCar?.rivalRaceNumberText : null;
             BuildCar(cars[i], gridNumbers[i],
                 hoodAndTrunkPaint, bodyPaint, glass, rubber, i == 0 ? sponsorNames : null, playerPaint, carPaintTextures.Add,
                 modelResource, carLodLevel: CarDetailIndex + 1,
-                measureHalfWidth: halfWidth => raceCarHalfWidths[i] = halfWidth, visualModelResource: visualModelResource, numberText: numberText);
+                measureHalfWidth: halfWidth => raceCarHalfWidths[i] = halfWidth, visualModelResource: visualModelResource,
+                numberText: numberText, referenceModel: referenceModel);
             raceWheels[i] = RaceWheelAnimation.Bind(cars[i]);
             if (SupportsCarDetail)
             {
@@ -826,7 +828,8 @@ public sealed partial class TrackPreview : MonoBehaviour
                                 carPaintTextures.Add(texture);
                                 visualTextures.Add(texture);
                             }, modelResource, carLodLevel: level,
-                            measureHalfWidth: halfWidth => raceCarHalfWidths[carIndex] = halfWidth, visualModelResource: resource, numberText: numberText);
+                            measureHalfWidth: referenceModel == null ? halfWidth => raceCarHalfWidths[carIndex] = halfWidth : null,
+                            visualModelResource: resource, numberText: numberText, referenceModel: referenceModel);
                         currentVisualResource = resource;
                         raceWheels[carIndex] = RaceWheelAnimation.Bind(cars[carIndex]);
                         foreach (Transform child in cars[carIndex])
@@ -5170,7 +5173,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         Material glass, Material rubber, string[] sponsorNames = null,
         CarPaintStyle? paintStyle = null, System.Action<Texture2D> retainPaint = null, string modelResource = null,
         string carTypeModelResource = null, int? carLodLevel = null, System.Action<float> measureHalfWidth = null,
-        string visualModelResource = null, string numberText = null)
+        string visualModelResource = null, string numberText = null, string referenceModel = null)
     {
         string typeResource = carTypeModelResource ?? modelResource;
         var carType = CarTypeDefinition.ForModel(typeResource);
@@ -5190,7 +5193,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             bodyPaint.SetTexture("_BaseMap", template.FordAtlas);
         }
         var model = CreateRaceCarModel(car, hoodAndTrunkPaint, bodyPaint, glass, rubber, visualResource, out float halfWidth,
-            useFordAtlas ? template : null, templateAssets);
+            useFordAtlas ? template : null, templateAssets, referenceModel);
         measureHalfWidth?.Invoke(halfWidth);
         if (model == null)
         {
@@ -5346,7 +5349,8 @@ public sealed partial class TrackPreview : MonoBehaviour
     }
 
     private static GameObject CreateRaceCarModel(Transform car, Material accent, Material body, Material glass,
-        Material rubber, string modelResource, out float halfWidth, CarPaintTemplate fordTemplate = null, CarPaintTemplateRenderAssets templateAssets = null)
+        Material rubber, string modelResource, out float halfWidth, CarPaintTemplate fordTemplate = null,
+        CarPaintTemplateRenderAssets templateAssets = null, string referenceModel = null)
     {
         halfWidth = .9f; // Built-in fallback tire span.
         var asset = string.IsNullOrEmpty(modelResource) ? null : Resources.Load<GameObject>("Startup/" + modelResource);
@@ -5357,15 +5361,7 @@ public sealed partial class TrackPreview : MonoBehaviour
 
         var model = Instantiate(asset, car, false);
         var children = model.GetComponentsInChildren<Transform>();
-        var front = System.Array.Find(children, item => item.name == "CarFront");
-        var rear = System.Array.Find(children, item => item.name == "CarRear");
-        if (front != null && rear != null)
-        {
-            Vector3 forward = car.InverseTransformVector(front.position - rear.position);
-            forward.y = 0;
-            if (forward.sqrMagnitude > 0.001f)
-                model.transform.localRotation = Quaternion.Inverse(Quaternion.LookRotation(forward));
-        }
+        model.transform.localRotation = RaceCarAlignment(children, car.worldToLocalMatrix, model.transform.localRotation);
 
         foreach (var child in children)
             child.gameObject.layer = PreviewLayer;
@@ -5377,23 +5373,11 @@ public sealed partial class TrackPreview : MonoBehaviour
             return null;
         }
 
-        Bounds bounds = default;
-        bool first = true;
+        Bounds bounds = referenceModel != null && referenceModel != modelResource &&
+            TryRaceCarReferenceBounds(referenceModel, out Bounds referenceBounds)
+            ? referenceBounds : RaceCarBounds(renderers, car.worldToLocalMatrix);
         foreach (var renderer in renderers)
         {
-            Bounds mesh = renderer.localBounds;
-            for (int corner = 0; corner < 8; corner++)
-            {
-                var point = new Vector3((corner & 1) == 0 ? mesh.min.x : mesh.max.x,
-                    (corner & 2) == 0 ? mesh.min.y : mesh.max.y, (corner & 4) == 0 ? mesh.min.z : mesh.max.z);
-                point = car.InverseTransformPoint(renderer.transform.TransformPoint(point));
-                if (first)
-                    bounds = new Bounds(point, Vector3.zero);
-                else
-                    bounds.Encapsulate(point);
-                first = false;
-            }
-
             if (fordTemplate != null)
             {
                 if (renderer.name == "Windshield")
@@ -5426,6 +5410,65 @@ public sealed partial class TrackPreview : MonoBehaviour
         model.transform.localScale *= scale;
         model.transform.localPosition -= scale * new Vector3(bounds.center.x, bounds.min.y, bounds.center.z);
         return model;
+    }
+
+    private static readonly Dictionary<GameObject, Bounds> RaceCarReferenceBounds = new();
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetRaceCarReferenceBounds() => RaceCarReferenceBounds.Clear();
+
+    private static bool TryRaceCarReferenceBounds(string resource, out Bounds bounds)
+    {
+        var asset = Resources.Load<GameObject>("Startup/" + resource);
+        bounds = default;
+        if (asset == null)
+            return false;
+        if (RaceCarReferenceBounds.TryGetValue(asset, out bounds))
+            return true;
+
+        var renderers = asset.GetComponentsInChildren<MeshRenderer>();
+        if (renderers.Length == 0)
+            return false;
+        var root = asset.transform;
+        var aligned = RaceCarAlignment(asset.GetComponentsInChildren<Transform>(), Matrix4x4.identity, root.localRotation);
+        var toCar = Matrix4x4.TRS(root.localPosition, aligned, root.localScale) * root.worldToLocalMatrix;
+        bounds = RaceCarBounds(renderers, toCar);
+        RaceCarReferenceBounds.Add(asset, bounds);
+        return true;
+    }
+
+    private static Quaternion RaceCarAlignment(Transform[] nodes, Matrix4x4 toCar, Quaternion fallback)
+    {
+        var front = System.Array.Find(nodes, node => node.name == "CarFront");
+        var rear = System.Array.Find(nodes, node => node.name == "CarRear");
+        if (front == null || rear == null)
+            return fallback;
+        Vector3 forward = toCar.MultiplyVector(front.position - rear.position);
+        forward.y = 0;
+        return forward.sqrMagnitude > 0.001f ? Quaternion.Inverse(Quaternion.LookRotation(forward)) : fallback;
+    }
+
+    private static Bounds RaceCarBounds(MeshRenderer[] renderers, Matrix4x4 worldToCar)
+    {
+        Bounds bounds = default;
+        bool first = true;
+        foreach (var renderer in renderers)
+        {
+            Bounds mesh = renderer.localBounds;
+            var toCar = worldToCar * renderer.transform.localToWorldMatrix;
+            for (int corner = 0; corner < 8; corner++)
+            {
+                var point = new Vector3((corner & 1) == 0 ? mesh.min.x : mesh.max.x,
+                    (corner & 2) == 0 ? mesh.min.y : mesh.max.y, (corner & 4) == 0 ? mesh.min.z : mesh.max.z);
+                point = toCar.MultiplyPoint3x4(point);
+                if (first)
+                    bounds = new Bounds(point, Vector3.zero);
+                else
+                    bounds.Encapsulate(point);
+                first = false;
+            }
+        }
+        return bounds;
     }
 
     private static GameObject Box(string objectName, Transform parent, Vector3 position, Vector3 size, Material material)

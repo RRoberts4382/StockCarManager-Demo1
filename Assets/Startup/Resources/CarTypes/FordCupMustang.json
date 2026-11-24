@@ -42,10 +42,52 @@
     }
   },
   "lodModels": [
-    "FordCupMustang",
-    "FordCupMustang",
-    "FordCupMustang",
-    "FordCupMustang",
+    "FordCupMustangLOD1",
+    "FordCupMustangLOD2",
+    "FordCupMustangLOD3",
+    "FordCupMustangLOD4",
     "FordCupMustang"
+  ],
+  "trackModelLods": [
+    {
+      "model": "FordCupMustangSuperspeedway",
+      "lodModels": [
+        "FordCupMustangSuperspeedwayLOD1",
+        "FordCupMustangSuperspeedwayLOD2",
+        "FordCupMustangSuperspeedwayLOD3",
+        "FordCupMustangSuperspeedwayLOD4",
+        "FordCupMustangSuperspeedway"
+      ]
+    },
+    {
+      "model": "FordCupMustangShortTrack",
+      "lodModels": [
+        "FordCupMustangShortTrackLOD1",
+        "FordCupMustangShortTrackLOD2",
+        "FordCupMustangShortTrackLOD3",
+        "FordCupMustangShortTrackLOD4",
+        "FordCupMustangShortTrack"
+      ]
+    },
+    {
+      "model": "FordCupMustangRoadLeft",
+      "lodModels": [
+        "FordCupMustangRoadLeftLOD1",
+        "FordCupMustangRoadLeftLOD2",
+        "FordCupMustangRoadLeftLOD3",
+        "FordCupMustangRoadLeftLOD4",
+        "FordCupMustangRoadLeft"
+      ]
+    },
+    {
+      "model": "FordCupMustangRoadRight",
+      "lodModels": [
+        "FordCupMustangRoadRightLOD1",
+        "FordCupMustangRoadRightLOD2",
+        "FordCupMustangRoadRightLOD3",
+        "FordCupMustangRoadRightLOD4",
+        "FordCupMustangRoadRight"
+      ]
+    }
   ]
 }

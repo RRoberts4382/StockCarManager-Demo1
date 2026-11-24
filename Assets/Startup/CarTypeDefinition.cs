@@ -14,6 +14,7 @@ internal sealed class CarTypeDefinition
     public string shortTrackModel;
     public string roadCourseLeftModel;
     public string roadCourseRightModel;
+    public CarTrackModelLods[] trackModelLods = Array.Empty<CarTrackModelLods>();
     public string cockpitStyle;
     public bool darkDashboardDials;
     public float steeringWheelRatio = 14f;
@@ -43,12 +44,21 @@ internal sealed class CarTypeDefinition
     public CarModelPosition leftNumber = new CarModelPosition("LeftNumber", new Vector3(-0.776f, 0.49f, 0f));
     public CarModelPosition rightNumber = new CarModelPosition("RightNumber", new Vector3(0.776f, 0.49f, 0f));
 
-    public string ModelForLod(string modelResource, int level)
+    internal bool HasTrackModelLods => trackModelLods?.Length > 0;
+
+    public string ModelForLod(string modelResource, int level) =>
+        SelectLod(string.IsNullOrEmpty(modelResource) ? "Impala" : modelResource, lodModels, level);
+
+    internal string ModelForTrackLod(string variant, int level)
     {
-        var models = (lodModels ?? Array.Empty<string>()).Where(model => !string.IsNullOrWhiteSpace(model)).ToArray();
-        if (models.Length == 0)
-            return string.IsNullOrEmpty(modelResource) ? "Impala" : modelResource;
-        return models[Mathf.Clamp(level - 1, 0, models.Length - 1)];
+        var chain = trackModelLods?.FirstOrDefault(entry => entry != null && entry.model == variant);
+        return SelectLod(variant, chain?.lodModels, level);
+    }
+
+    private static string SelectLod(string fallback, string[] candidates, int level)
+    {
+        var models = (candidates ?? Array.Empty<string>()).Where(model => !string.IsNullOrWhiteSpace(model)).ToArray();
+        return models.Length == 0 ? fallback : models[Mathf.Clamp(level - 1, 0, models.Length - 1)];
     }
 
     private static readonly Dictionary<string, CarTypeDefinition> Types = new(StringComparer.Ordinal);
@@ -87,6 +97,13 @@ internal sealed class CarTypeDefinition
         Types.Add(key, definition);
         return definition;
     }
+}
+
+[Serializable]
+internal sealed class CarTrackModelLods
+{
+    public string model;
+    public string[] lodModels;
 }
 
 [Serializable]
