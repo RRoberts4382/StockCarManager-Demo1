@@ -74,6 +74,8 @@ public static class TrafficStabilityProbe
         HoldPassSideUntilClear();
         ReturnPartwayAfterPassing();
         ReleaseStalledInsidePass();
+        AnticipateNarrowingInsidePass();
+        RecoverFromNarrowingInsideLane();
         FollowPreferredLineOnClearTrack();
         ReleasePassToDraftLine();
     }
@@ -236,6 +238,41 @@ public static class TrafficStabilityProbe
         Debug.Log($"Bristol #66 established the pass at {establishedLane:F3} m and began returning with the blocker {-firstInwardGap:F3} m behind.");
     }
 
+    private static void AnticipateNarrowingInsidePass()
+    {
+        const float initialLane = -6.8f;
+        var traffic = new TrafficFixture(initialLane, -4.75f);
+        traffic.Widths[0] = 16.85f;
+        traffic.Widths[1] = 16.85f;
+        traffic.Targets[0] = initialLane;
+        traffic.Targets[1] = traffic.Lanes[1];
+        traffic.RoadWidthsAt = distance => new Vector2(distance > 150f ? 15.24f : 16.85f, 3.048f);
+        traffic.Place(148f, 7f, 40f, 39.5f);
+        traffic.CommitSubjectPass(1, 1);
+        traffic.Advance();
+        Require(traffic.Lanes[0] > initialLane, "Inside pass did not ease outward before the Nashville taper.");
+    }
+
+    private static void RecoverFromNarrowingInsideLane()
+    {
+        const float initialLane = -7.36f;
+        var traffic = new TrafficFixture(initialLane, initialLane, -5.54f);
+        Array.Fill(traffic.Widths, 15.24f);
+        traffic.Targets[0] = -6.87f;
+        traffic.Targets[1] = traffic.Lanes[1];
+        traffic.Targets[2] = traffic.Lanes[2];
+        traffic.Place(184f, 4.5f, 32f, 32f);
+        traffic.PlaceCar(2, 184f, 32f);
+        traffic.Advance();
+        Require(Mathf.Abs(traffic.Lanes[0] - initialLane) < .001f,
+            "Inside lane recovery squeezed into a car alongside.");
+
+        traffic.PlaceCar(2, 174f, 32f);
+        traffic.Advance();
+        Require(traffic.Lanes[0] > initialLane && traffic.Lanes[0] < -6.87f,
+            "Inside lane recovery did not allow a gradual return from beyond the stripe.");
+    }
+
     private static void FollowPreferredLineOnClearTrack()
     {
         var traffic = new TrafficFixture(OuterLane, BottomLane);
@@ -383,6 +420,8 @@ public static class TrafficStabilityProbe
         internal readonly float[] LineAdvance;
         internal readonly bool[] DraftLine;
         internal readonly float[] Lanes;
+        internal readonly float[] Widths;
+        internal Func<float, Vector2> RoadWidthsAt { set => arguments[^1] = value; }
         internal float SubjectStepSpeed => stepSpeeds[0];
         internal int SubjectPassSide => (int)passSide.GetValue(laneControl.GetValue(0));
 
@@ -400,11 +439,11 @@ public static class TrafficStabilityProbe
             startLaneSpeeds = new float[count];
             var stabilize = new bool[count];
             var onTrack = new bool[count];
-            var widths = new float[count];
+            Widths = new float[count];
             var insideClearances = new float[count];
             Array.Fill(stabilize, true);
             Array.Fill(onTrack, true);
-            Array.Fill(widths, RoadWidth);
+            Array.Fill(Widths, RoadWidth);
             Array.Fill(insideClearances, .75f);
             var assembly = typeof(TrackPreview).Assembly;
             var baseType = assembly.GetType("VehicleBehavior003", true);
@@ -426,9 +465,9 @@ public static class TrafficStabilityProbe
             arguments = new object[]
             {
                 laneControl, stabilize, LapLength, -1f, Step, true,
-                distances, widths, onTrack, Lanes, Targets,
+                distances, Widths, onTrack, Lanes, Targets,
                 currentSpeeds, stepSpeeds, 8f, DraftLine, true, null, currentSpeeds, startLanes, startLaneSpeeds,
-                null, null, false, null, null, null
+                null, null, false, null, null, null, null
             };
         }
 

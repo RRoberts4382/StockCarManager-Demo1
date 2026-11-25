@@ -2549,7 +2549,7 @@ public sealed partial class TrackPreview : MonoBehaviour
                 drivingDistances, drivingWidths, onTrack, drivingLanes, targetLanes, currentTrafficSpeeds, stepSpeeds,
                 brakingLimit, draftLine, respondToTraffic, trafficBrakingFactors, trafficPaceSpeeds, collisionStartLanes,
                 trafficStartLaneSpeeds, draftLeaders, allowDraftBumps ? draft.BumpIntent : null, definition.restrictorPlate,
-                laneDraft, directedDraftMoves, draftPassing?.BumperGaps);
+                laneDraft, directedDraftMoves, draftPassing?.BumperGaps, RoadWidths);
         else
         {
             System.Array.Clear(trafficLaneControl, 0, trafficLaneControl.Length);
@@ -2846,9 +2846,10 @@ public sealed partial class TrackPreview : MonoBehaviour
         Vector2 road = RoadWidths(distance);
         float inside = customLayout?.InsideSign ?? -1f;
         float carHalfWidth = raceCarHalfWidths[index] > 0f ? raceCarHalfWidths[index] : VehicleCollision001.ContactWidth * .5f;
-        // A body brush is allowed. The inner tires have to cross the edge of the racing surface.
+        // Give the inside tires some room to brush the apron before a spin can trigger.
+        const float apronSpinTireMargin = .18f;
         float insideTire = drivingLanes[index] * inside + Mathf.Max(.1f, carHalfWidth - .07f);
-        if (road.y <= .03f || insideTire <= road.x * .5f + .03f)
+        if (road.y <= .03f || insideTire <= road.x * .5f + apronSpinTireMargin)
             return;
 
         float racePace = lapSpeedProfile.SpeedAt(distance, CarSpeed(index) * SessionRun.SpeedFactor(index));

@@ -239,6 +239,8 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
     private const float PassingSpeedAdvantage = .65f;
     private const float PassingOpportunityDuration = .20f;
     private const float StalledPassDuration = 1f;
+    private const float InsidePassLookAheadSeconds = .75f;
+    private const float PassEdgeClearance = 1.05f;
     private const float PassProgressSpeed = .10f;
     private const float ReturnCompletionTolerance = .05f;
     private const float FollowReleaseMargin = .12f;
@@ -273,7 +275,7 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
         float[] currentSpeeds, float[] speeds, float brakingLimit, bool[] draftLine, bool respondToTraffic, float[] brakingFactors,
         float[] paceSpeeds = null, float[] startLanes = null, float[] startLaneSpeeds = null,
         int[] draftLeaders = null, float[] draftBumpIntent = null, bool plate = false, TrackDraft laneDraft = null,
-        bool[] draftPassLane = null, float[] draftPassGap = null)
+        bool[] draftPassLane = null, float[] draftPassGap = null, System.Func<float, Vector2> roadWidthsAt = null)
     {
         const float carLength = VehicleCollision001.ContactLength;
         const float carWidth = VehicleCollision001.ContactWidth;
@@ -431,12 +433,17 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
             }
 
             bool followingPreferred = !directedDraftPass && target == targets[i] && !holdingPass && !followingLeader;
-            bool allowVariation = canVaryLane && !directedDraftPass && !holdingPass && !control.ReturningToLine;
+            float insideLimit = Mathf.Max(0f, widths[i] * .5f - PreferredLaneEdgeClearance(i, lane, inside));
+            bool recoveringInsideEdge = stabilize && lane * inside > insideLimit;
+            bool allowVariation = canVaryLane && !directedDraftPass && !holdingPass &&
+                !control.ReturningToLine && !recoveringInsideEdge;
             float appliedOffset = allowVariation ? laneDraft.AppliedLaneOffsets[i] : 0f;
             // Follow the existing offset on the preferred path. When holding the
             // current lane in traffic, that lane already includes the offset.
             float drivingTarget = followingLeader || draftLine?[i] == true ? target : target + appliedOffset;
-            float next = followingPreferred && !control.ReturningToLine
+            if (recoveringInsideEdge)
+                drivingTarget = Mathf.Min(drivingTarget * inside, insideLimit) * inside;
+            float next = followingPreferred && !control.ReturningToLine && !recoveringInsideEdge
                 ? StepTowardPreferredLane(i, lane, drivingTarget, seconds)
                 : Mathf.MoveTowards(lane, drivingTarget, MaximumLateralSpeed * seconds);
             bool nearTraffic = false;
@@ -462,7 +469,7 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
             }
 
             // The existing swept check remains authoritative for the final movement.
-            bool safe = LaneClear(next, laneClearanceAhead, followingPreferred);
+            bool safe = LaneClear(next, laneClearanceAhead, followingPreferred, recoveringInsideEdge: recoveringInsideEdge);
             if (safe)
                 lanes[i] = next;
 
@@ -501,8 +508,16 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
                 float preferred = targets[i];
                 if (usePreferredLine && (preferred - offset) * direction > 0f)
                     offset = preferred;
-                float edge = Mathf.Max(0f, widths[i] * .5f - 1.05f);
-                return Mathf.Clamp(offset, -edge, edge);
+                float edge = Mathf.Max(0f, widths[i] * .5f - PassEdgeClearance);
+                float insideEdge = edge;
+                if (side > 0 && roadWidthsAt != null)
+                {
+                    // Leave room to hold the inside lane through an upcoming taper.
+                    float ahead = distances[i] + currentSpeeds[i] * InsidePassLookAheadSeconds;
+                    float widthAhead = roadWidthsAt(ahead).x;
+                    insideEdge = Mathf.Min(edge, Mathf.Max(0f, widthAhead * .5f - PassEdgeClearance));
+                }
+                return Mathf.Clamp(offset * inside, -edge, insideEdge) * inside;
             }
 
             float OtherLane(int other) => startLanes == null ? lanes[other] : startLanes[other];
@@ -542,10 +557,14 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
             }
 
             bool LaneClear(float candidate, float ahead, bool followingPreferred = false, bool comfort = false,
-                float lateralBuffer = 0f)
+                float lateralBuffer = 0f, bool recoveringInsideEdge = false)
             {
-                float clearance = followingPreferred ? PreferredLaneEdgeClearance(i, candidate, inside) : 1.05f;
-                if (Mathf.Abs(candidate) > Mathf.Max(0f, widths[i] * 0.5f - clearance))
+                float clearance = followingPreferred ? PreferredLaneEdgeClearance(i, candidate, inside) : PassEdgeClearance;
+                float edge = Mathf.Max(0f, widths[i] * .5f - clearance);
+                // An inside lane can move out of bounds when the track narrows.
+                // Allow a partial return and still check the entire move against traffic.
+                bool reducesInsideOverlap = recoveringInsideEdge && candidate * inside < lane * inside;
+                if (Mathf.Abs(candidate) > edge && !reducesInsideOverlap)
                     return false;
                 for (int j = 0; j < lanes.Length; j++)
                 {
