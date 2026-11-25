@@ -9,7 +9,30 @@ internal sealed class RaceWheelAnimation
     private Quaternion previousRotation;
     private bool initialized;
 
-    private RaceWheelAnimation(Wheel[] wheels) => this.wheels = wheels;
+    private RaceWheelAnimation(Wheel[] wheels)
+    {
+        this.wheels = wheels;
+        Vector3 frontCenterSum = Vector3.zero;
+        int frontCount = 0;
+        foreach (var wheel in wheels)
+        {
+            if (!wheel.Front) continue;
+            frontCenterSum += wheel.Center;
+            frontCount++;
+        }
+        FrontAxleCenter = frontCount >= 2 ? frontCenterSum / frontCount :
+            Vector3.forward * RearAxleHeading.CenterToRearAxle;
+    }
+
+    internal Vector3 FrontAxleCenter { get; }
+
+    internal static void ApplyFrontAxleYaw(Transform car, Vector3 frontAxle, float yawDegrees)
+    {
+        Quaternion rotation = car.localRotation;
+        Vector3 pivot = car.localPosition + rotation * frontAxle;
+        Quaternion yawed = rotation * Quaternion.AngleAxis(yawDegrees, Vector3.up);
+        car.SetLocalPositionAndRotation(pivot - yawed * frontAxle, yawed);
+    }
 
     public static RaceWheelAnimation Bind(Transform car)
     {
@@ -58,7 +81,13 @@ internal sealed class RaceWheelAnimation
         Present();
     }
 
-    public void Sample(Transform car, bool sliding, float steeringBlend = 0f)
+    public void Sample(Transform car, bool sliding, float steeringBlend = 0f) =>
+        SampleMotion(car, sliding, steeringBlend, alignFrontWheelsToTravel: false);
+
+    internal void SampleTireYaw(Transform car) =>
+        SampleMotion(car, sliding: false, steeringBlend: 0f, alignFrontWheelsToTravel: true);
+
+    private void SampleMotion(Transform car, bool sliding, float steeringBlend, bool alignFrontWheelsToTravel)
     {
         Vector3 position = car.localPosition;
         Quaternion rotation = car.localRotation;
@@ -85,6 +114,13 @@ internal sealed class RaceWheelAnimation
         var delta = toMidpoint * movement;
         var from = toMidpoint * oldRotation;
         var to = toMidpoint * rotation;
+        float axleSteering = 0f;
+        if (alignFrontWheelsToTravel)
+        {
+            Vector3 axleTravel = movement + (rotation * FrontAxleCenter - oldRotation * FrontAxleCenter);
+            Vector3 localTravel = Quaternion.Inverse(rotation) * axleTravel;
+            axleSteering = Mathf.Atan2(localTravel.x, localTravel.z) * Mathf.Rad2Deg;
+        }
         foreach (var wheel in wheels)
         {
             Vector3 center = wheel.Center;
@@ -93,15 +129,18 @@ internal sealed class RaceWheelAnimation
             if (wheel.Front)
             {
                 float direction = Mathf.Sign(distance);
-                // Sample each front contact patch separately. The inside
-                // wheel takes a tighter arc and needs more steering lock.
-                float steering = sliding ? 0f : Mathf.Clamp(
-                    Mathf.Atan2(travel.x * direction, Mathf.Abs(distance)) * Mathf.Rad2Deg, -40f, 40f);
-                // Filter brief pose changes over traveled distance so playback
-                // speed has no effect on the steering presentation.
-                wheel.FilteredSteering = sliding || steeringBlend <= 0f ? steering :
-                    Mathf.Lerp(wheel.FilteredSteering, steering, 1f - Mathf.Exp(-movement.magnitude / 16f));
-                wheel.SteeringAngle = Mathf.Lerp(steering, wheel.FilteredSteering, steeringBlend);
+                if (alignFrontWheelsToTravel)
+                    wheel.SteeringAngle = wheel.FilteredSteering = axleSteering;
+                else
+                {
+                    // The inside front contact patch takes a tighter arc and needs more lock.
+                    float steering = sliding ? 0f : Mathf.Clamp(
+                        Mathf.Atan2(travel.x * direction, Mathf.Abs(distance)) * Mathf.Rad2Deg, -40f, 40f);
+                    // Filter brief pose changes by distance, independent of playback speed.
+                    wheel.FilteredSteering = sliding || steeringBlend <= 0f ? steering :
+                        Mathf.Lerp(wheel.FilteredSteering, steering, 1f - Mathf.Exp(-movement.magnitude / 16f));
+                    wheel.SteeringAngle = Mathf.Lerp(steering, wheel.FilteredSteering, steeringBlend);
+                }
                 if (!sliding)
                     distance = new Vector2(travel.x, distance).magnitude * direction;
             }

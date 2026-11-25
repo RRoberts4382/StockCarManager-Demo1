@@ -19,6 +19,13 @@ internal sealed class CarSimulationContext
     public Setup PlayerSetup { get; set; }
     public bool EqualConditionTesting { get; set; }
     private Setup[] rivalSetups;
+
+    internal void ResetLiveTrackConditions()
+    {
+        PrepareEqualConditions();
+        RaceSessionRun.ResetVehiclesForSession(Cars, PreservePlayerCondition);
+    }
+
     internal void PrepareRivalSetups(bool includesPlayer = true)
     {
         if (rivalSetups != null) return;

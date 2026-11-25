@@ -59,18 +59,9 @@ internal class VehicleBehavior004 : VehicleBehavior003
         trackingWeight = null;
         kinkSteeringBlend = null;
         frontStart = frontLength = 0f;
-        if (track.layoutPoints == null || track.layoutPoints.Length < 4)
-            return baseline;
-
-        var (startFraction, endFraction) = Frontstretch(track.id);
+        var (startFraction, endFraction) = FrontstretchRange(track, lapLength, heading);
         if (startFraction == endFraction)
-        {
-            if (track.minorStyle is not ("Tri-Oval" or "Quad Oval" or "D-Oval"))
-                return baseline;
-            (startFraction, endFraction) = FindFrontstretch(track.StartFinishFraction, lapLength, heading);
-            if (startFraction == endFraction)
-                return baseline;
-        }
+            return baseline;
 
         float start = startFraction * lapLength;
         float length = Mathf.Repeat(endFraction - startFraction, 1f) * lapLength;
@@ -340,6 +331,18 @@ internal class VehicleBehavior004 : VehicleBehavior003
     {
         float t = Mathf.Clamp01(value);
         return t * t * t * (t * (6f * t - 15f) + 10f);
+    }
+
+    internal static (float Start, float End) FrontstretchRange(TrackDefinition track, float lapLength,
+        Func<float, Vector3> heading)
+    {
+        if ((track.layoutPoints?.Length ?? 0) < 4)
+            return default;
+
+        var range = Frontstretch(track.id);
+        if (range.Start != range.End || track.minorStyle is not ("Tri-Oval" or "Quad Oval" or "D-Oval"))
+            return range;
+        return FindFrontstretch(track.StartFinishFraction, lapLength, heading);
     }
 
     // Entry and exit are measured lap fractions near the outside wall, beyond

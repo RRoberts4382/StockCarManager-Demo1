@@ -233,7 +233,7 @@ internal sealed class GameSettings
         simulation.Add(SettingsFormStyle.Field(vehicleSpeedModel, vehicleSpeedModel.value, _ => RefreshRevert()));
         simulation.Add(SettingsFormStyle.Field(vehicleBehaviorModel, vehicleBehaviorModel.value, _ => RefreshRevert()));
         simulation.Add(SettingsFormStyle.Field(paceVehicle, paceVehicle.value, _ => RefreshRevert()));
-        equalConditionPractice.tooltip = "New practice sessions: all cars use the player setup/component levels and wear, fresh tires, no damage, and full fuel. Restart practice for a fresh comparison.";
+        equalConditionPractice.tooltip = "All cars start practice with the player's setup and component condition, fresh tires, no damage, and full fuel.";
         simulation.Add(SettingsFormStyle.Field(equalConditionPractice, equalConditionPractice.value, _ => RefreshRevert()));
 
         AddTab(SettingsTab.TeamColors, "Team", teamColors);

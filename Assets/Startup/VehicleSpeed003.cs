@@ -356,35 +356,42 @@ internal sealed class VehicleSpeed003 : IVehicleSpeedModel
         return 1f + heat + 2f * heat * heat;
     }
 
-    internal static float CornerSpeedFactor(TrackDefinition track, Setup setup, TeamCar car, double fuelGallons = 0d)
+    internal static float TireCornerSpeedFactor(Setup setup, TeamCar car)
     {
-        float springDifference = 0f;
         float totalGrip = 0f;
         float worstGrip = 1f;
         for (int corner = 0; corner < 4; corner++)
         {
-            float target = TargetSpring(track, corner);
-            float baseline = corner < 2 ? 750f : 350f;
-            springDifference += SpringError(SpringRate(setup, corner), target) -
-                SpringError(baseline, target);
             var tire = car?.GetTire(corner);
             float temperature = TireTemperatureModel.Fahrenheit(tire?.temperature ?? 0f);
             float grip = TireGripFactor(tire?.wear ?? 0f, temperature) * PressureGrip(setup, corner, tire);
             totalGrip += grip;
             worstGrip = Mathf.Min(worstGrip, grip);
         }
-        float springFactor = Mathf.Clamp(1f - springDifference * 0.025f, 0.88f, 1.03f);
-        float tireSpeedFactor = Mathf.Sqrt((totalGrip / 4f + worstGrip) * 0.5f);
-        float swayBarFactor = Mathf.Clamp(1f - SwayBarErrorDifference(track, setup) * 0.02f, 0.94f, 1.02f);
-        float trackBarFactor = Mathf.Clamp(1f - TrackBarErrorDifference(track, setup) * 0.06f, 0.94f, 1.015f);
-        return springFactor * swayBarFactor * trackBarFactor * tireSpeedFactor * DistributionCornerFactor(track, setup, fuelGallons);
+        return Mathf.Sqrt((totalGrip / 4f + worstGrip) * 0.5f);
     }
 
-    // Plate cars stay on power. Setup/condition changes the sustainable pace for
-    // the whole lap; the plate profile supplies the small turn-only tire scrub.
-    internal static float RestrictorPlatePaceFactor(TrackDefinition track, Setup setup, TeamCar car,
+    internal static float CornerSetupSpeedFactor(TrackDefinition track, Setup setup, double fuelGallons)
+    {
+        float springDifference = 0f;
+        for (int corner = 0; corner < 4; corner++)
+        {
+            float target = TargetSpring(track, corner);
+            float baseline = corner < 2 ? 750f : 350f;
+            springDifference += SpringError(SpringRate(setup, corner), target) -
+                SpringError(baseline, target);
+        }
+        float springFactor = Mathf.Clamp(1f - springDifference * 0.025f, 0.88f, 1.03f);
+        float swayBarFactor = Mathf.Clamp(1f - SwayBarErrorDifference(track, setup) * 0.02f, 0.94f, 1.02f);
+        float trackBarFactor = Mathf.Clamp(1f - TrackBarErrorDifference(track, setup) * 0.06f, 0.94f, 1.015f);
+        return springFactor * swayBarFactor * trackBarFactor * DistributionCornerFactor(track, setup, fuelGallons);
+    }
+
+    // Plate cars stay on power. Setup, weight and weather set the sustainable
+    // pace; tire condition is blended in where the plate profile calls for it.
+    internal static float RestrictorPlatePaceFactor(TrackDefinition track, Setup setup,
         double fuelGallons, float trackGrip) =>
-        CornerSpeedFactor(track, setup, car, fuelGallons) *
+        CornerSetupSpeedFactor(track, setup, fuelGallons) *
         ShockSpeedFactor(track, setup, Vector2.zero) * WeightCornerSpeedFactor(fuelGallons) * Mathf.Sqrt(trackGrip);
 
     // Diagnostic only: relative front/rear lateral grip per pound of axle load.

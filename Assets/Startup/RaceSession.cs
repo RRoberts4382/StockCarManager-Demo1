@@ -320,6 +320,7 @@ internal sealed class RaceSessionRun
         public float Progress;
         public float StepStartProgress;
         public float Speed;
+        public int WornOutTireMask;
         public readonly List<(float Distance, float Time)> History = new List<(float, float)>();
     }
 
@@ -583,6 +584,14 @@ internal sealed class RaceSessionRun
             if (car?.GetTire(tire)?.wear >= 1f)
                 mask |= 1 << tire;
         }
+        return mask;
+    }
+
+    internal int ConsumeWornOutTireMask(int index)
+    {
+        var car = cars[index];
+        int mask = car.WornOutTireMask;
+        car.WornOutTireMask = 0;
         return mask;
     }
 
@@ -870,6 +879,7 @@ internal sealed class RaceSessionRun
         bool reducedBurn = false, bool onTrack = true)
     {
         var car = cars[index];
+        car.WornOutTireMask = 0;
         var result = car.Result;
         result.InstantSpeed = meters > 0 ? speedMetersPerSecond : 0;
         car.Transmission.Update(result.InstantSpeed * 3600.0 / TrackDefinition.MetersPerMile);
@@ -904,7 +914,10 @@ internal sealed class RaceSessionRun
                         VehicleSpeed003.DistributionTireLoadFactor(SetupForCar(index), indexOnCar, fuelBeforeTravel) *
                         VehicleSpeed003.PressureWear(SetupForCar(index), indexOnCar, tire) *
                         dynamicLoads[index].Ratio(indexOnCar, SetupForCar(index), fuelBeforeTravel);
-                tire.wear = UnityEngine.Mathf.Clamp01(tire.wear + tireWear);
+                float previousWear = tire.wear;
+                tire.wear = UnityEngine.Mathf.Clamp01(previousWear + tireWear);
+                if (onTrack && previousWear < 1f && tire.wear >= 1f)
+                    car.WornOutTireMask |= 1 << indexOnCar;
             }
         }
     }
@@ -977,6 +990,20 @@ internal sealed class RaceSessionRun
     internal float DynamicCornerWeight(int index, int corner) =>
         dynamicLoads[index].Load(corner, SetupForCar(index), Fuel(index));
 
+    internal float TireHandlingTurnAt(float distance)
+    {
+        float turnWeight = inputSpeedProfile.TireTurnWeightAt(distance);
+        if (turnWeight <= 0f || inputSpeedProfile.FlatOutKinkAt(distance))
+            return 0f;
+
+        // Curvature is signed, with left turns negative. Fade across shallow
+        // curvature so quick changes in turn direction stay continuous.
+        const float minimumFullDirectionCurvature = 0.00015f;
+        float turnDirection = UnityEngine.Mathf.Clamp(
+            tireTemperatures.CurvatureAt(distance) / minimumFullDirectionCurvature, -1f, 1f);
+        return turnWeight * turnDirection;
+    }
+
     internal Setup SetupForCar(int index) =>
         (index == 0 || simulationContext.EqualConditionTesting) && simulationContext.PlayerSetup != null
             ? simulationContext.PlayerSetup : simulationContext.RivalSetup(index) ?? cars[index].Result.car?.setup;
@@ -985,24 +1012,32 @@ internal sealed class RaceSessionRun
     {
         if (!usesSpringPerformance)
             return speed;
-        if (simulationContext.Track.restrictorPlate)
-            return speed * VehicleSpeed003.RestrictorPlatePaceFactor(simulationContext.Track,
-                SetupForCar(index), cars[index].Result.car, Fuel(index), Weather.GripFactor);
+
+        var track = simulationContext.Track;
+        var setup = SetupForCar(index);
+        var car = cars[index].Result.car;
+        double fuel = Fuel(index);
+        float turnWeight = inputSpeedProfile.TireTurnWeightAt(distance);
+        float tireFactor = turnWeight > 0f
+            ? UnityEngine.Mathf.Lerp(1f, VehicleSpeed003.TireCornerSpeedFactor(setup, car), turnWeight)
+            : 1f;
+        if (track.restrictorPlate)
+            return speed * VehicleSpeed003.RestrictorPlatePaceFactor(track, setup, fuel, Weather.GripFactor) * tireFactor;
+
+        float straightFactor = VehicleSpeed003.PressureStraightSpeed(setup, car);
         if (inputSpeedProfile.FlatOutKinkAt(distance))
-            return speed * VehicleSpeed003.PressureStraightSpeed(SetupForCar(index), cars[index].Result.car);
+            return speed * straightFactor;
         float cornerLoad = UnityEngine.Mathf.SmoothStep(0f, 1f,
             UnityEngine.Mathf.InverseLerp(0.05f, 1.5f,
                 speed * speed * UnityEngine.Mathf.Abs(tireTemperatures.CurvatureAt(distance)) / 9.80665f));
-        var setup = SetupForCar(index);
-        float factor = VehicleSpeed003.CornerSpeedFactor(simulationContext.Track, setup,
-            cars[index].Result.car, Fuel(index));
-        factor *= VehicleSpeed003.ShockSpeedFactor(simulationContext.Track, setup,
+        float factor = VehicleSpeed003.CornerSetupSpeedFactor(track, setup, fuel) * tireFactor;
+        factor *= VehicleSpeed003.ShockSpeedFactor(track, setup,
             tireTemperatures.ShockMotionAt(distance, speed));
-        factor *= dynamicLoads[index].CornerSpeedFactor(setup, Fuel(index));
-        factor *= VehicleSpeed003.WeightCornerSpeedFactor(Fuel(index)) * UnityEngine.Mathf.Sqrt(Weather.GripFactor);
+        factor *= dynamicLoads[index].CornerSpeedFactor(setup, fuel);
+        factor *= VehicleSpeed003.WeightCornerSpeedFactor(fuel) * UnityEngine.Mathf.Sqrt(Weather.GripFactor);
         // Unwind the cornering demand as the driver applies power in the final third.
         cornerLoad *= 1f-inputSpeedProfile.CornerExitAt(distance);
-        return speed * UnityEngine.Mathf.Lerp(VehicleSpeed003.PressureStraightSpeed(setup, cars[index].Result.car), factor, cornerLoad);
+        return speed * UnityEngine.Mathf.Lerp(straightFactor, factor, cornerLoad);
     }
 
     public void AdvanceClock(float seconds, bool? raceLapUnderCaution = null)

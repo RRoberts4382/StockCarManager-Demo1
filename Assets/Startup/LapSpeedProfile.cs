@@ -10,6 +10,7 @@ internal sealed class LapSpeedProfile
     private readonly bool[] flatOutKinks;
     private readonly float[] cornerExit;
     private readonly float[] turnWeights;
+    private readonly float frontstretchStart, frontstretchLength;
     private readonly bool[] powerZones;
 
     public LapSpeedProfile(TrackDefinition track, bool calibrateBankedShortOvals = false)
@@ -22,6 +23,18 @@ internal sealed class LapSpeedProfile
         var layout = track.layoutPoints?.Length > 0
             ? new TrackLayout(track.layoutPoints, length, track.widthMeters, track.bankingTransitions, track.smoothLayoutBanking)
             : null;
+        if (layout != null && track.majorStyle == "Oval")
+        {
+            Vector3 Heading(float distance)
+            {
+                layout.Sample(Mathf.Repeat(distance, length), out var heading, out _);
+                return heading;
+            }
+
+            var (start, end) = VehicleBehavior004.FrontstretchRange(track, length, Heading);
+            frontstretchStart = start * length;
+            frontstretchLength = Mathf.Repeat(end - start, 1f) * length;
+        }
         var corners = new float[count];
         var directions = new int[count];
         var headingChanges = new float[count];
@@ -243,6 +256,19 @@ internal sealed class LapSpeedProfile
         float sample=Mathf.Repeat(distance,length)/length*turnWeights.Length;
         int i=(int)sample;
         return Mathf.Lerp(turnWeights[i%turnWeights.Length],turnWeights[(i+1)%turnWeights.Length],sample-i);
+    }
+
+    internal float TireTurnWeightAt(float distance)
+    {
+        float weight = TurnWeightAt(distance);
+        if (weight <= 0f || frontstretchLength <= 0f)
+            return weight;
+
+        // Curved oval frontstretches carry speed-profile scrub but remain outside the turns.
+        const float transitionMeters = 15f;
+        float fromEntry = Mathf.Repeat(distance - frontstretchStart, length);
+        float room = Mathf.Min(fromEntry - frontstretchLength, length - fromEntry);
+        return weight * Mathf.SmoothStep(0f, 1f, room / transitionMeters);
     }
 
     internal bool FullThrottleAt(float distance) => restrictorPlate || flatOutKinks[(int)(Mathf.Repeat(distance,length)/length*flatOutKinks.Length)%flatOutKinks.Length] || powerZones[(int)(Mathf.Repeat(distance,length)/length*powerZones.Length)%powerZones.Length];

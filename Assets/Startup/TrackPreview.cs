@@ -1155,13 +1155,14 @@ public sealed partial class TrackPreview : MonoBehaviour
         }
         else if (subject != null && ViewAngle is CameraAngle.Chase or CameraAngle.RearChase)
         {
-            Vector3 viewDirection = subject.localRotation * Vector3.forward;
+            Pose chasePose = chasePoseBeforeYaw[SelectedCarIndex] ?? new Pose(subject.localPosition, subject.localRotation);
+            Vector3 viewDirection = chasePose.rotation * Vector3.forward;
             viewDirection.y = 0f;
             viewDirection.Normalize();
             if (ViewAngle == CameraAngle.RearChase)
                 viewDirection = -viewDirection;
-            Vector3 position = subject.localPosition - viewDirection * 5.5f + Vector3.up * 2.65f;
-            Vector3 lookAt = subject.localPosition + viewDirection * 6f + Vector3.up * 0.65f;
+            Vector3 position = chasePose.position - viewDirection * 5.5f + Vector3.up * 2.65f;
+            Vector3 lookAt = chasePose.position + viewDirection * 6f + Vector3.up * 0.65f;
             cameraTransform.localPosition = position;
             cameraTransform.localRotation = Quaternion.LookRotation(lookAt - position);
         }
@@ -1292,8 +1293,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         ResetIowaFlagStandTiming();
         ResetIowaWreckResponse();
         this.simulation = simulation;
-        simulation.PrepareEqualConditions();
-        RaceSessionRun.ResetVehiclesForSession(simulation.Cars, simulation.PreservePlayerCondition);
+        simulation.ResetLiveTrackConditions();
         if (definition.id == BristolTrackId)
             SetBristolAttendance(fullBristolStands ? RaceSessionKind.Race : simulation.Session.kind);
         if (definition.id == BristolTrackId && simulation.Event != null && parkedHaulers == null)
@@ -1727,6 +1727,13 @@ public sealed partial class TrackPreview : MonoBehaviour
     private void AdvanceQualifyingStep()
     {
         var car = qualifying.Car;
+        if (crashes[0].Active && !SessionRun.Retired(0))
+        {
+            AdvanceCrash(0, SessionStep);
+            SessionRun.AdvanceClock(SessionStep);
+            return;
+        }
+
         float before = car.TrackDistance;
         if (definition.id == PhoenixTrackId || UsesEarlyLowLanePitApproach)
             collisionStartLanes[0] = drivingLanes[0];
@@ -1756,6 +1763,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             }
         }
 
+        StartTireWearFailure(0, car);
         AdvanceNorthWilkesboroGarageTravel(SessionStep);
     }
 
@@ -1986,7 +1994,8 @@ public sealed partial class TrackPreview : MonoBehaviour
                 PitAdjustedSpeed(i, yellow ? yellowSpeed : SpeedAt(i, trafficCars[i].TrackDistance, out preferredLineSpeedFactor),
                     seconds, yellow ? LapSpeedProfile.MaximumBraking(definition) : trackOpen ? TrackBrakingLimit(i) : 0f,
                     preferredLineSpeedFactor);
-            stepSpeeds[i] = SessionRun.FlatTireSpeed(stepSpeeds[i], SessionRun.FlatTireMask(i));
+            if (crashes[i].Cause != CrashCause.FrontTireWear)
+                stepSpeeds[i] = SessionRun.FlatTireSpeed(stepSpeeds[i], SessionRun.FlatTireMask(i));
         }
         AvoidTrackTraffic(seconds);
         pitTraffic.PlanTrafficSpeeds(stepSpeeds, seconds);
@@ -2029,7 +2038,10 @@ public sealed partial class TrackPreview : MonoBehaviour
             practiceLeftStall[i] |= !car.InPit || car.PitDistance != practiceStallDistances[i];
             SessionRun.RecordTravel(i, car.Odometer - beforeMovement, (car.Odometer - beforeMovement) / seconds, car.PreciseTrackDistance, reducedBurn, onTrack: !car.InPit);
             if (trackOpen)
+            {
                 SessionRun.Record(i, before, car.InPit ? pitTraffic.RaceDistance(car) : car.PreciseTrackDistance, seconds);
+                StartTireWearFailure(i, car);
+            }
         }
 
         pitTraffic.EndStep();
@@ -2084,16 +2096,20 @@ public sealed partial class TrackPreview : MonoBehaviour
     private bool pitRoadOutside;
     private readonly bool[] practiceLeftStall = new bool[CarCount];
     private readonly CrashMotion[] crashes = new CrashMotion[CarCount];
+    private readonly Pose?[] chasePoseBeforeYaw = new Pose?[CarCount];
+
+    private enum CrashCause { Contact, Apron, FrontTireWear, RearTireWear }
 
     private struct CrashMotion
     {
         public bool Active;
+        public CrashCause Cause;
         public float ForwardSpeed;
         public float SideSpeed;
         public float Lane;
         public float Yaw;
         public float Spin;
-        public bool Apron;
+        public StraightTireMotion Straight;
     }
     private const float CollisionFlashSeconds = 0.4f;
     private readonly Transform[] collisionFlashes = new Transform[CarCount];
@@ -2101,6 +2117,10 @@ public sealed partial class TrackPreview : MonoBehaviour
     private readonly bool[] collisionParticipants = new bool[CarCount];
     private readonly float[] collisionEndDistances = new float[CarCount];
     private readonly float[] collisionStartLanes = new float[CarCount];
+    private readonly float[] collisionTireStartLanes = new float[CarCount];
+    private readonly float[] collisionTireEndLanes = new float[CarCount];
+    private readonly float[] collisionTireOffsets = new float[CarCount];
+    private readonly float[] tireYawAngles = new float[CarCount];
 
     private readonly float[] currentTrafficSpeeds = new float[CarCount];
     private readonly float[] trafficBrakingFactors = new float[CarCount];
@@ -2205,6 +2225,8 @@ public sealed partial class TrackPreview : MonoBehaviour
                 pitMembershipChanged |= wasInPit != car.InPit;
                 TimingRun?.RecordTravel(i, car.Odometer - beforeMovement, (car.Odometer - beforeMovement) / seconds, car.PreciseTrackDistance, reducedBurn, onTrack: !car.InPit);
                 TimingRun?.Record(i, before, car.InPit ? pitTraffic.RaceDistance(car) : car.PreciseTrackDistance, seconds);
+                if (SessionRun != null)
+                    StartTireWearFailure(i, car);
             }
             else if (SessionRun != null)
             {
@@ -2212,6 +2234,7 @@ public sealed partial class TrackPreview : MonoBehaviour
                 sessionDistances[i] += speed * seconds;
                 SessionRun.RecordTravel(i, sessionDistances[i] - before, speed, sessionDistances[i]);
                 SessionRun.Record(i, before, sessionDistances[i], seconds);
+                StartTireWearFailure(i, null);
             }
         }
         pitTraffic?.EndStep();
@@ -2287,10 +2310,15 @@ public sealed partial class TrackPreview : MonoBehaviour
     private string CautionReasonForCar(int index)
     {
         string car = $"No. {simulation.Cars[index].DisplayCarNumber}";
-        if (crashes[index].Apron)
-            return $"{car} spun on the apron";
         if (crashes[index].Active)
-            return $"{car} spun after contact";
+            return crashes[index].Cause switch
+            {
+                CrashCause.Apron => $"{car} spun on the apron",
+                CrashCause.FrontTireWear => crashes[index].Straight.WallDistanceRemaining == 0f
+                    ? $"{car} hit the wall after a front tire failed" : $"{car} ran off after a front tire failed",
+                CrashCause.RearTireWear => $"{car} spun after a rear tire failed",
+                _ => $"{car} spun after contact"
+            };
         string failure = SessionRun.MechanicalFailure(index);
         return string.IsNullOrEmpty(failure) ? $"{car} stopped on track" : $"{car} - {failure}";
     }
@@ -2382,6 +2410,8 @@ public sealed partial class TrackPreview : MonoBehaviour
             trafficStartLaneSpeeds[i] = stabilizeTrafficLane[i] && laneControl.HasLane &&
                 Mathf.Abs(laneControl.LastLane - drivingLanes[i]) <= .001f ? laneControl.LateralSpeed : 0f;
             collisionParticipants[i] = onTrack[i];
+            if (collisionsEnabled && collisionParticipants[i])
+                collisionTireStartLanes[i] = TireAdjustedLane(i, distance, drivingLanes[i], traffic, out _);
             pitParticipants[i] = hasTrafficPose && traffic?.InPit == true;
             backExitParticipants[i] = pitParticipants[i] && traffic.BackExit;
             pitParticipants[i] &= !backExitParticipants[i];
@@ -2635,7 +2665,12 @@ public sealed partial class TrackPreview : MonoBehaviour
             return;
 
         ref var crash = ref crashes[index];
-        var traffic = trafficCars?[index];
+        var traffic = isQualifying ? qualifying.Car : trafficCars?[index];
+        if (crash.Cause == CrashCause.FrontTireWear)
+        {
+            AdvanceStraightTireCrash(index, traffic, seconds);
+            return;
+        }
         float before = traffic?.TrackDistance ?? sessionDistances[index];
         float oldLane = crash.Lane;
         float forward = crash.ForwardSpeed * seconds;
@@ -2703,6 +2738,11 @@ public sealed partial class TrackPreview : MonoBehaviour
             var traffic = trafficCars?[i];
             collisionParticipants[i] &= traffic?.InPit != true && (traffic?.FlatTireLaneBlend ?? 0f) == 0f;
             collisionEndDistances[i] = traffic?.TrackDistance ?? sessionDistances[i];
+            if (collisionParticipants[i])
+            {
+                collisionTireEndLanes[i] = TireAdjustedLane(i, collisionEndDistances[i], drivingLanes[i], traffic, out _);
+                collisionTireOffsets[i] = collisionTireEndLanes[i] - drivingLanes[i];
+            }
             if (allowDraftBumps)
                 draftBumpEligible[i] = collisionParticipants[i] && draftEligible[i] &&
                     !SessionRun.Finished(i) && traffic?.ApronEntryActive != true && traffic?.ApronExitActive != true &&
@@ -2737,7 +2777,7 @@ public sealed partial class TrackPreview : MonoBehaviour
                 pitStart, pitEnd, pitLaneStart, pitLaneEnd, wrap: false);
         }
         collisions.Resolve(SessionRun, lapLength, seconds, collisionParticipants, drivingDistances,
-            collisionEndDistances, collisionStartLanes, drivingLanes,
+            collisionEndDistances, collisionTireStartLanes, collisionTireEndLanes,
             draftBumpEligible: allowDraftBumps ? draftBumpEligible : null);
         if ((TrackState is null or SessionTrackState.TrackOpen or SessionTrackState.WhiteFlag) &&
             !BlendingStartLanes && stages?.ReleasingRestartLanes != true && stages?.ReducedFuelBurn != true)
@@ -2748,10 +2788,12 @@ public sealed partial class TrackPreview : MonoBehaviour
                     TryApronTurnWreck(i);
             }
         }
-        VehicleCollision001.Separate(lapLength, collisionParticipants, collisionEndDistances, drivingLanes, drivingWidths);
+        VehicleCollision001.Separate(lapLength, collisionParticipants, collisionEndDistances, collisionTireEndLanes, drivingWidths);
         for (int i=0;i<cars.Length;i++)
         {
             if (!collisionParticipants[i]) continue;
+            // Keep the traffic controller's lane separate from the tire-induced drift.
+            drivingLanes[i] = collisionTireEndLanes[i] - collisionTireOffsets[i];
             // Preserve double-precision progress and speed/fuel telemetry; this is a contact correction.
             if (trafficCars?[i] != null)
                 trafficCars[i].PreciseTrackDistance += collisionEndDistances[i]-trafficCars[i].TrackDistance;
@@ -2813,7 +2855,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         {
             SessionRun.RecordWreck(index);
             crash.Active = true;
-            crash.Apron = apron;
+            crash.Cause = apron ? CrashCause.Apron : CrashCause.Contact;
             crash.Lane = drivingLanes[index];
             crash.ForwardSpeed = SessionRun.CurrentSpeed(index) * .8f;
         }
@@ -2863,6 +2905,8 @@ public sealed partial class TrackPreview : MonoBehaviour
                 distance = grid.Distance;
                 lane = inPit ? grid.Lane : FormationTrackLane(distance, drivingLanesReady ? drivingLanes[i] : grid.Lane);
             }
+            else if (!inPit)
+                lane = TireAdjustedLane(i, distance, lane, traffic, out _);
             string passPhase = draftPassing?.SnapshotPhase(i);
             bool blocking = draftLeaderBlock?.Leader == i;
             frame.cars[i] = new TrackSnapshot.CarSample
@@ -2884,7 +2928,7 @@ public sealed partial class TrackPreview : MonoBehaviour
                 visible = cars[i].gameObject.activeSelf,
                 inPit = inPit,
                 retired = SessionRun.Retired(i),
-                spinning = crashes[i].Active && !SessionRun.Retired(i),
+                spinning = crashes[i].Active && crashes[i].Cause != CrashCause.FrontTireWear && !SessionRun.Retired(i),
                 servicing = pitStops?.IsServicing(i) == true,
                 pitRequested = pitStops?.IsRequested(i) == true,
                 collisionFlash = collisionFlashRemaining[i] > 0f,
@@ -2982,6 +3026,56 @@ public sealed partial class TrackPreview : MonoBehaviour
 
     private float CarSpeed(int index) => baseSpeeds[index];
 
+    private float TireAdjustedLane(int index, float distance, float lane, TrackPitTraffic.Car traffic, out float yawDegrees)
+    {
+        yawDegrees = 0f;
+        if (SessionRun == null || !cars[index].gameObject.activeSelf || iowaRecoveredCars[index].HasValue ||
+            crashes[index].Active || SessionRun.Retired(index) || SessionRun.Finished(index) ||
+            traffic?.ApronEntryActive == true || traffic?.ApronExitActive == true ||
+            (traffic?.FlatTireLaneBlend ?? 0f) > 0f || SessionRun.FlatTireMask(index) != 0 ||
+            TrackState is not (null or SessionTrackState.TrackOpen or SessionTrackState.WhiteFlag))
+            return lane;
+
+        return TireHandlingLaneAt(index, distance, lane, out yawDegrees);
+    }
+
+    private float TireHandlingLaneAt(int index, float distance, float lane, out float yawDegrees)
+    {
+        yawDegrees = 0f;
+        float turn = SessionRun.TireHandlingTurnAt(distance);
+        float speed = SessionRun.CurrentSpeed(index);
+        float turningLoad = turn * Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(12f, 32f, speed));
+        if (turningLoad == 0f)
+            return lane;
+
+        var car = SessionRun.Vehicle(index);
+        float rearSlip = AxleTireSlip(car, 2);
+        yawDegrees = 18f * turningLoad * rearSlip;
+
+        float frontSlip = AxleTireSlip(car, 0);
+        if (frontSlip == 0f)
+            return lane;
+
+        float outward = -Mathf.Sign(turningLoad);
+        float halfWidth = raceCarHalfWidths[index] > 0f ? raceCarHalfWidths[index] : VehicleCollision001.ContactWidth * .5f;
+        float room = Mathf.Max(0f, RoadWidths(distance).x * .5f - halfWidth - lane * outward);
+        return lane + outward * Mathf.Min(room, 2.4f * Mathf.Abs(turningLoad) * frontSlip);
+    }
+
+    private static float AxleTireSlip(TeamCar car, int firstTire)
+    {
+        // Cold grip affects pace. This handling loss comes from wear and overheating.
+        float grip = 0f;
+        for (int corner = firstTire; corner < firstTire + 2; corner++)
+        {
+            var tire = car?.GetTire(corner);
+            float temperature = Mathf.Max(185f, TireTemperatureModel.Fahrenheit(tire?.temperature ?? 0f));
+            grip += VehicleSpeed003.TireGripFactor(tire?.wear ?? 0f, temperature);
+        }
+        // Normalize to the warm-tire wear curve's maximum grip loss.
+        return Mathf.Clamp01((1f - grip * .5f) / .36f);
+    }
+
     private void PositionCars(bool previewCollisionPose = false)
     {
         if (!previewCollisionPose && raceStart != null)
@@ -3002,6 +3096,9 @@ public sealed partial class TrackPreview : MonoBehaviour
         }
         for (int i = 0; i < cars.Length; i++)
         {
+            tireYawAngles[i] = 0f;
+            if (!previewCollisionPose)
+                chasePoseBeforeYaw[i] = null;
             if (PositionIowaRecoveredCar(i) || i == 0 && PositionNorthWilkesboroGarageCar(previewCollisionPose))
                 continue;
 
@@ -3026,7 +3123,16 @@ public sealed partial class TrackPreview : MonoBehaviour
             float distance = traffic?.TrackDistance ?? (sessionDistances == null ? elapsed * CarSpeed(i) + lapLength * i / cars.Length : sessionDistances[i]);
             if (crashes[i].Active)
             {
+                if (crashes[i].Cause == CrashCause.FrontTireWear)
+                {
+                    var straight = crashes[i].Straight;
+                    cars[i].SetLocalPositionAndRotation(straight.Position, straight.Rotation);
+                    continue;
+                }
+
                 PositionTrackCar(cars[i], distance, crashes[i].Lane);
+                if (!previewCollisionPose && crashes[i].Yaw != 0f)
+                    chasePoseBeforeYaw[i] = new Pose(cars[i].localPosition, cars[i].localRotation);
                 cars[i].localRotation *= Quaternion.Euler(0f, crashes[i].Yaw, 0f);
                 continue;
             }
@@ -3045,7 +3151,7 @@ public sealed partial class TrackPreview : MonoBehaviour
                     continue;
                 }
             }
-            PositionTrackCar(cars[i], distance, lane);
+            PositionTrackCar(cars[i], distance, TireAdjustedLane(i, distance, lane, traffic, out tireYawAngles[i]));
         }
 
         for (int i = 0; i < cars.Length; i++)
@@ -3060,8 +3166,19 @@ public sealed partial class TrackPreview : MonoBehaviour
                 predictedHeading.Apply(cars[i], spinning);
             }
             else
-            {
                 carHeadings[i].Apply(cars[i], spinning);
+
+            bool tireYaw = tireYawAngles[i] != 0f;
+            if (tireYaw)
+            {
+                if (!previewCollisionPose)
+                    chasePoseBeforeYaw[i] = new Pose(cars[i].localPosition, cars[i].localRotation);
+                Vector3 frontAxle = raceWheels[i]?.FrontAxleCenter ?? Vector3.forward * RearAxleHeading.CenterToRearAxle;
+                RaceWheelAnimation.ApplyFrontAxleYaw(cars[i], frontAxle, tireYawAngles[i]);
+            }
+
+            if (!previewCollisionPose)
+            {
                 float steeringBlend = 0f;
                 if (!spinning && kinkSteeringBlend != null)
                 {
@@ -3070,7 +3187,10 @@ public sealed partial class TrackPreview : MonoBehaviour
                         && traffic.FlatTireLaneBlend == 0f)
                         steeringBlend = kinkSteeringBlend(traffic.TrackDistance);
                 }
-                raceWheels[i]?.Sample(cars[i], spinning, steeringBlend);
+                if (tireYaw)
+                    raceWheels[i]?.SampleTireYaw(cars[i]);
+                else
+                    raceWheels[i]?.Sample(cars[i], spinning, steeringBlend);
             }
         }
     }
