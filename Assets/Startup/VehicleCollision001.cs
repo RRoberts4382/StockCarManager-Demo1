@@ -8,6 +8,8 @@ internal sealed class VehicleCollision001
     internal const float DraftBumpMinimumSpeed = 145f * TrackDefinition.MetersPerMile / 3600f;
     internal const float DraftBumpAlignment = .4f;
     internal const float DraftBumpMaximumClosingSpeed = 1f;
+    private const float DraftBumpTransferFraction = .6f;
+    private const float ChasingDraftBumpTransferFraction = .84f;
     private readonly bool[,] touching;
     private readonly bool[,] gentleBumpContacts;
     private readonly float[] impactDamage;
@@ -55,7 +57,8 @@ internal sealed class VehicleCollision001
 
     public void Resolve(RaceSessionRun run, float lapLength, float seconds,
         bool[] onTrack, float[] startDistances, float[] endDistances, float[] startLanes, float[] endLanes,
-        bool wrap = true, float[] startYaw = null, float[] endYaw = null, bool[] draftBumpEligible = null)
+        bool wrap = true, float[] startYaw = null, float[] endYaw = null, bool[] draftBumpEligible = null,
+        int[] strongDraftBumpTargets = null)
     {
         Array.Clear(draftBumpSpeedChange, 0, draftBumpSpeedChange.Length);
         Array.Clear(gaveDraftBump, 0, gaveDraftBump.Length);
@@ -125,7 +128,10 @@ internal sealed class VehicleCollision001
                             (continuingBump || closingSpeed >= .03f);
                         if (gentleBump && !continuingBump)
                         {
-                            float transfer = .6f * closingSpeed;
+                            float transfer = strongDraftBumpTargets?[follower] == leader
+                                ? Mathf.Min(DraftBumpTransferFraction * DraftBumpMaximumClosingSpeed,
+                                    ChasingDraftBumpTransferFraction * closingSpeed)
+                                : DraftBumpTransferFraction * closingSpeed;
                             draftBumpSpeedChange[leader] += transfer;
                             draftBumpSpeedChange[follower] -= transfer;
                             receivedDraftBump[leader] = true;

@@ -61,6 +61,7 @@ internal sealed class TrackDraftPass
     private float reviewIn;
 
     internal bool Active => attempts.Count > 0;
+    internal TrackDraftLineMerge LineMerge { get; set; }
     internal bool[] LaneChanges { get; }
     internal float[] BumperGaps { get; }
 
@@ -82,6 +83,15 @@ internal sealed class TrackDraftPass
     }
 
     internal int LeaderForAttacker(int index) => owners[index]?.Attacker == index ? owners[index].Leader : -1;
+
+    internal bool OwnsCar(int index) => owners[index] != null;
+
+    internal float CommittedLane(int index, float currentLane, float width)
+    {
+        var attempt = owners[index];
+        return attempt != null && attempt.Phase == PassPhase.Passing && index != attempt.Leader && index != attempt.Helper
+            ? BoundedPassingLane(attempt.PassingLane, width) : currentLane;
+    }
 
     internal int SnapshotTarget(int index) => owners[index]?.Leader ?? -1;
 
@@ -132,7 +142,7 @@ internal sealed class TrackDraftPass
         for (int i = 0; i < owners.Length; i++)
         {
             int leader = draft.CloseFollowLeaders[i];
-            float gap = owners[i] == null && IsRunning(i) && IsRunning(leader) && owners[leader] == null
+            float gap = owners[i] == null && AvailableForPass(i) && AvailableForPass(leader) && owners[leader] == null
                 ? Gap(i, leader) - ContactLength : -1f;
             float reserve = 0f;
             float usableGap = 0f;
@@ -164,7 +174,8 @@ internal sealed class TrackDraftPass
         foreach (var candidate in candidates)
         {
             int attacker = candidate.Attacker;
-            if (owners[attacker] != null || owners[candidate.Leader] != null)
+            if (owners[attacker] != null || owners[candidate.Leader] != null ||
+                !AvailableForPass(attacker) || !AvailableForPass(candidate.Leader))
                 continue;
 
             int helper = FindSupport(attacker, lanes[attacker]);
@@ -193,6 +204,8 @@ internal sealed class TrackDraftPass
             float bumperGap = Gap(attacker, leader) - ContactLength;
             if (attempt.Phase != PassPhase.Passing)
             {
+                if (IsRegrouping(attacker) || IsRegrouping(leader) || IsRegrouping(attempt.Helper))
+                    return false;
                 int helper = FindSupport(attacker, attempt.OriginalLane, attempt);
                 if (helper < 0 || draft.CloseFollowLeaders[attacker] != leader || bumperGap > attempt.SetupGap + 1.35f ||
                     OpenPace(attacker, leader, bumperGap, attempt.SetupGap) - speeds[leader] < MinimumReserve - .25f)
@@ -289,13 +302,13 @@ internal sealed class TrackDraftPass
             LaneChanges[index] = true;
         }
 
-        float PassingTarget(int index, Attempt attempt)
-        {
-            float edge = Mathf.Max(0f, widths[index] * .5f - 1.1f);
-            return Mathf.Clamp(attempt.PassingLane, -edge, edge);
-        }
+        float PassingTarget(int index, Attempt attempt) => BoundedPassingLane(attempt.PassingLane, widths[index]);
 
         bool IsRunning(int i) => i >= 0 && eligible[i] && speeds[i] >= MinimumPace;
+
+        bool IsRegrouping(int i) => i >= 0 && LineMerge?.Regrouping[i] == true;
+
+        bool AvailableForPass(int i) => IsRunning(i) && !IsRegrouping(i) && LineMerge?.ReservesCar(i) != true;
 
         float RearPosition(int index)
         {
@@ -331,7 +344,7 @@ internal sealed class TrackDraftPass
         }
 
         bool CanSupport(int car, int front, float sourceLane, float gap, Attempt attempt) =>
-            car != front && (owners[car] == null || attempt?.Helper == car) && IsRunning(car) &&
+            car != front && (owners[car] == null || attempt?.Helper == car) && AvailableForPass(car) &&
             gap >= ContactLength - .06f && gap < ContactLength + 4.3f &&
             Mathf.Abs(lanes[car] - sourceLane) <= 1f && Mathf.Abs(speeds[car] - speeds[front]) <= 2f;
 
@@ -482,7 +495,7 @@ internal sealed class TrackDraftPass
                 var other = owners[j];
                 // A different pass may have already committed to a lane the car has not reached yet.
                 float otherTarget = other != null && other != attempt && other.Phase == PassPhase.Passing &&
-                    j != other.Leader ? PassingTarget(j, other) : otherLane;
+                    j != other.Leader ? PassingTarget(j, other) : LineMerge?.LaneChanges[j] == true ? targets[j] : otherLane;
                 if (Mathf.Max(otherLane, otherTarget) <= low || Mathf.Min(otherLane, otherTarget) >= high)
                     continue;
                 float gap = Gap(index, j);
@@ -492,6 +505,12 @@ internal sealed class TrackDraftPass
             }
             return true;
         }
+    }
+
+    private static float BoundedPassingLane(float lane, float width)
+    {
+        float edge = Mathf.Max(0f, width * .5f - 1.1f);
+        return Mathf.Clamp(lane, -edge, edge);
     }
 
     private static bool CanClearLeader(float lane, float destination, float leaderLane, float bumperGap, float closingSpeed)

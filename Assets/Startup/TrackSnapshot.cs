@@ -6,9 +6,12 @@ using UnityEngine;
 internal sealed class TrackSnapshot
 {
     private const int SamplesPerSecond = 10;
-    private const int Capacity = 60 * SamplesPerSecond + 1;
+    private const int WindowSeconds = 180;
+    private const int Capacity = WindowSeconds * SamplesPerSecond + 1;
+    private const double CaptureTolerance = 0.00001;
     private readonly Frame[] frames = new Frame[Capacity];
     private readonly Queue<OvalPassAttempt> ovalPassAttempts = new();
+    private readonly Queue<PlateMergeAttempt> plateMergeAttempts = new();
     private int next;
     private int count;
     private double lastCapture = double.NegativeInfinity;
@@ -43,6 +46,9 @@ internal sealed class TrackSnapshot
         public float preferredLaneMeters, preferredLineSpeedFactor;
         // Draft allowance in the free-running target before the corner profile and other speed limits.
         public float draftBoostMph;
+        public float packWakeBoostMph;
+        public float trailingSpeedBoostMph;
+        public bool regrouping;
         public int draftBumpsGiven, draftBumpsReceived;
         public string draftPassPhase;
         public int draftPassTargetNumber;
@@ -85,10 +91,18 @@ internal sealed class TrackSnapshot
     }
 
     [Serializable]
+    private struct PlateMergeAttempt
+    {
+        public double simulationSeconds;
+        public int sourceHeadCarNumber, receivingTailCarNumber, receivingHeadCarNumber, queuedCarCount;
+        public float sourceLaneMeters, targetLaneMeters, openingSpeedMps;
+        public bool chaseLine, frontJoin;
+    }
+
+    [Serializable]
     private sealed class FileData
     {
-        // Version 26 puts the version 25 Easier criteria at the midpoint.
-        public int formatVersion = 26;
+        public int formatVersion = 30;
         public string poseSpace = "TrackPreview local space (meters)";
         public float centerToRearAxleMeters = RearAxleHeading.CenterToRearAxle;
         public string savedUtc;
@@ -97,6 +111,8 @@ internal sealed class TrackSnapshot
         public Frame[] frames;
         public int ovalPassAttemptCount;
         public OvalPassAttempt[] ovalPassAttempts = Array.Empty<OvalPassAttempt>();
+        public int plateMergeAttemptCount;
+        public PlateMergeAttempt[] plateMergeAttempts = Array.Empty<PlateMergeAttempt>();
         public List<RivalSetupChange> rivalSetupChanges;
         public List<RivalPracticeTelemetry> rivalPracticeTelemetry;
     }
@@ -113,11 +129,29 @@ internal sealed class TrackSnapshot
         });
     }
 
+    internal void RecordPlateMergeAttempt(double simulationSeconds, int sourceHead, int receivingCar, int queuedCars,
+        float sourceLane, float targetLane, float openingSpeed, bool chaseLine = false, bool frontJoin = false)
+    {
+        plateMergeAttempts.Enqueue(new PlateMergeAttempt
+        {
+            simulationSeconds = simulationSeconds,
+            sourceHeadCarNumber = sourceHead,
+            receivingTailCarNumber = frontJoin ? -1 : receivingCar,
+            receivingHeadCarNumber = frontJoin ? receivingCar : -1,
+            queuedCarCount = queuedCars,
+            sourceLaneMeters = sourceLane,
+            targetLaneMeters = targetLane,
+            openingSpeedMps = openingSpeed,
+            chaseLine = chaseLine,
+            frontJoin = frontJoin
+        });
+    }
+
     public Frame BeginFrame(double simulationSeconds, int carCount, bool force)
     {
         if (force && count > 0 && simulationSeconds == lastCapture)
             return frames[(next + Capacity - 1) % Capacity];
-        if (!force && simulationSeconds - lastCapture < 1.0 / SamplesPerSecond - 0.00001)
+        if (!force && simulationSeconds - lastCapture < 1.0 / SamplesPerSecond - CaptureTolerance)
             return null;
 
         lastCapture = simulationSeconds;
@@ -125,9 +159,18 @@ internal sealed class TrackSnapshot
         next = (next + 1) % Capacity;
         count = Math.Min(count + 1, Capacity);
         frame.simulationSeconds = simulationSeconds;
-        double oldestCapture = frames[(next + Capacity - count) % Capacity].simulationSeconds;
+        int oldest = (next + Capacity - count) % Capacity;
+        double cutoff = simulationSeconds - WindowSeconds - CaptureTolerance;
+        while (count > 1 && frames[oldest].simulationSeconds < cutoff)
+        {
+            count--;
+            oldest = (oldest + 1) % Capacity;
+        }
+        double oldestCapture = frames[oldest].simulationSeconds;
         while (ovalPassAttempts.Count > 0 && ovalPassAttempts.Peek().simulationSeconds < oldestCapture)
             ovalPassAttempts.Dequeue();
+        while (plateMergeAttempts.Count > 0 && plateMergeAttempts.Peek().simulationSeconds < oldestCapture)
+            plateMergeAttempts.Dequeue();
         return frame;
     }
 
@@ -151,22 +194,32 @@ internal sealed class TrackSnapshot
         int oldest = (next + Capacity - count) % Capacity;
         for (int i = 0; i < count; i++)
             data.frames[i] = frames[(oldest + i) % Capacity];
-        if (count > 0 && ovalPassAttempts.Count > 0)
+        if (count > 0)
         {
             double latestCapture = data.frames[count - 1].simulationSeconds;
-            var attempts = new List<OvalPassAttempt>(ovalPassAttempts.Count);
-            foreach (var attempt in ovalPassAttempts)
-            {
-                if (attempt.simulationSeconds > latestCapture)
-                    break;
-                attempts.Add(attempt);
-            }
-            data.ovalPassAttempts = attempts.ToArray();
-            data.ovalPassAttemptCount = attempts.Count;
+            data.ovalPassAttempts = AttemptsThrough(ovalPassAttempts, latestCapture, attempt => attempt.simulationSeconds);
+            data.ovalPassAttemptCount = data.ovalPassAttempts.Length;
+            data.plateMergeAttempts = AttemptsThrough(plateMergeAttempts, latestCapture, attempt => attempt.simulationSeconds);
+            data.plateMergeAttemptCount = data.plateMergeAttempts.Length;
         }
 
         string path = Path.Combine(directory, $"snapshot-{now:yyyyMMdd-HHmmss-fff}-{Guid.NewGuid():N}.json");
         File.WriteAllText(path, JsonUtility.ToJson(data, true));
         return path;
+    }
+
+    private static T[] AttemptsThrough<T>(Queue<T> attempts, double latestCapture, Func<T, double> simulationSeconds)
+    {
+        if (attempts.Count == 0)
+            return Array.Empty<T>();
+
+        var included = new List<T>(attempts.Count);
+        foreach (var attempt in attempts)
+        {
+            if (simulationSeconds(attempt) > latestCapture)
+                break;
+            included.Add(attempt);
+        }
+        return included.ToArray();
     }
 }

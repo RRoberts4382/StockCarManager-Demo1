@@ -7,6 +7,8 @@ internal sealed class TrackDraft
     private const float DraftStrengthMultiplier = 2f;
     private const float NonPlateStrength = .25f;
     private const float MphToMetersPerSecond = TrackDefinition.MetersPerMile / 3600f;
+    private const float MaximumTrailingSpeedBoost = 2f * MphToMetersPerSecond;
+    private const float FullTrailingBoostGap = 10f * VehicleCollision001.ContactLength;
     private const float DraftStartSpeed = 95f * MphToMetersPerSecond;
     private const float FullDraftSpeed = 190f * MphToMetersPerSecond;
     private const float ForwardWakeRange = 300f * TrackDefinition.MetersPerFoot;
@@ -43,6 +45,13 @@ internal sealed class TrackDraft
     private const float SeekSwitchMargin = .12f;
     private const float SeekWakeThreshold = .08f;
     private const float Alignment = 3f * TrackDefinition.MetersPerFoot;
+    private const float ChasingLineBumpChanceScale = 1.8f;
+    private const float ChasingLineBumpChanceLimit = .90f;
+    private const float RegroupingBumpChanceScale = 2.2f;
+    private const float RegroupingBumpChanceLimit = .95f;
+    private const float RegroupingBumpMinimumIntent = .72f;
+    private const float RegroupingBumpInterval = 2f;
+    private const float RegroupingBumpIntervalVariation = .8f;
     private readonly float[] boost;
     private readonly float[] lineBoost;
     private readonly float[] speedStrength;
@@ -56,6 +65,8 @@ internal sealed class TrackDraft
     private readonly int[] seekPartners;
     private readonly int[] closeFollowLeaders;
     private readonly float[] bumpIntent;
+    private readonly bool[] raceLeaderLine;
+    private readonly int[] strongDraftBumpTargets;
     private readonly BumpDecision[] bumpDecisions;
     private readonly System.Random bumpRandom = new System.Random(27099);
     private float laneVariationTime;
@@ -85,12 +96,19 @@ internal sealed class TrackDraft
         seekPartners = new int[count];
         closeFollowLeaders = new int[count];
         bumpIntent = new float[count];
+        raceLeaderLine = new bool[count];
+        strongDraftBumpTargets = new int[count];
+        System.Array.Fill(strongDraftBumpTargets, -1);
         bumpDecisions = new BumpDecision[count];
         System.Array.Fill(seekPartners, -1);
         System.Array.Fill(closeFollowLeaders, -1);
     }
 
     public float SpeedBoost(int index) => boost[index] + lineBoost[index];
+
+    internal static float TrailingSpeedBoost(float gapMeters) =>
+        gapMeters > 0f ? MaximumTrailingSpeedBoost * Mathf.Clamp01(gapMeters / FullTrailingBoostGap) : 0f;
+
     internal bool LeadsDraftLine(int index)
     {
         int follower = lineBehind[index];
@@ -100,6 +118,7 @@ internal sealed class TrackDraft
     public bool[] InLine => inLine;
     public int[] CloseFollowLeaders => closeFollowLeaders;
     public float[] BumpIntent => bumpIntent;
+    internal int[] StrongDraftBumpTargets => strongDraftBumpTargets;
     public float[] LaneOffsets { get; }
     public float[] AppliedLaneOffsets { get; }
     public float[] ApronEdgeAllowance { get; }
@@ -387,11 +406,16 @@ internal sealed class TrackDraft
     internal static float BumpIntensity(float aggression) => Mathf.Lerp(.25f, 1f, aggression);
 
     public void UpdateBumpIntent(float lapLength, float seconds, System.Collections.Generic.IReadOnlyList<SessionCarResult> drivers,
-        float[] distances, float[] lanes, float[] speeds, bool allowBumps, TrackDraftPass pass = null)
+        float[] distances, float[] lanes, float[] speeds, bool allowBumps, TrackDraftPass pass = null, int raceLeader = -1,
+        bool[] regrouping = null)
     {
+        bool hasLeaderLine = allowBumps && (uint)raceLeader < (uint)speedStrength.Length && speedStrength[raceLeader] > 0f;
+        if (hasLeaderLine)
+            MarkRaceLeaderLine(raceLeader);
         for (int i = 0; i < bumpDecisions.Length; i++)
         {
             int leader = closeFollowLeaders[i];
+            strongDraftBumpTargets[i] = -1;
             if (!allowBumps || leader < 0 || pass?.SuppressBump(i, leader) == true ||
                 Mathf.Min(speeds[i], speeds[leader]) < VehicleCollision001.DraftBumpMinimumSpeed ||
                 Mathf.Abs(lanes[i] - lanes[leader]) > VehicleCollision001.DraftBumpAlignment ||
@@ -415,13 +439,54 @@ internal sealed class TrackDraft
             float aggression = drivers?[i].driver?.personalityTraits?.aggression ?? .5f;
             if (float.IsNaN(aggression))
                 aggression = .5f;
+            bool chasing = hasLeaderLine && !raceLeaderLine[i] && !raceLeaderLine[leader];
+            bool regroupingPair = chasing && regrouping?[i] == true && regrouping[leader] &&
+                lineAhead[i] == leader && lineBehind[leader] == i;
+            if (regroupingPair)
+                decision.TimeUntilAttempt = Mathf.Min(decision.TimeUntilAttempt, RegroupingBumpInterval + RegroupingBumpIntervalVariation);
             if (decision.TimeUntilAttempt <= 0f)
             {
-                decision.TimeUntilAttempt = 3f + 1.5f * (float)bumpRandom.NextDouble();
-                if (bumpRandom.NextDouble() < BumpAttemptChance(aggression))
+                float intervalRoll = (float)bumpRandom.NextDouble();
+                decision.TimeUntilAttempt = regroupingPair
+                    ? RegroupingBumpInterval + RegroupingBumpIntervalVariation * intervalRoll
+                    : 3f + 1.5f * intervalRoll;
+                float chance = BumpAttemptChance(aggression);
+                if (regroupingPair)
+                    chance = Mathf.Min(RegroupingBumpChanceLimit, RegroupingBumpChanceScale * chance);
+                else if (chasing)
+                    chance = Mathf.Min(ChasingLineBumpChanceLimit, ChasingLineBumpChanceScale * chance);
+                if (bumpRandom.NextDouble() < chance)
                     decision.Remaining = 1.6f;
             }
-            bumpIntent[i] = decision.Remaining > 0f ? BumpIntensity(aggression) : 0f;
+            float intent = BumpIntensity(aggression);
+            if (regroupingPair)
+                intent = Mathf.Max(intent, RegroupingBumpMinimumIntent);
+            bumpIntent[i] = decision.Remaining > 0f ? intent : 0f;
+            if (chasing && bumpIntent[i] > 0f)
+                strongDraftBumpTargets[i] = leader;
+        }
+    }
+
+    private void MarkRaceLeaderLine(int leader)
+    {
+        System.Array.Clear(raceLeaderLine, 0, raceLeaderLine.Length);
+        raceLeaderLine[leader] = true;
+        int car = leader;
+        int neighbor = lineAhead[car];
+        while (neighbor >= 0 && !raceLeaderLine[neighbor] && lineBehind[neighbor] == car && lineLinkWeight[car] > 0f)
+        {
+            raceLeaderLine[neighbor] = true;
+            car = neighbor;
+            neighbor = lineAhead[car];
+        }
+
+        car = leader;
+        neighbor = lineBehind[car];
+        while (neighbor >= 0 && !raceLeaderLine[neighbor] && lineAhead[neighbor] == car && lineLinkWeight[neighbor] > 0f)
+        {
+            raceLeaderLine[neighbor] = true;
+            car = neighbor;
+            neighbor = lineBehind[car];
         }
     }
 
@@ -429,6 +494,7 @@ internal sealed class TrackDraft
     {
         bumpDecisions[index].Remaining = 0f;
         bumpIntent[index] = 0f;
+        strongDraftBumpTargets[index] = -1;
     }
 
     public void UpdatePlateLanes(float lapLength, RaceSessionRun run, bool[] onTrack,

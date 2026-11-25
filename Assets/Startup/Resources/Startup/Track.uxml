@@ -66,6 +66,9 @@
                         <ui:VisualElement name="scoringRaceProgress" class="scoring-race-progress" picking-mode="Ignore" />
                     </ui:VisualElement>
                     <ui:Button name="toggleTrackStandings" text="&lt;" tooltip="Collapse Scoring Bug" class="scoring-toggle track-icon-tooltip-target" />
+                    <ui:Button name="scoringColumnButton" class="scoring-toggle scoring-column-toggle track-icon-tooltip-target">
+                        <ui:VisualElement class="track-icon-art scoring-column-icon" picking-mode="Ignore" />
+                    </ui:Button>
                 </ui:VisualElement>
                 <ui:ScrollView name="trackTimingRows" class="timing-rows" horizontal-scroller-visibility="Hidden" vertical-scroller-visibility="Hidden" />
             </ui:VisualElement>

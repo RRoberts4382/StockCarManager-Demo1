@@ -125,6 +125,10 @@ public sealed class StartupMenu : MonoBehaviour
     private ScrollView trackTimingRows;
     private VisualElement trackStandings;
     private Button toggleTrackStandingsButton;
+    private Button scoringColumnButton;
+    private VisualElement scoringColumnIcon;
+    private enum ScoringColumn { Interval, Mph, LastLap }
+    private ScoringColumn scoringColumn;
     private Label scoringSession, scoringSessionRemaining, scoringRaceLap, scoringRaceRemaining;
     private VisualElement scoringRaceLine, scoringRaceProgress, scoringFlag;
     private RaceSessionRun scoringProgressRun;
@@ -151,7 +155,7 @@ public sealed class StartupMenu : MonoBehaviour
     private const float ScoringPositionArrowDuration = 1.5f;
     private readonly Dictionary<SessionCarResult, (int Position, int Direction, float Until)> scoringPositions =
         new Dictionary<SessionCarResult, (int, int, float)>();
-    private readonly List<(VisualElement Row, Label Position, Label Car, Label Driver, Label Gap)> timingCells =
+    private readonly List<(VisualElement Row, Label Position, Label Car, Label Driver, Label Value)> timingCells =
         new List<(VisualElement, Label, Label, Label, Label)>();
     private Button quitButton;
     private Button backButton;
@@ -283,6 +287,11 @@ public sealed class StartupMenu : MonoBehaviour
         trackStandings = trackScreen.Q("trackStandings");
         toggleTrackStandingsButton = trackScreen.Q<Button>("toggleTrackStandings");
         toggleTrackStandingsButton.clicked += ToggleTrackStandings;
+        scoringColumnButton = trackScreen.Q<Button>("scoringColumnButton");
+        scoringColumnIcon = scoringColumnButton.Q(className: "track-icon-art");
+        scoringColumnButton.clicked += CycleScoringColumn;
+        DrawButtonIcon(scoringColumnButton, DrawScoringColumnIcon);
+        UpdateScoringColumnButton();
         scoringSession = trackScreen.Q<Label>("scoringSession");
         scoringSessionRemaining = trackScreen.Q<Label>("scoringSessionRemaining");
         scoringRaceLine = trackScreen.Q("scoringRaceLine");
@@ -912,6 +921,8 @@ public sealed class StartupMenu : MonoBehaviour
         passingCriteriaSlider?.UnregisterValueChangedCallback(SetTrackPassingCriteria);
         if (toggleTrackStandingsButton != null)
             toggleTrackStandingsButton.clicked -= ToggleTrackStandings;
+        if (scoringColumnButton != null)
+            scoringColumnButton.clicked -= CycleScoringColumn;
         if (scoringRaceProgress != null)
             scoringRaceProgress.generateVisualContent -= DrawScoringProgress;
         if (pitSettingsButton != null)
@@ -6108,6 +6119,36 @@ public sealed class StartupMenu : MonoBehaviour
         }
     }
 
+    private ScoringColumn NextScoringColumn => scoringColumn switch
+    {
+        ScoringColumn.Interval => ScoringColumn.Mph,
+        ScoringColumn.Mph => ScoringColumn.LastLap,
+        _ => ScoringColumn.Interval
+    };
+
+    private static string ScoringColumnName(ScoringColumn column) => column switch
+    {
+        ScoringColumn.Mph => "MPH",
+        ScoringColumn.LastLap => "Last Lap",
+        _ => "Interval"
+    };
+
+    private void CycleScoringColumn()
+    {
+        HideTrackIconTooltip();
+        scoringColumn = NextScoringColumn;
+        UpdateScoringColumnButton();
+        displayedTimingRevision = -1;
+        nextStandingsRefresh = 0f;
+        RefreshTrackTiming();
+    }
+
+    private void UpdateScoringColumnButton()
+    {
+        scoringColumnButton.tooltip = $"Showing {ScoringColumnName(scoringColumn)}. Click to show {ScoringColumnName(NextScoringColumn)}.";
+        scoringColumnIcon.MarkDirtyRepaint();
+    }
+
     private bool PitSettingsOpen => trackPitSettings.ClassListContains("pit-settings-open");
 
     private void TogglePitSettings()
@@ -6143,7 +6184,10 @@ public sealed class StartupMenu : MonoBehaviour
             for (int positionIndex = 0; positionIndex < timingCells.Count; positionIndex++)
             {
                 var cell = timingCells[positionIndex];
-                UpdateScoringPosition(cell.Position, (SessionCarResult)cell.Row.userData, positionIndex);
+                var result = (SessionCarResult)cell.Row.userData;
+                if (scoringColumn == ScoringColumn.Mph)
+                    cell.Value.text = FormatScoringSpeed(result.InstantSpeed);
+                UpdateScoringPosition(cell.Position, result, positionIndex);
             }
             return;
         }
@@ -6171,6 +6215,16 @@ public sealed class StartupMenu : MonoBehaviour
 
     private static string FormatScoringGap(float seconds) =>
         float.IsNaN(seconds) || float.IsInfinity(seconds) ? "—" : $"+{seconds:0.00}";
+
+    private static string FormatScoringSpeed(double metersPerSecond) =>
+        double.IsNaN(metersPerSecond) || double.IsInfinity(metersPerSecond) || metersPerSecond < 0d
+            ? "\u2014" : $"{metersPerSecond * 3600d / TrackDefinition.MetersPerMile:0} MPH";
+
+    private static string FormatScoringLastLap(SessionCarResult result)
+    {
+        float seconds = result.lapTimes is { Count: > 0 } laps ? laps[^1] : 0f;
+        return seconds > 0f && !float.IsInfinity(seconds) ? RaceEventView.LapTime(seconds) : "\u2014";
+    }
 
     private void UpdateScoringHeader(RaceSessionRun timing)
     {
@@ -6272,7 +6326,7 @@ public sealed class StartupMenu : MonoBehaviour
         }
     }
 
-    private void SetTimingRow(int position, int carIndex, SessionCarResult result, string gap)
+    private void SetTimingRow(int position, int carIndex, SessionCarResult result, string interval)
     {
         if (position >= timingCells.Count)
         {
@@ -6285,7 +6339,7 @@ public sealed class StartupMenu : MonoBehaviour
             });
             var cells = (Row: row, Position: TimingCell(string.Empty, "timing-position"),
                 Car: TimingCell(string.Empty, "timing-car"), Driver: TimingCell(string.Empty, "timing-driver-name"),
-                Gap: TimingCell(string.Empty, "timing-gap"));
+                Value: TimingCell(string.Empty, "timing-gap"));
             cells.Position.generateVisualContent += DrawScoringPositionTriangle;
             if (position == 0)
                 cells.Driver.RegisterCallback<GeometryChangedEvent>(_ => FitScoringDriverNames(cells.Driver));
@@ -6293,7 +6347,7 @@ public sealed class StartupMenu : MonoBehaviour
             row.Add(cells.Position);
             row.Add(cells.Car);
             row.Add(cells.Driver);
-            row.Add(cells.Gap);
+            row.Add(cells.Value);
             trackTimingRows.Add(row);
         }
 
@@ -6307,9 +6361,19 @@ public sealed class StartupMenu : MonoBehaviour
             cell.Driver.tooltip = result.driverName?.Trim() ?? string.Empty;
             cell.Driver.text = scoringDriverNames.TryGetValue(result, out string displayName)
                 ? displayName : cell.Driver.tooltip;
-            cell.Gap.tooltip = trackPreview.TimingRun.IsRace ? "Gap to the race leader" : "Gap to the fastest lap";
         }
-        cell.Gap.text = gap;
+        cell.Value.text = scoringColumn switch
+        {
+            ScoringColumn.Mph => FormatScoringSpeed(result.InstantSpeed),
+            ScoringColumn.LastLap => FormatScoringLastLap(result),
+            _ => interval
+        };
+        cell.Value.tooltip = scoringColumn switch
+        {
+            ScoringColumn.Mph => "Current speed in miles per hour",
+            ScoringColumn.LastLap => "Last completed lap time",
+            _ => trackPreview.TimingRun.IsRace ? "Gap to the race leader" : "Gap to the fastest lap"
+        };
         UpdateScoringPosition(cell.Position, result, position);
     }
 
@@ -7403,6 +7467,39 @@ public sealed class StartupMenu : MonoBehaviour
             draw(painter);
             painter.Stroke();
         };
+    }
+
+    private void DrawScoringColumnIcon(Painter2D painter)
+    {
+        switch (scoringColumn)
+        {
+            case ScoringColumn.Mph:
+                painter.MoveTo(new Vector2(2, 11));
+                painter.Arc(new Vector2(8, 11), 6, Angle.Degrees(180), Angle.Degrees(360));
+                painter.MoveTo(new Vector2(7, 11));
+                painter.LineTo(new Vector2(11, 7));
+                break;
+            case ScoringColumn.LastLap:
+                painter.MoveTo(new Vector2(12.5f, 8.5f));
+                painter.Arc(new Vector2(8, 8.5f), 4.5f, Angle.Degrees(0), Angle.Degrees(360));
+                painter.ClosePath();
+                painter.MoveTo(new Vector2(6, 1.5f));
+                painter.LineTo(new Vector2(10, 1.5f));
+                painter.MoveTo(new Vector2(8, 1.5f));
+                painter.LineTo(new Vector2(8, 4));
+                painter.MoveTo(new Vector2(8, 6));
+                painter.LineTo(new Vector2(8, 8.5f));
+                painter.LineTo(new Vector2(10, 8.5f));
+                break;
+            default:
+                painter.MoveTo(new Vector2(2.5f, 3));
+                painter.LineTo(new Vector2(2.5f, 11));
+                painter.MoveTo(new Vector2(13.5f, 3));
+                painter.LineTo(new Vector2(13.5f, 11));
+                painter.MoveTo(new Vector2(5.5f, 7));
+                painter.LineTo(new Vector2(10.5f, 7));
+                break;
+        }
     }
 
     private static void DrawLeaveSessionIcon(Painter2D painter)
