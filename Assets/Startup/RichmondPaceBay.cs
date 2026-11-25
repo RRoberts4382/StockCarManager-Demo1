@@ -132,7 +132,8 @@ public sealed partial class TrackPreview
                 float virtualLength = pitTraffic.RouteLength - pitParking + richmondPaceJoinAfterExit;
                 float target = Mathf.InverseLerp(0f, virtualLength,
                     exitTravel + pitTraffic.RouteLength - pitParking) * richmondPaceDeparture.Length;
-                richmondPaceTravel = Mathf.MoveTowards(richmondPaceTravel, target, 38f * SessionStep);
+                AdvanceRichmondPaceRoute(richmondPaceDeparture,
+                    Mathf.Min(38f, Mathf.Max(0f, target - richmondPaceTravel) / SessionStep));
                 if (richmondPaceTravel >= richmondPaceDeparture.Length)
                     richmondPacePhase = RichmondPacePhase.Pacing;
                 break;
@@ -148,11 +149,26 @@ public sealed partial class TrackPreview
                     richmondPaceDriveIntoYardAt, richmondPaceTravel);
                 float speed = Mathf.SmoothStep(15f, 7f, yardBlend);
                 speed *= Mathf.Lerp(.4f, 1f, Mathf.InverseLerp(0f, 7f, richmondPaceReturn.Length - richmondPaceTravel));
-                richmondPaceTravel = Mathf.Min(richmondPaceTravel + speed * SessionStep, richmondPaceReturn.Length);
+                AdvanceRichmondPaceRoute(richmondPaceReturn, speed);
                 if (richmondPaceTravel >= richmondPaceReturn.Length)
                     richmondPacePhase = RichmondPacePhase.Parked;
                 break;
         }
+    }
+
+    private void AdvanceRichmondPaceRoute(PaceBayRoute route, float speed)
+    {
+        if (stages?.HasPaceCar == true && speed > 0f)
+        {
+            float remaining = route.Length - richmondPaceTravel;
+            float lookAhead = Mathf.Min(remaining, speed * speed / (2f * TrackPitTraffic.PitApproachDeceleration) + 2f);
+            float room = PacePathClearance(richmondPaceTravel, lookAhead, speed, (station, _) =>
+                new Pose(route.At(station), Quaternion.LookRotation(route.At(station + .4f) - route.At(station - .4f))));
+            if (room < lookAhead)
+                speed = Mathf.Min(speed, TrackPitTraffic.ApproachLimit(0f, room, SessionStep));
+            cautionPaceTrafficSpeed = speed;
+        }
+        richmondPaceTravel = Mathf.Min(richmondPaceTravel + speed * SessionStep, route.Length);
     }
 
     private bool PositionRichmondPaceBay((bool OnPitRoad, float Distance, float ParkingBlend) virtualPace)
@@ -208,7 +224,7 @@ public sealed partial class TrackPreview
 
         float ApproachLane(float station)
         {
-            float original = raceReleased ? 0f : FormationTrackLane(station, 0f);
+            float original = raceReleased ? cautionPaceAvoidanceLane : FormationTrackLane(station, 0f);
             return Mathf.SmoothStep(original, ApronLane(station),
                 Mathf.InverseLerp(entry - approachLength, entry, station));
         }

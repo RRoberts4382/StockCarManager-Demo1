@@ -34,6 +34,16 @@ public sealed class TrackDefinition
     public TrackBanking banking = new TrackBanking();
     public float widthMeters = 9f;
     public int pitStalls;
+
+    internal int SessionFieldSize(int requested)
+    {
+        int marked = pitRoad?.stalls?.Length ?? 0;
+        // Legacy layouts can specify capacity without providing stall markers.
+        int capacity = pitStalls > 0 ? pitStalls : marked;
+        if (capacity == 0) return requested;
+        if (marked > 0) capacity = Math.Min(capacity, marked);
+        return Math.Min(requested, capacity);
+    }
     public int NumberOfQualifyingLaps = 1;
     public int raceLaps = 20;
     public int[] raceStageLaps;

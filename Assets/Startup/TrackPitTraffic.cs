@@ -13,7 +13,11 @@ internal sealed class TrackPitTraffic
     private readonly float laneOffset;
     private readonly bool singleThroughLane;
     private readonly bool recoverStoppedQueueOverlap;
-    private float throughLane;
+    private const float LaneSpacing = 2.6f;
+    private const float EdgeClearance = 1.15f;
+    private const float MergeApproach = 20f;
+    private const float PullOutSpeed = 4f;
+    private float throughLane, secondThroughLane;
     private bool hasPassingLane;
     private Car[] field;
     private float[] stalls;
@@ -79,12 +83,12 @@ internal sealed class TrackPitTraffic
 
     internal void PlanTrafficSpeeds(float[] speeds, float seconds)
     {
-        if (!stepActive || RoutePosition == null) return;
+        if (!stepActive) return;
         for (int i = 0; i < stepField.Length; i++)
         {
             plannedStepSpeeds[i] = Mathf.Max(0f, speeds[i]);
-            if (stepField[i].Maneuver && !stepField[i].ArrivalManeuver)
-                plannedStepSpeeds[i] = Mathf.Min(4f, plannedStepSpeeds[i]);
+            if (PullingOut(stepField[i]))
+                plannedStepSpeeds[i] = Mathf.Min(PullOutSpeed, plannedStepSpeeds[i]);
         }
         // Propagate braking through a queue before any car moves. Repeated passes
         // converge independently of array order; they do not shorten braking limits.
@@ -101,11 +105,28 @@ internal sealed class TrackPitTraffic
                 float target = plannedStepSpeeds[i];
                 for (int j = 0; j < stepField.Length; j++)
                 {
-                    if (i == j || stepField[j].InGarage) continue;
-                    Vector3 delta = stepPositions[j] - stepPositions[i];
-                    float gap = Vector3.Dot(delta, forward);
-                    if (gap <= 0f || gap > 100f || Mathf.Abs(delta.y) > 1.5f || Mathf.Abs(Vector3.Dot(delta, across)) > 2.1f) continue;
-                    float aligned = Mathf.Cos(Mathf.DeltaAngle(stepHeadings[i], stepHeadings[j]) * Mathf.Deg2Rad);
+                    var leader = stepField[j];
+                    if (i == j || leader.InGarage || ParkedInStall(leader)) continue;
+                    float gap, aligned;
+                    bool sameRoute = SamePitRoute(car, leader) && !car.BackExit;
+                    bool converging = sameRoute && hasPassingLane &&
+                        car.PitDistance >= RoadEnd - MergeApproach && leader.PitDistance >= RoadEnd - MergeApproach;
+                    if (converging || sameRoute && RoutePosition == null)
+                    {
+                        gap = leader.PitDistance - car.PitDistance;
+                        if (gap < 0f || gap == 0f && (!converging || j > i) ||
+                            !converging && Mathf.Abs(leader.PitLane - car.PitLane) > 2.1f) continue;
+                        aligned = Mathf.Cos(Mathf.DeltaAngle(car.PitYaw, leader.PitYaw) * Mathf.Deg2Rad);
+                    }
+                    else
+                    {
+                        if (RoutePosition == null) continue;
+                        Vector3 delta = stepPositions[j] - stepPositions[i];
+                        gap = Vector3.Dot(delta, forward);
+                        if (gap <= 0f || Mathf.Abs(delta.y) > 1.5f || Mathf.Abs(Vector3.Dot(delta, across)) > 2.1f) continue;
+                        aligned = Mathf.Cos(Mathf.DeltaAngle(stepHeadings[i], stepHeadings[j]) * Mathf.Deg2Rad);
+                    }
+                    if (gap > 100f) continue;
                     if (aligned < .5f) continue;
                     float leaderSpeed = plannedStepSpeeds[j] * aligned;
                     // 3.8 m center spacing leaves room outside the physical guard's
@@ -147,13 +168,15 @@ internal sealed class TrackPitTraffic
     public float RouteLength => boundaries[2];
     public float SpeedLimit => speedLimit;
 
-    internal float ThroughLaneAt(float distance)
+    internal float ThroughLaneAt(float distance) => TravelLaneAt(distance, false);
+
+    private float TravelLaneAt(float distance, bool secondLane)
     {
         float blend = distance < RoadStart
             ? Mathf.SmoothStep(0f, 1f, distance / Mathf.Min(20f, RoadStart))
             : distance > RoadEnd
                 ? Mathf.SmoothStep(0f, 1f, (RouteLength - distance) / Mathf.Min(20f, RouteLength - RoadEnd)) : 1f;
-        return throughLane * blend;
+        return (secondLane && hasPassingLane ? secondThroughLane : throughLane) * blend;
     }
     public float EntryDistance => entryDistance;
     public float ExitDistance => entryDistance + bypassDistance;
@@ -192,7 +215,7 @@ internal sealed class TrackPitTraffic
         internal bool Maneuver, ArrivalManeuver;
         internal float ManeuverStart, ManeuverLength, ManeuverFrom, ManeuverTo;
         internal float ApproachStartLane;
-        internal bool ApproachingStall;
+        internal bool ApproachingStall, SecondTravelLane;
         internal float DepartureStart = float.NegativeInfinity;
         public bool Retired;
         public float FlatTireLaneBlend;
@@ -239,6 +262,7 @@ internal sealed class TrackPitTraffic
             target.ManeuverTo = ManeuverTo;
             target.ApproachStartLane = ApproachStartLane;
             target.ApproachingStall = ApproachingStall;
+            target.SecondTravelLane = SecondTravelLane;
             target.DepartureStart = DepartureStart;
             target.Retired = Retired;
             target.FlatTireLaneBlend = FlatTireLaneBlend;
@@ -410,7 +434,28 @@ internal sealed class TrackPitTraffic
         float outsideClearance = MinimumStallClearance(outsideLane);
         float insideClearance = MinimumStallClearance(-outsideLane);
         throughLane = outsideClearance >= insideClearance ? outsideLane : -outsideLane;
-        hasPassingLane = !singleThroughLane && Mathf.Min(outsideClearance, insideClearance) >= StallLaneClearance;
+        hasPassingLane = false;
+        float edge = 2f * laneOffset - EdgeClearance;
+        if (!singleThroughLane && edge * 2f >= LaneSpacing)
+        {
+            float bestShift = float.PositiveInfinity;
+            float primary = throughLane;
+            for (float left = -edge; left + LaneSpacing <= edge; left += .1f)
+            {
+                float right = left + LaneSpacing;
+                if (MinimumStallClearance(left) < StallLaneClearance ||
+                    MinimumStallClearance(right) < StallLaneClearance) continue;
+                float leftShift = Mathf.Abs(left - throughLane);
+                float rightShift = Mathf.Abs(right - throughLane);
+                float shift = Mathf.Min(leftShift, rightShift);
+                if (shift >= bestShift) continue;
+                bestShift = shift;
+                primary = leftShift <= rightShift ? left : right;
+                secondThroughLane = leftShift <= rightShift ? right : left;
+                hasPassingLane = true;
+            }
+            throughLane = primary;
+        }
         for (int i = 0; i < cars.Length; i++)
         {
             cars[i].FieldIndex = i;
@@ -471,32 +516,38 @@ internal sealed class TrackPitTraffic
             {
                 float start = arrival ? stopAt - length : car.PitDistance;
                 if (start < car.PitDistance - .01f) continue;
-                float to = arrival ? stallLanes[index] : throughLane;
-                if (!arrival && !DepartureWindowClear(car, length)) continue;
-                if (!ClearManeuver(car, start, length, car.PitLane, to, arrival)) continue;
-                car.WaitingForStallDeparture = false;
-                car.DepartureBlockedByIndex = -1;
-                car.DepartureBlockReason = null;
-                car.Maneuver = true; car.ArrivalManeuver = arrival;
-                car.ManeuverStart = start; car.ManeuverLength = length;
-                car.ManeuverFrom = car.PitLane; car.ManeuverTo = to;
-                break;
+                bool bothLanes = departure && hasPassingLane && start + length < RoadEnd - MergeApproach;
+                bool preferSecond = bothLanes && (index & 1) != 0;
+                if (TryManeuver(preferSecond) || bothLanes && TryManeuver(!preferSecond)) break;
+
+                bool TryManeuver(bool secondLane)
+                {
+                    float to = arrival ? stallLanes[index] : secondLane ? secondThroughLane : throughLane;
+                    if (!arrival && !DepartureWindowClear(car, length, to)) return false;
+                    if (!ClearManeuver(car, start, length, car.PitLane, to, arrival)) return false;
+                    car.WaitingForStallDeparture = false;
+                    car.DepartureBlockedByIndex = -1;
+                    car.DepartureBlockReason = null;
+                    car.Maneuver = true; car.ArrivalManeuver = arrival;
+                    car.ManeuverStart = start; car.ManeuverLength = length;
+                    car.ManeuverFrom = car.PitLane; car.ManeuverTo = to;
+                    if (departure) car.SecondTravelLane = secondLane;
+                    return true;
+                }
             }
             if (!car.Maneuver) { car.WaitingForStallDeparture = departure; car.ManeuverRetrySeconds = .25f; return 0f; }
         }
-        if (car.Maneuver && !car.ArrivalManeuver)
-            speed = Mathf.Min(speed, ApproachLimit(4f, Mathf.Max(0f, car.ManeuverStart - car.PitDistance), seconds));
+        if (PullingOut(car))
+            speed = Mathf.Min(speed, PullOutSpeed);
         if (arrival) speed = Mathf.Min(speed, ApproachLimit(0f, Mathf.Max(0f, stopAt - car.PitDistance), seconds));
         float laneVariation = 0f;
         if (!car.Maneuver && !car.WaitingForExitMerge && (!arrival || stopAt - car.PitDistance > 40f))
         {
-            // Fade before the connectors and vary below the posted limit.
+            // Fade the lateral variation before the connectors.
             float room = Mathf.Min(car.PitDistance - Mathf.Max(RoadStart, boundaries[0]),
                 Mathf.Min(RoadEnd, boundaries[1]) - car.PitDistance);
             float blend = Mathf.SmoothStep(0f, 1f, room / 12f);
             laneVariation = blend * TrackState001RaceStart.PaceSpeedVariation(index, stepTime, .08f);
-            float speedVariation = TrackState001RaceStart.PaceSpeedVariation(index, stepTime + 3f, .0125f);
-            speed *= 1f - blend * (.0125f + speedVariation);
         }
         speed = StallEntryReservationSpeed(car, speed, seconds);
         if (car.WaitingForExitMerge)
@@ -517,7 +568,7 @@ internal sealed class TrackPitTraffic
                 car.ManeuverFrom, car.ManeuverTo, car.ArrivalManeuver);
         else
         {
-            nextLane = Mathf.MoveTowards(car.PitLane, ThroughLaneAt(car.PitDistance) + laneVariation, 3f * seconds);
+            nextLane = Mathf.MoveTowards(car.PitLane, TravelLaneAt(car.PitDistance, car.SecondTravelLane) + laneVariation, 3f * seconds);
         }
         if (travel <= 0f) return 0f;
         // Test the complete step, including corner sweep and traffic approaching
@@ -555,7 +606,12 @@ internal sealed class TrackPitTraffic
         float speed = StallEntryReservationSpeed(car, freeSpeed, seconds);
         if (car.WaitingForExitMerge)
             speed = Mathf.Min(speed, ApproachLimit(0f, Mathf.Max(0f, car.ExitHoldDistance - from), seconds));
-        if (from < boundaries[1]) speed = Mathf.Min(speed, ApproachLimit(speedLimit, beforeEntry + PhysicalDistance(from, roadBegin), seconds));
+        if (from < boundaries[1])
+        {
+            float limit = car.InPit && from >= boundaries[0] ? speedLimit :
+                ApproachLimit(speedLimit, beforeEntry + PhysicalDistance(from, roadBegin), seconds);
+            speed = Mathf.Min(speed, limit);
+        }
         if (!float.IsInfinity(stopAt))
         {
             float distance = beforeEntry + PhysicalDistance(from, stopAt);
@@ -585,7 +641,7 @@ internal sealed class TrackPitTraffic
         if (stopAt <= hold || car.PitDistance > hold + .02f) return;
         car.ExitHoldDistance = hold;
         // Stall departures are handled by maneuver avoidance, not exit admission.
-        if (car.Maneuver || Mathf.Abs(car.PitLane - throughLane) > 1f) return;
+        if (car.Maneuver || ParkedInStall(car)) return;
         float speed = Mathf.Max(ActualSpeed(), speedLimit);
         // Inspect the complete rolling merge before braking would be necessary.
         float lookAhead = Mathf.Max(30f, speed * speed / (2f * PitApproachDeceleration) + speed * 1.5f);
@@ -594,7 +650,7 @@ internal sealed class TrackPitTraffic
         // Only the first car in the travel lane may reserve this exit.
         foreach (var other in AvoidanceField)
             if (SameExitQueue(car, other) &&
-                !other.Maneuver && Mathf.Abs(other.PitLane - throughLane) <= 1f &&
+                !other.Maneuver && !ParkedInStall(other) &&
                 (other.PitDistance > car.PitDistance ||
                  other.PitDistance == car.PitDistance && other.FieldIndex < car.FieldIndex)) { car.ExitBlockedBy = other.FieldIndex; car.ExitConflictSeconds = 0f; return; }
         car.ExitMergeRetrySeconds = Mathf.Max(0f, car.ExitMergeRetrySeconds - seconds);
@@ -649,9 +705,9 @@ internal sealed class TrackPitTraffic
             // of the travel lane, not merely when its center has left that lane.
             float yaw = leader.PitYaw * Mathf.Deg2Rad;
             float halfWidth = 1.45f * Mathf.Abs(Mathf.Sin(yaw)) + .9f * Mathf.Abs(Mathf.Cos(yaw));
-            if (Mathf.Abs(leader.PitLane - throughLane) > halfWidth + .9f + .25f) continue;
-            // Cars already in their own stalls are not part of the following queue.
-            if (Mathf.Abs(car.PitLane - throughLane) > 2.1f) continue;
+            float lane = TravelLaneAt(car.PitDistance, car.SecondTravelLane);
+            if (Mathf.Abs(leader.PitLane - lane) > halfWidth + .9f + .25f) continue;
+            if (ParkedInStall(car) || Mathf.Abs(car.PitLane - lane) > 2.1f) continue;
             // Follow a moving rear-clearance boundary. A turning car that is
             // still moving does not impose an artificial stop before the stall.
             float hold = leader.PitDistance - StallEntryRearClearance;
@@ -671,30 +727,38 @@ internal sealed class TrackPitTraffic
         return Mathf.Min(speed, ApproachLimit(reservationSpeed, distance, seconds));
     }
 
-    private bool DepartureWindowClear(Car car, float length)
+    private bool ParkedInStall(Car car) =>
+        car.InPit && car.FieldIndex >= 0 && !car.Maneuver &&
+        Mathf.Abs(car.PitDistance - stalls[car.FieldIndex]) < .05f &&
+        Mathf.Abs(car.PitLane - stallLanes[car.FieldIndex]) < .1f;
+
+    private static bool PullingOut(Car car) => car.Maneuver && !car.ArrivalManeuver &&
+        (Mathf.Abs(car.PitLane - car.ManeuverTo) > .25f || Mathf.Abs(car.PitYaw) > 8f);
+
+    private bool DepartureWindowClear(Car car, float length, float targetLane)
     {
         // A pull-out is a reservation, not just permission for its first step.
         // Allow time to accelerate from rest, finish the turn and straighten.
-        float horizon = length / 4f + 2f;
-        foreach (var other in AvoidanceField)
+        float horizon = length / PullOutSpeed + 1f;
+        float low = Mathf.Min(car.PitLane, targetLane) - StallLaneClearance;
+        float high = Mathf.Max(car.PitLane, targetLane) + StallLaneClearance;
+        // Departures accepted earlier this step already own their swept corridor.
+        foreach (var other in field)
         {
-            if (!SamePitRoute(car, other)) continue;
+            if (!SamePitRoute(car, other) || ParkedInStall(other)) continue;
             if (other.Maneuver)
             {
                 float otherEnd = other.ManeuverStart + other.ManeuverLength;
-                if (otherEnd + 4f >= car.PitDistance &&
-                    other.ManeuverStart - 4f <= car.PitDistance + length) return BlockDeparture(car, other, "Reserved maneuver corridor");
+                if (otherEnd + 4f >= car.PitDistance && other.ManeuverStart - 4f <= car.PitDistance + length &&
+                    Mathf.Min(other.ManeuverFrom, other.ManeuverTo) <= high &&
+                    Mathf.Max(other.ManeuverFrom, other.ManeuverTo) >= low)
+                    return BlockDeparture(car, other, "Reserved maneuver corridor");
             }
-            bool parked = other.FieldIndex >= 0 && !other.Maneuver &&
-                Mathf.Abs(other.PitDistance - stalls[other.FieldIndex]) < .05f &&
-                Mathf.Abs(other.PitLane - stallLanes[other.FieldIndex]) < .1f;
-            if (parked) continue; // Static neighbors are checked by the swept path planner.
+            if (other.PitLane < low || other.PitLane > high) continue;
             float gap = other.PitDistance - car.PitDistance;
-            // A distant stopped queue is not approaching traffic. Reserve against
-            // actual closing motion, while retaining the immediate maneuver corridor.
-            float approachSpeed = Mathf.Max(0f, SpeedAtStepStart(other));
-            if (gap < -4f && approachSpeed < .25f) continue;
-            if (gap >= -approachSpeed * horizon - 4f && gap <= length + 6f) return BlockDeparture(car, other, "Approaching pit traffic");
+            float approachSpeed = Mathf.Max(speedLimit, SpeedAtStepStart(other));
+            if (gap >= -approachSpeed * horizon - 4f && gap <= length + 4f)
+                return BlockDeparture(car, other, "Approaching pit traffic");
         }
         return true;
     }
@@ -871,6 +935,7 @@ internal sealed class TrackPitTraffic
                 car.ExitMergeRetrySeconds = 0f;
                 car.WaitingForExitMerge = false;
                 car.ApproachingStall = false;
+                car.SecondTravelLane = false;
                 car.DepartureStart = float.NegativeInfinity;
                 car.FrontEntry = UsesFrontEntry(car);
                 car.BackExit = false;

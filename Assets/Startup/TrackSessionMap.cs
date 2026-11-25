@@ -12,6 +12,7 @@ internal sealed class TrackSessionMap
     private bool expanded;
     private readonly Label[] markers = new Label[TrackPreview.CarCount];
     private readonly string[] markerNumbers = new string[TrackPreview.CarCount];
+    private readonly Label paceMarker;
     private TrackPreview preview;
     private Vector2[] inside;
     private Vector2[] outside;
@@ -36,6 +37,11 @@ internal sealed class TrackSessionMap
             markers[i] = marker;
             element.Add(marker);
         }
+        paceMarker = new Label("PC") { pickingMode = PickingMode.Ignore };
+        paceMarker.AddToClassList("track-map-car");
+        paceMarker.style.display = DisplayStyle.None;
+        paceMarker.style.color = (Color)new Color32(20, 26, 34, 255);
+        element.Add(paceMarker);
         markers[0].BringToFront();
     }
 
@@ -60,10 +66,11 @@ internal sealed class TrackSessionMap
         container.style.display = preview == null ? DisplayStyle.None : DisplayStyle.Flex;
         foreach (var marker in markers)
             marker.style.display = DisplayStyle.None;
+        paceMarker.style.display = DisplayStyle.None;
         if (preview == null)
             return;
 
-        for (int i = 0; i < markers.Length; i++)
+        for (int i = 0; i < preview.MapCarCount; i++)
             preview.StyleMapNumber(markers[i], i);
 
         preview.GetMapSurface(out inside, out outside, out apron);
@@ -101,7 +108,7 @@ internal sealed class TrackSessionMap
         if (!TryGetProjection(out float scale, out Vector2 offset))
             return;
 
-        for (int i = 0; i < markers.Length; i++)
+        for (int i = 0; i < preview.MapCarCount; i++)
         {
             var marker = markers[i];
             bool visible = preview.TryGetMapCar(i, out Vector2 position, out string number);
@@ -117,6 +124,18 @@ internal sealed class TrackSessionMap
                 marker.text = number;
                 marker.style.fontSize = number.Length switch { 4 => 6, 3 => 8, _ => StyleKeyword.Null };
             }
+        }
+
+        bool paceVisible = preview.TryGetMapPaceCar(out Vector2 pacePosition, out bool lightsOn);
+        paceMarker.style.display = paceVisible ? DisplayStyle.Flex : DisplayStyle.None;
+        if (paceVisible)
+        {
+            Vector2 point = pacePosition * scale + offset;
+            paceMarker.style.translate = new Translate(point.x - MarkerRadius, point.y - MarkerRadius);
+            Color paceColor = lightsOn
+                ? new Color32(255, 215, 75, 255)
+                : new Color32(232, 238, 243, 255);
+            paceMarker.style.backgroundColor = paceColor;
         }
     }
 

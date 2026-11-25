@@ -79,13 +79,19 @@ internal sealed class CarSimulationContext
         }
     }
 
+    internal static SessionCarResult[] LimitField(TrackDefinition track, SessionCarResult[] cars)
+    {
+        int count = track?.SessionFieldSize(cars.Length) ?? cars.Length;
+        return count == cars.Length ? cars : cars.Take(count).ToArray();
+    }
+
     public CarSimulationContext(TrackDefinition track, ScheduledRace scheduledEvent, RaceSession session,
         SessionCarResult[] cars, bool isInstant = false, bool preservePlayerCondition = false)
     {
         Track = track;
         Event = scheduledEvent;
         Session = session;
-        Cars = cars;
+        Cars = LimitField(track, cars);
         IsInstant = isInstant;
         PreservePlayerCondition = preservePlayerCondition;
     }

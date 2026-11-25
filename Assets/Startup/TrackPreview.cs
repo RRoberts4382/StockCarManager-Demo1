@@ -66,20 +66,19 @@ public sealed partial class TrackPreview : MonoBehaviour
     private Mesh preferredLineMesh;
     private MeshRenderer preferredLineRenderer;
     internal const int CarCount = 40;
-    private readonly Transform[] cars = new Transform[CarCount];
-    private readonly (Color HoodAndTrunk, Color RoofAndSides)[] renderedCarPaint =
-        new (Color HoodAndTrunk, Color RoofAndSides)[CarCount];
+    private Transform[] cars;
+    private (Color HoodAndTrunk, Color RoofAndSides)[] renderedCarPaint;
     private readonly List<Vector2[]> mapPitRibbons = new List<Vector2[]>();
     internal IReadOnlyList<Vector2[]> MapPitRibbons => mapPitRibbons;
-    private readonly RearAxleHeading[] carHeadings = new RearAxleHeading[CarCount];
+    private RearAxleHeading[] carHeadings;
     internal static readonly string[] CarDetailLabels = { "Low", "Medium", "High", "Very High", "Full" };
     internal bool SupportsCarDetail { get; private set; }
     internal bool SupportsGrandstands => grandstandScenery != null;
     internal bool GrandstandsVisible => SupportsGrandstands && grandstandScenery.activeSelf;
     internal int CarDetailIndex { get; private set; }
-    private readonly CarTypeDefinition[] carTypes = new CarTypeDefinition[CarCount];
+    private CarTypeDefinition[] carTypes;
 
-    private readonly RaceWheelAnimation[] raceWheels = new RaceWheelAnimation[CarCount];
+    private RaceWheelAnimation[] raceWheels;
     private RaceWheelAnimation paceWheels;
     internal enum CameraAngle { Player, Chase, Hood, InCar, TV, Spotter, PitBox, Cycle, RearChase, Leader }
 
@@ -94,8 +93,7 @@ public sealed partial class TrackPreview : MonoBehaviour
     private float spotterFieldOfView;
     private float spotterZoomFieldOfView;
     private Quaternion spotterAimOffset = Quaternion.identity;
-    private readonly (Vector3 Hood, Vector3 DriverEye)[] onboardCameraOffsets =
-        new (Vector3, Vector3)[CarCount];
+    private (Vector3 Hood, Vector3 DriverEye)[] onboardCameraOffsets;
     internal CarTypeDefinition CarType => carTypes[0];
     internal CarTypeDefinition SelectedCarType => carTypes[SelectedCarIndex];
     private Material carGlass;
@@ -146,22 +144,22 @@ public sealed partial class TrackPreview : MonoBehaviour
     private TrackDraftPass draftPassing;
     private TrackDraftLineMerge draftMerging;
     private TrackDraftLeaderBlock draftLeaderBlock;
-    private readonly bool[] directedDraftLaneChanges = new bool[CarCount];
-    private readonly bool[] draftEligible = new bool[CarCount];
-    private readonly bool[] draftBumpEligible = new bool[CarCount];
-    private readonly bool[] draftManeuverEligible = new bool[CarCount];
-    private readonly float[] draftPitApproach = new float[CarCount];
-    private readonly float[] trailingSpeedBoosts = new float[CarCount];
+    private bool[] directedDraftLaneChanges;
+    private bool[] draftEligible;
+    private bool[] draftBumpEligible;
+    private bool[] draftManeuverEligible;
+    private float[] draftPitApproach;
+    private float[] trailingSpeedBoosts;
     private int plateDraftRaceLeader = -1;
-    private readonly int[] draftBumpsGiven = new int[CarCount], draftBumpsReceived = new int[CarCount];
+    private int[] draftBumpsGiven, draftBumpsReceived;
     private IVehicleSpeedModel speedModel = VehicleSpeedModels.Available[0];
     private CarSimulationContext simulation;
-    private readonly float[] baseSpeeds = new float[CarCount];
+    private float[] baseSpeeds;
     private readonly System.Random simulationRandom = new System.Random();
     internal RaceSessionRun SessionRun { get; private set; }
     private RaceSessionRun previewTiming;
     internal RaceSessionRun TimingRun => SessionRun ?? previewTiming;
-    private readonly CarPaintStyle?[] scoringPaint = new CarPaintStyle?[CarCount];
+    private CarPaintStyle?[] scoringPaint;
 
     internal void StyleScoringNumber(UnityEngine.UIElements.Label label, int index)
     {
@@ -194,7 +192,12 @@ public sealed partial class TrackPreview : MonoBehaviour
     private float pitExitTrackLane;
     private float formationExitLane, formationMergeLength;
     private float pacePitEntryLane;
-    private Pose pacePitEntryPose;
+    private Pose pacePitEntryPose, cautionPaceExitPose;
+    private float cautionPaceExitLane, cautionPaceMergeLength;
+    private float cautionPaceAvoidanceLane;
+    private float cautionPaceTrafficSpeed;
+    private const float PaceClearanceMargin = .55f;
+    private const float PaceLaneRate = 2.5f;
     private const float FormationSeamLength = 15f;
     private const float FormationHalfWheelTrack = .85f;
     private float FormationHalfLane => Mathf.Min(1.35f, definition.pitRoad.widthMeters * 0.25f);
@@ -620,6 +623,74 @@ public sealed partial class TrackPreview : MonoBehaviour
 
     public RenderTexture Image { get; private set; }
 
+    private void AllocateField(int count)
+    {
+        cars = new Transform[count];
+        renderedCarPaint = new (Color HoodAndTrunk, Color RoofAndSides)[count];
+        carHeadings = new RearAxleHeading[count];
+        carTypes = new CarTypeDefinition[count];
+        raceWheels = new RaceWheelAnimation[count];
+        onboardCameraOffsets = new (Vector3, Vector3)[count];
+        directedDraftLaneChanges = new bool[count];
+        draftEligible = new bool[count];
+        draftBumpEligible = new bool[count];
+        draftManeuverEligible = new bool[count];
+        draftPitApproach = new float[count];
+        trailingSpeedBoosts = new float[count];
+        draftBumpsGiven = new int[count];
+        draftBumpsReceived = new int[count];
+        baseSpeeds = new float[count];
+        scoringPaint = new CarPaintStyle?[count];
+        freeRunningSpeeds = new float[count];
+        drivingDistances = new float[count];
+        drivingWidths = new float[count];
+        onTrack = new bool[count];
+        drivingLanes = new float[count];
+        targetLanes = new float[count];
+        trafficLaneControl = new VehicleBehavior003.TrafficLaneControl[count];
+        stabilizeTrafficLane = new bool[count];
+        trafficPaceSpeeds = new float[count];
+        trafficStartLaneSpeeds = new float[count];
+        preferredLineAdvance = new float[count];
+        passingLaneRanges = new Vector2[count];
+        cornerApproaches = new bool[count];
+        raceCarHalfWidths = new float[count];
+        preferredInsideClearances = new float[count];
+        backExitParticipants = new bool[count];
+        pitParticipants = new bool[count];
+        pitStart = new float[count];
+        pitEnd = new float[count];
+        pitLaneStart = new float[count];
+        pitYawStart = new float[count];
+        pitYawEnd = new float[count];
+        pitWorldStart = new Vector3[count];
+        pitWorldEnd = new Vector3[count];
+        pitWorldYawStart = new float[count];
+        pitWorldYawEnd = new float[count];
+        pitWorldActive = new bool[count];
+        pitWorldInvolved = new bool[count];
+        pitLaneEnd = new float[count];
+        practiceLeftStall = new bool[count];
+        crashes = new CrashMotion[count];
+        chasePoseBeforeYaw = new Pose?[count];
+        collisionFlashes = new Transform[count];
+        collisionFlashRemaining = new float[count];
+        collisionParticipants = new bool[count];
+        collisionEndDistances = new float[count];
+        collisionStartLanes = new float[count];
+        collisionTireStartLanes = new float[count];
+        collisionTireEndLanes = new float[count];
+        collisionTireOffsets = new float[count];
+        tireYawAngles = new float[count];
+        currentTrafficSpeeds = new float[count];
+        trafficBrakingFactors = new float[count];
+        stoppedCarTime = new float[count];
+        practiceStoppedCars = new PracticeStoppedCar[count];
+        practiceCarAhead = new int[count];
+        practiceGapAhead = new float[count];
+        stepSpeeds = new float[count];
+    }
+
     public void Initialize(TrackDefinition track, int playerCarNumber) => Initialize(track, playerCarNumber, null);
 
     internal void Initialize(TrackDefinition track, int playerCarNumber, string[] sponsorNames, TeamCar playerCar = null, bool night = false, IReadOnlyList<TeamCar> rivalCars = null)
@@ -633,6 +704,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         }
 
         definition = track;
+        AllocateField(track.SessionFieldSize(CarCount));
         SupportsCarDetail = true;
         CarDetailIndex = SupportsCarDetail ? Mathf.Clamp(PlayerPrefs.GetInt("StockCarManager.Settings.CarLOD", 3), 1, 5) - 1 : 0;
         bool bristolNight = night && track.id == BristolTrackId;
@@ -988,6 +1060,8 @@ public sealed partial class TrackPreview : MonoBehaviour
         }
     }
 
+    internal int MapCarCount => cars.Length;
+
     internal bool TryGetMapCar(int index, out Vector2 position, out string number)
     {
         position = default;
@@ -998,6 +1072,31 @@ public sealed partial class TrackPreview : MonoBehaviour
 
         position = MapPoint(car.localPosition);
         number = simulation.Cars[index].DisplayCarNumber;
+        return true;
+    }
+
+    internal bool TryGetMapPaceCar(out Vector2 position, out bool lightsOn)
+    {
+        position = default;
+        lightsOn = false;
+        if (raceStart == null || paceCar == null || !paceCar.gameObject.activeInHierarchy)
+            return false;
+
+        if (richmondPaceReturn != null)
+        {
+            if (RichmondPaceIsParked) return false;
+        }
+        else
+        {
+            bool stagePace = stages?.HasPaceCar == true;
+            var pace = stagePace ? stages.PacePosition() : raceStart.PacePosition();
+            bool returning = stagePace ? stages.PaceReturning : raceStart.PaceReturning;
+            if (raceStart.State == SessionTrackState.TrackClosed || returning && pace.OnPitRoad && pace.ParkingBlend >= 1f)
+                return false;
+        }
+
+        position = MapPoint(paceCar.localPosition);
+        lightsOn = paceLights != null && paceLights.activeInHierarchy;
         return true;
     }
 
@@ -1825,6 +1924,8 @@ public sealed partial class TrackPreview : MonoBehaviour
 
         raceReleased = true;
         stages = ((TrackState001)simulationModel).StartStages(pitTraffic, cars.Length, definition, simulationRandom);
+        cautionPaceAvoidanceLane = 0f;
+        stages.PaceTrafficSpeed = LimitCautionPaceTrafficSpeed;
         bool releaseFormation = UsesOvalTraffic007;
         float halfLane = releaseFormation ? FormationHalfLane : 0f;
         for (int i = 0; i < cars.Length; i++)
@@ -2091,25 +2192,25 @@ public sealed partial class TrackPreview : MonoBehaviour
         }
     }
 
-    private readonly float[] freeRunningSpeeds = new float[CarCount];
-    private readonly float[] drivingDistances = new float[CarCount];
-    private readonly float[] drivingWidths = new float[CarCount];
-    private readonly bool[] onTrack = new bool[CarCount];
-    private readonly float[] drivingLanes = new float[CarCount];
-    private readonly float[] targetLanes = new float[CarCount];
-    private readonly VehicleBehavior003.TrafficLaneControl[] trafficLaneControl = new VehicleBehavior003.TrafficLaneControl[CarCount];
-    private readonly bool[] stabilizeTrafficLane = new bool[CarCount];
-    private readonly float[] trafficPaceSpeeds = new float[CarCount];
-    private readonly float[] trafficStartLaneSpeeds = new float[CarCount];
-    private readonly float[] preferredLineAdvance = new float[CarCount];
-    private readonly Vector2[] passingLaneRanges = new Vector2[CarCount];
-    private readonly bool[] cornerApproaches = new bool[CarCount];
+    private float[] freeRunningSpeeds;
+    private float[] drivingDistances;
+    private float[] drivingWidths;
+    private bool[] onTrack;
+    private float[] drivingLanes;
+    private float[] targetLanes;
+    private VehicleBehavior003.TrafficLaneControl[] trafficLaneControl;
+    private bool[] stabilizeTrafficLane;
+    private float[] trafficPaceSpeeds;
+    private float[] trafficStartLaneSpeeds;
+    private float[] preferredLineAdvance;
+    private Vector2[] passingLaneRanges;
+    private bool[] cornerApproaches;
     private VehicleBehavior003.PassForecast passForecast;
     private System.Func<int, float, float, (float TargetSpeed, float BrakingRate)> passingPaceAt;
     private System.Func<int, float, float> passingReferenceLaneAt;
     private System.Func<int, float, Vector2> passingLaneRangeAt;
-    private readonly float[] raceCarHalfWidths = new float[CarCount];
-    private readonly float[] preferredInsideClearances = new float[CarCount];
+    private float[] raceCarHalfWidths;
+    private float[] preferredInsideClearances;
     private System.Func<float, float> sweepingLineTracking;
     private System.Func<float, float> kinkSteeringBlend;
     private bool drivingLanesReady;
@@ -2118,21 +2219,21 @@ public sealed partial class TrackPreview : MonoBehaviour
     private VehicleCollision001 collisions;
     private VehicleCollision001 pitCollisions;
     private VehicleCollision001 backExitCollisions;
-    private readonly bool[] backExitParticipants = new bool[CarCount];
-    private readonly bool[] pitParticipants = new bool[CarCount];
-    private readonly float[] pitStart = new float[CarCount];
-    private readonly float[] pitEnd = new float[CarCount];
-    private readonly float[] pitLaneStart = new float[CarCount];
-    private readonly float[] pitYawStart = new float[CarCount], pitYawEnd = new float[CarCount];
-    private readonly Vector3[] pitWorldStart = new Vector3[CarCount], pitWorldEnd = new Vector3[CarCount];
-    private readonly float[] pitWorldYawStart = new float[CarCount], pitWorldYawEnd = new float[CarCount];
-    private readonly bool[] pitWorldActive = new bool[CarCount], pitWorldInvolved = new bool[CarCount];
-    private readonly float[] pitLaneEnd = new float[CarCount];
+    private bool[] backExitParticipants;
+    private bool[] pitParticipants;
+    private float[] pitStart;
+    private float[] pitEnd;
+    private float[] pitLaneStart;
+    private float[] pitYawStart, pitYawEnd;
+    private Vector3[] pitWorldStart, pitWorldEnd;
+    private float[] pitWorldYawStart, pitWorldYawEnd;
+    private bool[] pitWorldActive, pitWorldInvolved;
+    private float[] pitLaneEnd;
     private float[] stallLanes;
     private bool pitRoadOutside;
-    private readonly bool[] practiceLeftStall = new bool[CarCount];
-    private readonly CrashMotion[] crashes = new CrashMotion[CarCount];
-    private readonly Pose?[] chasePoseBeforeYaw = new Pose?[CarCount];
+    private bool[] practiceLeftStall;
+    private CrashMotion[] crashes;
+    private Pose?[] chasePoseBeforeYaw;
 
     private enum CrashCause { Contact, Apron, FrontTireWear, RearTireWear }
 
@@ -2148,23 +2249,23 @@ public sealed partial class TrackPreview : MonoBehaviour
         public StraightTireMotion Straight;
     }
     private const float CollisionFlashSeconds = 0.4f;
-    private readonly Transform[] collisionFlashes = new Transform[CarCount];
-    private readonly float[] collisionFlashRemaining = new float[CarCount];
-    private readonly bool[] collisionParticipants = new bool[CarCount];
-    private readonly float[] collisionEndDistances = new float[CarCount];
-    private readonly float[] collisionStartLanes = new float[CarCount];
-    private readonly float[] collisionTireStartLanes = new float[CarCount];
-    private readonly float[] collisionTireEndLanes = new float[CarCount];
-    private readonly float[] collisionTireOffsets = new float[CarCount];
-    private readonly float[] tireYawAngles = new float[CarCount];
+    private Transform[] collisionFlashes;
+    private float[] collisionFlashRemaining;
+    private bool[] collisionParticipants;
+    private float[] collisionEndDistances;
+    private float[] collisionStartLanes;
+    private float[] collisionTireStartLanes;
+    private float[] collisionTireEndLanes;
+    private float[] collisionTireOffsets;
+    private float[] tireYawAngles;
 
-    private readonly float[] currentTrafficSpeeds = new float[CarCount];
-    private readonly float[] trafficBrakingFactors = new float[CarCount];
-    private readonly float[] stoppedCarTime = new float[CarCount];
-    private readonly PracticeStoppedCar[] practiceStoppedCars = new PracticeStoppedCar[CarCount];
-    private readonly int[] practiceCarAhead = new int[CarCount];
-    private readonly float[] practiceGapAhead = new float[CarCount];
-    private readonly float[] stepSpeeds = new float[CarCount];
+    private float[] currentTrafficSpeeds;
+    private float[] trafficBrakingFactors;
+    private float[] stoppedCarTime;
+    private PracticeStoppedCar[] practiceStoppedCars;
+    private int[] practiceCarAhead;
+    private float[] practiceGapAhead;
+    private float[] stepSpeeds;
 
     private void AdvanceSimulation(float seconds)
     {
@@ -2218,6 +2319,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         if (checkTraffic)
             AvoidTrackTraffic(seconds);
         pitTraffic?.PlanTrafficSpeeds(stepSpeeds, seconds);
+        LimitTrafficBehindCautionPaceCar(seconds);
 
         for (int i = 0; i < cars.Length; i++)
         {
@@ -3258,10 +3360,11 @@ public sealed partial class TrackPreview : MonoBehaviour
                 if (pace.OnPitRoad)
                     PositionPitCar(paceCar, pace.Distance, pace.ParkingBlend * (definition.pitRoad.widthMeters * 0.5f + 1.5f),
                         isRaceFormation: !raceReleased && !raceStart.PaceReturning);
-                else if (!PositionPacePitApproach(pace.Distance))
+                else if (!PositionCautionPaceExit(pace.Distance) && !PositionPacePitApproach(pace.Distance))
                 {
                     if (raceReleased)
-                        PositionTrackCar(paceCar, pace.Distance, 0f);
+                        PositionTrackCar(paceCar, pace.Distance,
+                            stages?.HasPaceCar == true ? cautionPaceAvoidanceLane : 0f);
                     else
                         PositionFormationTrackCar(paceCar, pace.Distance, 0f);
                 }
@@ -4068,10 +4171,84 @@ public sealed partial class TrackPreview : MonoBehaviour
         Vector3 ahead = PitDrivingPosition(pitRoute[0], .001f, 0f, pitHeights[0], pitHeights[1]);
         pacePitEntryPose = new Pose(mouth, Quaternion.LookRotation(ahead - mouth));
         pacePitEntryLane = TrackLaneAtPoint(pitTraffic.EntryDistance, mouth);
+
+        // Use the same single-car connector and tangent as PositionPitSpline.
+        Vector3 exit = PitDrivingPosition(pitRoute[2], 1f, 0f, pitHeights[2], pitHeights[3]);
+        Vector3 beforeExit = PitDrivingPosition(pitRoute[2], .999f, 0f, pitHeights[2], pitHeights[3]);
+        cautionPaceExitPose = new Pose(exit, Quaternion.LookRotation(exit - beforeExit));
+        cautionPaceExitLane = TrackLaneAtPoint(pitTraffic.ExitDistance, exit);
+        cautionPaceMergeLength = Mathf.Clamp(Mathf.Abs(cautionPaceExitLane) * 12f, 30f, 150f);
+    }
+
+    private bool PositionCautionPaceExit(float distance)
+    {
+        if (!TryCautionPaceExitPose(distance, out var pose, out float lane)) return false;
+        paceCar.SetLocalPositionAndRotation(pose.position, pose.rotation);
+        if (SupportsIowaVenueLighting)
+            ApplyIowaVehicleLighting(paceCar, IowaTrackVehicleLighting(distance, lane));
+        return true;
+    }
+
+    private bool TryCautionPaceExitPose(float distance, out Pose pose, out float lane)
+    {
+        // Richmond's authored departure already includes its full track join.
+        if (stages?.HasPaceCar == true && !stages.PaceReturning && richmondPaceDeparture == null)
+            return TryCautionPaceExitPose(distance, stages.PaceExitStation, out pose, out lane);
+        pose = default;
+        lane = 0f;
+        return false;
+    }
+
+    private bool TryCautionPaceExitPose(float distance, float exit, out Pose pose, out float lane)
+    {
+        pose = default;
+        lane = 0f;
+        float travel = distance - exit;
+        if (travel < 0f || travel >= cautionPaceMergeLength)
+            return false;
+
+        bool followsApron = ApronExitAvailable(exit);
+        float apronAtExit = followsApron ? PitApronLane(exit, exit) : 0f;
+        Vector3 seamOffset = cautionPaceExitPose.position -
+            TrackPoint(exit, cautionPaceExitLane, out _, out _);
+        float seam = SeamWeight(distance);
+        lane = LaneAt(distance);
+        Vector3 position = PointAt(distance);
+        Vector3 forward = PointAt(Mathf.Min(exit + cautionPaceMergeLength, distance + .4f)) -
+            PointAt(Mathf.Max(exit, distance - .4f));
+        SampleTrackCarPose(distance, lane, out _, out var up);
+        Quaternion rotation = Quaternion.Slerp(Quaternion.LookRotation(forward, up),
+            cautionPaceExitPose.rotation, seam);
+        pose = new Pose(position, rotation);
+        return true;
+
+        float SeamWeight(float station) => 1f - Mathf.SmoothStep(0f, 1f, (station - exit) / FormationSeamLength);
+
+        float LaneAt(float station)
+        {
+            float lane = followsApron
+                ? PitApronLane(station, exit) + (cautionPaceExitLane - apronAtExit) * SeamWeight(station)
+                : cautionPaceExitLane;
+            return Mathf.SmoothStep(lane, 0f, (station - exit) / cautionPaceMergeLength);
+        }
+
+        Vector3 PointAt(float station) =>
+            TrackPoint(station, LaneAt(station), out _, out _) + seamOffset * SeamWeight(station);
     }
 
     private bool PositionPacePitApproach(float distance)
     {
+        if (!TryPacePitApproachPose(distance, out var pose, out float lane)) return false;
+        paceCar.SetLocalPositionAndRotation(pose.position, pose.rotation);
+        if (SupportsIowaVenueLighting)
+            ApplyIowaVehicleLighting(paceCar, IowaTrackVehicleLighting(distance, lane));
+        return true;
+    }
+
+    private bool TryPacePitApproachPose(float distance, out Pose pose, out float lane)
+    {
+        pose = default;
+        lane = 0f;
         if (richmondPaceReturn != null) return false;
         float entry = stages?.HasPaceCar == true ? stages.PacePitEntry : raceStart.PacePitEntry;
         float approachLength = Mathf.Min(100f, lapLength * .45f);
@@ -4082,7 +4259,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         float inside = customLayout.InsideSign;
         float apronOffset = pacePitEntryLane * inside - entryWidths.x * .5f;
         Vector3 mouthCorrection = pacePitEntryPose.position - TrackPoint(entry, pacePitEntryLane, out _, out _);
-        float lane = ApproachLane(distance);
+        lane = ApproachLane(distance);
         Vector3 position = ApproachPoint(distance);
         Vector3 forward = ApproachPoint(Mathf.Min(entry, distance + .4f)) -
             ApproachPoint(Mathf.Max(start, distance - .4f));
@@ -4096,9 +4273,7 @@ public sealed partial class TrackPreview : MonoBehaviour
                 Mathf.SmoothStep(0f, 1f, (distance - start) / 10f));
         }
         rotation = Quaternion.Slerp(rotation, pacePitEntryPose.rotation, SeamBlend(distance));
-        paceCar.SetLocalPositionAndRotation(position, rotation);
-        if (SupportsIowaVenueLighting)
-            ApplyIowaVehicleLighting(paceCar, IowaTrackVehicleLighting(distance, lane));
+        pose = new Pose(position, rotation);
         return true;
 
         float SeamBlend(float station) => Mathf.SmoothStep(1f, 0f, (entry - station) / FormationSeamLength);
@@ -4106,7 +4281,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         Vector3 ApproachPoint(float station) =>
             TrackPoint(station, ApproachLane(station), out _, out _) + mouthCorrection * SeamBlend(station);
 
-        float TrackPaceLane(float station) => raceReleased ? 0f : FormationTrackLane(station, 0f);
+        float TrackPaceLane(float station) => raceReleased ? cautionPaceAvoidanceLane : FormationTrackLane(station, 0f);
 
         float ApproachLane(float station)
         {
@@ -4118,6 +4293,192 @@ public sealed partial class TrackPreview : MonoBehaviour
             }
             return Mathf.SmoothStep(TrackPaceLane(station), target, (station - start) / approachLength);
         }
+    }
+
+    private float LimitCautionPaceTrafficSpeed(bool onPitRoad, float distance, float speed, float seconds)
+    {
+        if (seconds <= 0f || paceCar == null) return speed;
+        if (richmondPaceReturn != null && (onPitRoad || richmondPacePhase != RichmondPacePhase.Pacing))
+            return speed;
+
+        bool fixedPath = onPitRoad || TryCautionPaceExitPose(distance, out _, out _) ||
+            TryPacePitApproachPose(distance, out _, out _) ||
+            richmondPaceReturn != null && stages.PacePitEntry - distance < 78f;
+        if (onPitRoad)
+        {
+            cautionPaceAvoidanceLane = 0f;
+            if (distance < pitTraffic.RoadEnd) speed = Mathf.Min(speed, pitTraffic.SpeedLimit);
+        }
+
+        float currentLane = cautionPaceAvoidanceLane;
+        float targetLane = currentLane;
+        if (!fixedPath)
+        {
+            float halfWidth = RoadWidths(distance).x * .5f;
+            float offset = Mathf.Min(3.4f, halfWidth - 1.5f);
+            float lookAhead = Mathf.Max(14f, speed * 1.3f);
+            bool centerClear = PacePathClearance(distance, lookAhead, speed,
+                (station, time) => SampleCautionPacePose(false, station,
+                    Mathf.MoveTowards(currentLane, 0f, PaceLaneRate * time))) >= lookAhead;
+            if (centerClear)
+                targetLane = 0f;
+            else if (offset >= 2.4f)
+            {
+                // Check the sweep into the adjacent lane, including cars closing from behind.
+                float best = PacePathClearance(distance, lookAhead, speed,
+                    (station, time) => SampleCautionPacePose(false, station, currentLane));
+                for (int side = -1; side <= 1; side += 2)
+                {
+                    float candidate = side * offset;
+                    float clear = PacePathClearance(distance, lookAhead, speed,
+                        (station, time) => SampleCautionPacePose(false, station,
+                            Mathf.MoveTowards(currentLane, candidate, PaceLaneRate * time)));
+                    if (clear <= best + 1f) continue;
+                    best = clear;
+                    targetLane = candidate;
+                }
+            }
+        }
+
+        float stoppingRoom = Mathf.Max(6f, speed * speed / (2f * TrackPitTraffic.PitApproachDeceleration) + 2f);
+        float room = PacePathClearance(distance, stoppingRoom, speed,
+            (station, time) => SampleCautionPacePose(onPitRoad, station,
+                Mathf.MoveTowards(currentLane, targetLane, PaceLaneRate * time)));
+        float allowed = room < stoppingRoom ? Mathf.Min(speed, TrackPitTraffic.ApproachLimit(0f, room, seconds)) : speed;
+        float nextLane = Mathf.MoveTowards(currentLane, targetLane, PaceLaneRate * seconds);
+        Pose next = SampleCautionPacePose(onPitRoad, distance + allowed * seconds, nextLane);
+        if (!PacePoseClear(next, seconds))
+        {
+            nextLane = currentLane;
+            if (!PacePoseClear(SampleCautionPacePose(onPitRoad, distance + allowed * seconds, nextLane), seconds))
+                allowed = 0f;
+        }
+        cautionPaceAvoidanceLane = nextLane;
+        cautionPaceTrafficSpeed = allowed;
+        return allowed;
+    }
+
+    private void LimitTrafficBehindCautionPaceCar(float seconds)
+    {
+        if (stages?.HasPaceCar != true || paceCar == null || RichmondPaceIsParked) return;
+        var pace = stages.PacePosition();
+        if (pace.OnPitRoad && stages.PaceReturning && pace.ParkingBlend >= .999f && richmondPaceReturn == null)
+            return;
+        Pose pose = richmondPaceReturn != null &&
+            (richmondPacePhase is RichmondPacePhase.Departing or RichmondPacePhase.Returning)
+            ? new Pose(paceCar.localPosition, paceCar.localRotation)
+            : SampleCautionPacePose(pace.OnPitRoad, pace.Distance, cautionPaceAvoidanceLane);
+        Vector3 paceForward = pose.rotation * Vector3.forward;
+        for (int i = 0; i < trafficCars.Length; i++)
+        {
+            if (stepSpeeds[i] <= 0f || crashes[i].Active || trafficCars[i].InGarage) continue;
+            Vector3 delta = pose.position - PaceTrafficCarPosition(i);
+            Vector3 forward = cars[i].localRotation * Vector3.forward;
+            Vector3 across = Vector3.Cross(Vector3.up, forward).normalized;
+            float gap = Vector3.Dot(delta, forward);
+            if (gap <= 0f || gap > 40f || Mathf.Abs(delta.y) > 2f ||
+                Mathf.Abs(Vector3.Dot(delta, across)) > 2.3f) continue;
+            float aheadSpeed = Mathf.Max(0f, Vector3.Dot(paceForward, forward) * cautionPaceTrafficSpeed);
+            stepSpeeds[i] = Mathf.Min(stepSpeeds[i],
+                TrackPitTraffic.ApproachLimit(aheadSpeed, Mathf.Max(0f, gap - 4.2f), seconds));
+        }
+    }
+
+    private Pose SampleCautionPacePose(bool onPitRoad, float distance, float lane)
+    {
+        if (onPitRoad)
+        {
+            if (distance >= pitTraffic.RouteLength)
+            {
+                float exit = pitTraffic.ExitDistance;
+                float station = exit + distance - pitTraffic.RouteLength;
+                return SampleCautionPaceExitPose(station, exit);
+            }
+            Vector3 point = CautionPacePitPoint(distance);
+            Vector3 forward = CautionPacePitPoint(distance + .2f) - CautionPacePitPoint(distance - .2f);
+            return new Pose(point, Quaternion.LookRotation(forward));
+        }
+        if (TryCautionPaceExitPose(distance, out var pose, out _) || TryPacePitApproachPose(distance, out pose, out _))
+            return pose;
+        if (richmondPaceReturn != null && stages.PacePitEntry - distance < 78f)
+            lane = Mathf.SmoothStep(lane, ApronLane(distance),
+                Mathf.InverseLerp(stages.PacePitEntry - 78f, stages.PacePitEntry, distance));
+        Vector3 position = SampleTrackCarPose(distance, lane, out var tangent, out var up);
+        return new Pose(position, Quaternion.LookRotation(tangent, up));
+    }
+
+    private Pose SampleCautionPaceExitPose(float station, float exit)
+    {
+        if (TryCautionPaceExitPose(station, exit, out var pose, out _)) return pose;
+        Vector3 position = SampleTrackCarPose(station, 0f, out var tangent, out var up);
+        return new Pose(position, Quaternion.LookRotation(tangent, up));
+    }
+
+    private Vector3 CautionPacePitPoint(float distance)
+    {
+        distance = Mathf.Clamp(distance, 0f, pitTraffic.RouteLength);
+        float parking = Mathf.Clamp01(1f - Mathf.Abs(pitTraffic.ParkingDistance - distance) / 8f);
+        return SamplePacePitPoint(distance, parking * (definition.pitRoad.widthMeters * .5f + 1.5f));
+    }
+
+    private Vector3 SamplePacePitPoint(float distance, float lane)
+    {
+        int segment = 0;
+        while (segment < pitRoute.Length - 1 && distance >= pitLengths[segment])
+            distance -= pitLengths[segment++];
+        return PitDrivingPosition(pitRoute[segment], Mathf.Clamp01(distance / pitLengths[segment]), lane,
+            pitHeights[segment], pitHeights[segment + 1]);
+    }
+
+    private float PacePathClearance(float start, float distance, float speed,
+        System.Func<float, float, Pose> poseAt)
+    {
+        int samples = Mathf.Max(1, Mathf.CeilToInt(distance / 2f));
+        for (int sample = 1; sample <= samples; sample++)
+        {
+            float travel = distance * sample / samples;
+            float time = travel / Mathf.Max(4f, speed);
+            if (!PacePoseClear(poseAt(start + travel, time), time))
+                return distance * (sample - 1) / samples;
+        }
+        return distance;
+    }
+
+    private bool PacePoseClear(Pose pose, float time)
+    {
+        Vector3 forward = pose.rotation * Vector3.forward;
+        float heading = Mathf.Atan2(forward.x, forward.z) * Mathf.Rad2Deg;
+        for (int i = 0; i < trafficCars.Length; i++)
+        {
+            var car = trafficCars[i];
+            if (car.InGarage || i == 0 && NorthWilkesboroGarageOffPitRoute || !cars[i].gameObject.activeSelf) continue;
+            float speed = car.Retired ? 0f : SessionRun.CurrentSpeed(i);
+            float reach = 7f + speed * time;
+            if ((cars[i].localPosition - pose.position).sqrMagnitude > reach * reach) continue;
+            Vector3 direction = cars[i].localRotation * Vector3.forward;
+            Vector3 predicted;
+            if (!car.InPit && !crashes[i].Active && speed > 0f)
+                predicted = TrackPoint(car.TrackDistance + speed * time, drivingLanes[i], out direction, out _);
+            else
+                predicted = PaceTrafficCarPosition(i) + direction * (speed * time);
+            Vector3 delta = predicted - pose.position;
+            if (Mathf.Abs(delta.x) > 5f || Mathf.Abs(delta.z) > 5f || Mathf.Abs(delta.y) > 2f) continue;
+            float otherHeading = Mathf.Atan2(direction.x, direction.z) * Mathf.Rad2Deg;
+            if (PitFootprint.Overlaps(delta.z, delta.x, heading, otherHeading, PaceClearanceMargin))
+                return false;
+        }
+        return true;
+    }
+
+    private Vector3 PaceTrafficCarPosition(int index)
+    {
+        var car = trafficCars[index];
+        if (car.InPit)
+            return SampleTrafficPosition(car, car.BackExit ? car.ConnectorDistance : car.PitDistance, car.PitLane);
+        if (crashes[index].Active && crashes[index].Cause == CrashCause.FrontTireWear)
+            return cars[index].localPosition;
+        float lane = crashes[index].Active ? crashes[index].Lane : drivingLanes[index];
+        return TrackPoint(car.TrackDistance, lane, out _, out _);
     }
 
     private float FormationTrackLane(float distance, float lane) =>
@@ -5481,7 +5842,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             }
             pitTraffic = new TrackPitTraffic(lapLength, entryDistance, exitDistance,
                 pitLengths[0], pitLengths[1], pitLengths[2], pit,
-                singleThroughLane: definition.id == OrangeCountyTrackId || definition.id == SouthBostonTrackId || definition.id == GatewayTrackId,
+                singleThroughLane: definition.id == GatewayTrackId,
                 recoverStoppedQueueOverlap: definition.majorStyle == "Oval" &&
                     definition.id is not (BristolTrackId or RichmondTrackId or NorthWilkesboroTrackId));
             if (sharedConnectorSurface)

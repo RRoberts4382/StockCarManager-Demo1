@@ -779,10 +779,13 @@ public sealed class StartupMenu : MonoBehaviour
         OpenEventGarageView(race, definition, car, System.Array.Empty<string>());
         activeSession = session;
         raceEventView.SetRunningSession(session);
-        var entries = TrackPreview.CreateTimingEntries(car, career);
+        var simulation = new CarSimulationContext(definition, race, session, TrackPreview.CreateTimingEntries(car, career))
+        {
+            EqualConditionTesting = !testRace && settings.EqualConditionPractice
+        };
         if (testRace)
         {
-            session.qualifyingOrder = entries.Select(entry => entry.carNumber).ToArray();
+            session.qualifyingOrder = simulation.Cars.Select(entry => entry.carNumber).ToArray();
             var random = new System.Random();
             for (int i = session.qualifyingOrder.Length - 1; i > 0; i--)
             {
@@ -790,10 +793,6 @@ public sealed class StartupMenu : MonoBehaviour
                 (session.qualifyingOrder[i], session.qualifyingOrder[j]) = (session.qualifyingOrder[j], session.qualifyingOrder[i]);
             }
         }
-        var simulation = new CarSimulationContext(definition, race, session, entries)
-        {
-            EqualConditionTesting = !testRace && settings.EqualConditionPractice
-        };
         trackPreview.BeginSession(simulation, new TrackState001(), settings.SpeedModel, settings.BehaviorModel,
             session.qualifyingOrder, settings.UsePaceTruck);
         raceEventView.EqualConditionTesting = trackPreview.EqualConditionTesting;
@@ -5452,7 +5451,8 @@ public sealed class StartupMenu : MonoBehaviour
                     if (!session.Completed)
                     {
                         if (track != null) SessionWeatherForecast.Ensure(session, track, race);
-                        TemporarySeasonResults.GenerateSession(session, race, TrackPreview.CreateTimingEntries(car, draft), track?.lengthMiles ?? 1f, random);
+                        var entries = CarSimulationContext.LimitField(track, TrackPreview.CreateTimingEntries(car, draft));
+                        TemporarySeasonResults.GenerateSession(session, race, entries, track?.lengthMiles ?? 1f, random);
                     }
                     done++; status.text = race.trackName + " - " + session.name;
                     progress.value = 100f * done / System.Math.Max(1, total); progress.title = $"{progress.value:0}%";

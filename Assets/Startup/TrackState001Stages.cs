@@ -32,7 +32,7 @@ internal sealed class TrackState001Stages
     private float doubleFileAt;
     private float peelOffAt;
     private float restartAt;
-    private float paceDistance;
+    private float paceDistance, paceExitStation;
     private float cautionTime;
     private TrackPitTraffic.Car pace;
     private bool paceMerged;
@@ -69,6 +69,8 @@ internal sealed class TrackState001Stages
     public int FreePassCarIndex => freePassCar;
     public bool HasPaceCar => pace != null;
     internal bool PaceReturning => paceReturning;
+    internal float PaceExitStation => paceExitStation;
+    internal Func<bool, float, float, float, float> PaceTrafficSpeed { get; set; }
     internal float PacePitEntry => peelOffAt;
     internal bool ReleasingRestartLanes { get; private set; }
     public bool OneToGo => State == SessionTrackState.Caution && !restartHeld && paceMerged && paceDistance >= doubleFileAt;
@@ -123,7 +125,7 @@ internal sealed class TrackState001Stages
             ? Mathf.MoveTowards(doubleFileSpacingBlend, doubleFileBlend >= 1f ? 1f : 0f, seconds / 4f)
             : doubleFileBlend;
         if (paceReturning)
-            pit.Advance(pace, seconds, PaceSpeed, pit.ParkingDistance);
+            pit.Advance(pace, seconds, PitPaceSpeed(seconds), pit.ParkingDistance);
 
         if (State != SessionTrackState.Caution)
             return;
@@ -165,28 +167,33 @@ internal sealed class TrackState001Stages
         cautionTime += seconds;
         if (!paceMerged)
         {
-            pit.Advance(pace, seconds, PaceSpeed);
+            pit.Advance(pace, seconds, PitPaceSpeed(seconds));
             if (!pace.InPit)
             {
                 paceMerged = true;
                 float lead = cars[leader].TrackDistance;
-                paceDistance = NextMarker(lead - lapLength * 0.5f, pit.ExitDistance);
+                paceExitStation = NextMarker(lead - lapLength * 0.5f, pit.ExitDistance);
+                paceDistance = paceExitStation + Mathf.Max(0f, pace.TrackDistance - pace.LastExit);
             }
         }
         else if (!paceReturning)
         {
             float gap = paceDistance - cars[leader].TrackDistance;
             float speed = Mathf.Clamp(PaceSpeed + (RowSpacing - gap) * 0.65f, 8f, 55f);
+            speed = PaceTrafficSpeed?.Invoke(false, paceDistance, speed, seconds) ?? speed;
             paceDistance += speed * seconds;
             if (paceDistance >= peelOffAt)
             {
                 pace = new TrackPitTraffic.Car { TrackDistance = peelOffAt, InPit = true };
                 paceReturning = true;
                 float pitSeconds = Mathf.Clamp((paceDistance - peelOffAt) / speed, 0f, seconds);
-                pit.Advance(pace, pitSeconds, PaceSpeed, pit.ParkingDistance);
+                pit.Advance(pace, pitSeconds, PitPaceSpeed(pitSeconds), pit.ParkingDistance);
             }
         }
     }
+
+    private float PitPaceSpeed(float seconds) =>
+        PaceTrafficSpeed?.Invoke(true, pace.PitDistance, PaceSpeed, seconds) ?? PaceSpeed;
 
     public float CarSpeed(int index, TrackPitTraffic.Car[] cars, float raceSpeed, float seconds)
     {
