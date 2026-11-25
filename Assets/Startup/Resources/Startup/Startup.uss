@@ -106,20 +106,43 @@
     background-repeat: no-repeat;
 }
 .track-header.header {
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
     height: auto;
     min-height: 54px;
     padding: 6px 12px;
     background-color: rgba(16, 21, 30, 0.9);
     border-bottom-color: #009bdd;
 }
-.track-header-left, .track-header-right {
+.track-header-status {
+    flex-direction: row;
+    align-items: flex-start;
+}
+.track-title-row {
     flex-direction: row;
     align-items: center;
+}
+.track-title-row > .track-name {
     flex-grow: 1;
-    flex-basis: 0;
+    flex-shrink: 1;
     min-width: 0;
 }
+.track-title-row > .track-series-name {
+    flex-grow: 0;
+    margin-left: 12px;
+    color: #ffffff;
+    -unity-text-align: middle-right;
+}
+.track-header-left, .track-header-right {
+    flex-basis: 0;
+    flex-grow: 1;
+    min-width: 200px;
+}
 .track-header-right {
+    flex-direction: row;
+    align-items: center;
+    flex-shrink: 0;
     justify-content: flex-end;
 }
 .track-playback-area {
@@ -150,24 +173,18 @@
     white-space: normal;
     -unity-text-align: middle-center;
 }
-.track-heading-labels {
-    flex-shrink: 1;
-    min-width: 0;
+.track-state-row {
+    flex-direction: row;
+    align-items: center;
+    min-height: 32px;
 }
 .track-name {
     color: #009bdd;
     font-size: 24px;
     -unity-font-style: normal;
-}
-.track-heading-labels > Label,
-.track-session > Label {
-    white-space: normal;
-}
-.track-session {
-    flex-shrink: 1;
-    min-width: 0;
-    margin-left: 16px;
-    margin-right: auto;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 .track-header-icon {
     flex-shrink: 0;
@@ -195,17 +212,25 @@
     width: 22px;
     height: 22px;
 }
+.track-camera-menu {
+    background-color: #10151e;
+    padding: 3px;
+}
+.track-camera-menu .unity-generic-dropdown-menu__item {
+    min-height: 24px;
+    padding: 2px 8px;
+    background-color: #10151e;
+}
+.track-camera-menu .unity-generic-dropdown-menu__item:hover {
+    background-color: #263e50;
+}
+.track-camera-menu .unity-generic-dropdown-menu__item:disabled {
+    opacity: 0.65;
+}
+
 .track-footer-center {
     align-items: center;
     max-width: 48%;
-}
-.track-readouts {
-    flex-direction: row;
-    align-items: center;
-    justify-content: center;
-}
-.track-readouts > Label {
-    margin: 0 6px;
 }
 .track-footer.footer {
     height: auto;
@@ -242,7 +267,7 @@
     background-color: #57d568;
 }
 .brake-fill {
-    background-color: #ef694d;
+    background-color: #b71c1c;
 }
 .fuel-fill {
     background-color: #ffcf55;
@@ -264,11 +289,8 @@
 .track-footer-pit > Label {
     margin-right: 8px;
 }
-#trackCameraAngle {
-    margin-right: 0;
-}
 #cycleTrackCameraButton {
-    margin: 0 8px 0 0;
+    margin: 0 12px 0 0;
 }
 .track-footer-pit > .pit-settings-button {
     margin: 0;
@@ -1385,9 +1407,10 @@
 .scoring-header-content {
     flex-grow: 1;
     min-width: 0;
-    padding: 3px 5px 4px 7px;
+    padding: 3px 0 4px 7px;
 }
 .scoring-header-line {
+    padding-right: 26px;
     flex-direction: row;
     align-items: center;
     justify-content: space-between;
@@ -1397,6 +1420,10 @@
     padding: 0;
     font-size: 12px;
     white-space: nowrap;
+}
+.scoring-header-top {
+    min-height: 20px;
+    padding-right: 26px;
 }
 .scoring-header-top > Label {
     color: #009bdd;
@@ -1409,6 +1436,8 @@
     text-overflow: ellipsis;
 }
 .scoring-header-line > .scoring-remaining {
+    width: 112px;
+    -unity-text-align: middle-left;
     flex-shrink: 0;
     margin-left: 6px;
 }
@@ -1418,10 +1447,12 @@
     background-color: #34495f;
 }
 .scoring-toggle {
+    position: absolute;
+    top: 2px;
+    right: 2px;
     width: 20px;
     height: 18px;
-    flex-shrink: 0;
-    margin: 2px;
+    margin: 0;
     padding: 0;
     font-size: 12px;
     border-width: 1px;
@@ -2701,35 +2732,6 @@
 .career-identity-page .career-player-form .settings-note {
     margin-top: 0;
     margin-bottom: 2px;
-}
-
-.track-display-controls {
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-self: stretch;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-}
-#trackGrandstandsButton, #trackPracticeSkyButton, #requestCautionButton {
-    margin-left: 6px;
-}
-.track-detail-control {
-    align-self: center;
-    flex-shrink: 0;
-    min-height: 28px;
-    margin: 3px 0;
-    padding: 3px 10px;
-    border-width: 1px;
-    border-color: #009bdd;
-    border-radius: 7px;
-    background-color: #10151e;
-    color: #f5f5f5;
-    font-size: 12px;
-}
-.track-detail-control:hover, .track-detail-control:focus {
-    background-color: #263e50;
-    border-color: #55c4ef;
 }
 
 .team-header-icon {

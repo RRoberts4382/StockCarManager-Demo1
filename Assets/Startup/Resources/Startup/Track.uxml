@@ -5,10 +5,13 @@
     <ui:VisualElement name="trackScreen" class="screen">
         <ui:VisualElement name="raceViewport" class="race-viewport" />
         <ui:VisualElement class="header track-header ui-default-font">
-            <ui:VisualElement class="track-header-left">
-                <ui:VisualElement class="track-heading-labels">
-                    <ui:Label name="selectedTrackName" class="brand track-name" />
-                    <ui:VisualElement name="practiceFlags" class="track-icon-tooltip-target" style="display: none; flex-direction: row; align-items: center;">
+            <ui:VisualElement class="track-title-row">
+                <ui:Label name="selectedTrackName" class="brand track-name" />
+                <ui:Label name="trackSeriesName" class="brand track-name track-series-name" />
+            </ui:VisualElement>
+            <ui:VisualElement class="track-header-status">
+                <ui:VisualElement class="track-header-left">
+                    <ui:VisualElement name="practiceFlags" class="track-state-row track-icon-tooltip-target" style="display: none;">
                         <ui:VisualElement name="primaryPracticeFlag" style="width: 20px; height: 13px; margin-right: 5px;" />
                         <ui:VisualElement name="blackPracticeFlag" style="width: 20px; height: 13px; margin-right: 5px; background-color: #080808; border-color: #a0a0a0; border-width: 1px;" />
                         <ui:VisualElement name="checkeredFlag" style="display: none; width: 20px; height: 13px; margin-right: 5px;" />
@@ -16,33 +19,29 @@
                     </ui:VisualElement>
                     <ui:Label name="luckyDogLabel" class="garage-detail" style="display: none;" />
                 </ui:VisualElement>
-                <ui:VisualElement class="track-session">
-                    <ui:Label name="raceProgressLabel" class="garage-detail" />
-                    <ui:Label name="playerTrackLaps" text="Run laps: 0 / Session laps: 0" class="garage-detail" />
+                <ui:VisualElement class="track-playback-area">
+                    <ui:VisualElement class="track-playback">
+                        <ui:Button name="playbackSpeedButton" text="1x &#x25BE;" tooltip="Playback speed" class="track-header-icon playback-speed-button" />
+                        <ui:Button name="playSessionButton" text="&#x25B6;" tooltip="Play" class="track-header-icon" />
+                        <ui:Button name="pauseSessionButton" text="&#x2161;" tooltip="Pause" class="track-header-icon" />
+                    </ui:VisualElement>
+                    <ui:Label name="cautionReasonLabel" class="track-caution-reason" picking-mode="Ignore" style="display: none;" />
                 </ui:VisualElement>
-            </ui:VisualElement>
-            <ui:VisualElement class="track-playback-area">
-                <ui:VisualElement class="track-playback">
-                    <ui:Button name="playbackSpeedButton" text="1x &#x25BE;" tooltip="Playback speed" class="track-header-icon playback-speed-button" />
-                    <ui:Button name="playSessionButton" text="&#x25B6;" tooltip="Play" class="track-header-icon" />
-                    <ui:Button name="pauseSessionButton" text="&#x2161;" tooltip="Pause" class="track-header-icon" />
+                <ui:VisualElement class="track-header-right">
+                    <ui:Button name="returnToGarageButton" class="track-header-icon" tooltip="Leave and end the current session">
+                        <ui:VisualElement class="track-icon-art" picking-mode="Ignore" />
+                    </ui:Button>
+                    <ui:Button name="snapshotButton" class="track-header-icon" tooltip="Save track snapshot">
+                        <ui:VisualElement class="track-icon-art" picking-mode="Ignore" />
+                    </ui:Button>
+                    <ui:Button name="resetCameraButton" class="track-header-icon" tooltip="Reset the track camera">
+                        <ui:VisualElement class="track-icon-art" picking-mode="Ignore" />
+                    </ui:Button>
+                    <ui:Button name="visitGarageButton" class="track-header-icon" tooltip="Call your car to its pit stall" style="display: none;">
+                        <ui:VisualElement class="track-icon-art" picking-mode="Ignore" />
+                    </ui:Button>
+                    <ui:Button name="trackSettingsButton" text="&#x2699;" tooltip="Open track settings" class="track-header-icon" />
                 </ui:VisualElement>
-                <ui:Label name="cautionReasonLabel" class="track-caution-reason" picking-mode="Ignore" style="display: none;" />
-            </ui:VisualElement>
-            <ui:VisualElement class="track-header-right">
-                <ui:Button name="returnToGarageButton" class="track-header-icon" tooltip="Leave and end the current session">
-                    <ui:VisualElement class="track-icon-art" picking-mode="Ignore" />
-                </ui:Button>
-                <ui:Button name="snapshotButton" class="track-header-icon" tooltip="Save track snapshot">
-                    <ui:VisualElement class="track-icon-art" picking-mode="Ignore" />
-                </ui:Button>
-                <ui:Button name="resetCameraButton" class="track-header-icon" tooltip="Reset the track camera">
-                    <ui:VisualElement class="track-icon-art" picking-mode="Ignore" />
-                </ui:Button>
-                <ui:Button name="visitGarageButton" class="track-header-icon" tooltip="Call your car to its pit stall" style="display: none;">
-                    <ui:VisualElement class="track-icon-art" picking-mode="Ignore" />
-                </ui:Button>
-                <ui:Button name="trackSettingsButton" text="&#x2699;" tooltip="Open track settings" class="track-header-icon" />
             </ui:VisualElement>
         </ui:VisualElement>
         <ui:VisualElement class="track-content" picking-mode="Ignore">
@@ -137,23 +136,14 @@
                 <ui:Label name="footerGear" text="Gear 1" class="track-footer-engine" />
             </ui:VisualElement>
             <ui:VisualElement class="track-footer-center">
-                <ui:VisualElement class="track-readouts">
-                    <ui:Label name="trackFpsLabel" text="FPS --" class="muted" />
-                    <ui:Label name="trackWeatherLabel" class="muted" />
-                </ui:VisualElement>
-                <ui:VisualElement class="track-display-controls">
-                    <ui:Button name="trackCarDetailButton" text="Car Detail" tooltip="Change car LOD for the entire field while practice continues. Cars with one model use it at every level." class="track-detail-control track-icon-tooltip-target" style="display: none;" />
-                    <ui:Button name="trackPracticeSkyButton" text="Day Sky" tooltip="Switch between the day and night skies in this Test Practice session." class="track-detail-control track-icon-tooltip-target ui-default-font" style="display: none;" />
-                    <ui:Button name="trackGrandstandsButton" text="Grandstands On" tooltip="Show or hide the grandstands and concrete walkways while practice continues." class="track-detail-control track-icon-tooltip-target ui-default-font" style="display: none;" />
-                    <ui:Button name="requestCautionButton" text="Call Caution" tooltip="Put the field under caution." class="track-detail-control track-icon-tooltip-target ui-default-font" />
-                </ui:VisualElement>
+                <ui:Label name="trackFpsLabel" text="FPS --" class="muted" />
                 <ui:Label name="snapshotStatus" class="garage-detail" style="display: none;" />
             </ui:VisualElement>
             <ui:VisualElement class="track-footer-pit">
-                <ui:Label name="trackCameraAngle" text="Player" class="garage-detail" />
-                <ui:Button name="cycleTrackCameraButton" tooltip="Click for the next camera. Hold right-click to choose a camera." class="track-header-icon">
+                <ui:Button name="cycleTrackCameraButton" tooltip="Choose a track camera" class="track-header-icon">
                     <ui:VisualElement class="track-icon-art" picking-mode="Ignore" />
                 </ui:Button>
+                <ui:Label name="trackCameraAngle" text="Player" class="garage-detail" />
                 <ui:Label name="playerPitStatus" class="garage-detail" />
                 <ui:Button name="pitSettingsButton" tooltip="Show pit stop settings" class="track-header-icon pit-settings-button">
                     <ui:VisualElement class="track-icon-art" picking-mode="Ignore" />

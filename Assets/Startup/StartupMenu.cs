@@ -23,7 +23,6 @@ public sealed class StartupMenu : MonoBehaviour
     private const string TrackCameraAnglePreference = "StockCarManager.TrackCameraAngle";
     private const string PreferredLinePreference = "StockCarManager.Settings.PreferredLineVisible";
     private const double CameraCycleIntervalSeconds = 8d;
-    private const long CameraMenuHoldMs = 350;
     private static readonly TrackPreview.CameraAngle[] TrackCameraChoices =
     {
         TrackPreview.CameraAngle.Player, TrackPreview.CameraAngle.Chase, TrackPreview.CameraAngle.RearChase,
@@ -85,11 +84,7 @@ public sealed class StartupMenu : MonoBehaviour
     private Button startRaceButton;
     private Button simulateEventButton;
     private TrackOutlineView scheduleTrackOutline;
-    private Label raceProgressLabel;
-    private Label trackWeatherLabel;
     private Button trackSettingsButton;
-    private Button trackGrandstandsButton;
-    private Button trackPracticeSkyButton;
     private Label playerCarStatus;
     private Label playerPitStatus;
     private Button requestPitStop;
@@ -113,7 +108,6 @@ public sealed class StartupMenu : MonoBehaviour
     private Button playSessionButton;
     private Button playbackSpeedButton;
     private Button pauseSessionButton;
-    private Button requestCautionButton;
     private Label cautionReasonLabel;
     private VisualElement throttleDisplay, brakeDisplay, fuelDisplay;
     private VisualElement throttleFill, brakeFill, fuelFill;
@@ -133,7 +127,7 @@ public sealed class StartupMenu : MonoBehaviour
     private VisualElement scoringRaceLine, scoringRaceProgress, scoringFlag;
     private RaceSessionRun scoringProgressRun;
     private int scoringProgressLaps, scoringProgressTarget;
-    private SessionTrackState? scoringFlagState;
+    private (SessionTrackState? State, bool BeforeGreen)? scoringFlagState;
     private static readonly Color ScoringGreen = new Color32(66, 199, 100, 255);
     private static readonly Color ScoringYellow = new Color32(255, 215, 53, 255);
     private Button pitSettingsButton;
@@ -141,7 +135,6 @@ public sealed class StartupMenu : MonoBehaviour
     private Label trackCameraAngle;
     private TrackPreview.CameraAngle trackCameraSelection;
     private double nextTrackCameraCut;
-    private IVisualElementScheduledItem cameraMenuHold;
     private const long TrackIconTooltipDelayMs = 350;
     private Label trackIconTooltip;
     private VisualElement hoveredTrackIcon;
@@ -168,7 +161,6 @@ public sealed class StartupMenu : MonoBehaviour
     private VisualElement garageScreen;
     private VisualElement trackScreen;
     private Label trackFpsLabel;
-    private Label playerTrackLaps;
     private double fpsSampleStart;
     private int fpsSampleFrames;
     private VisualElement raceViewport;
@@ -277,7 +269,6 @@ public sealed class StartupMenu : MonoBehaviour
 
         trackScreen = root.Q("trackScreen");
         trackFpsLabel = trackScreen.Q<Label>("trackFpsLabel");
-        playerTrackLaps = trackScreen.Q<Label>("playerTrackLaps");
         trackScreen.style.display = DisplayStyle.None;
         raceViewport = trackScreen.Q("raceViewport");
         trackCockpit = trackScreen.Q("trackCockpit");
@@ -304,25 +295,14 @@ public sealed class StartupMenu : MonoBehaviour
         DrawButtonIcon(pitSettingsButton, DrawPitSettingsIcon);
         trackCameraAngle = trackScreen.Q<Label>("trackCameraAngle");
         cycleTrackCameraButton = trackScreen.Q<Button>("cycleTrackCameraButton");
-        cycleTrackCameraButton.clicked += CycleTrackCameraAngle;
-        cycleTrackCameraButton.RegisterCallback<PointerDownEvent>(BeginCameraMenuHold, TrickleDown.TrickleDown);
-        cycleTrackCameraButton.RegisterCallback<PointerUpEvent>(EndCameraMenuHold, TrickleDown.TrickleDown);
-        cycleTrackCameraButton.RegisterCallback<PointerLeaveEvent>(CancelCameraMenuHold);
-        cycleTrackCameraButton.RegisterCallback<PointerCancelEvent>(CancelCameraMenuHold);
+        cycleTrackCameraButton.clicked += OpenTrackCameraMenu;
         DrawButtonIcon(cycleTrackCameraButton, DrawSnapshotIcon);
         trackIconTooltip = trackScreen.Q<Label>("trackIconTooltip");
         trackScreen.RegisterCallback<PointerMoveEvent>(UpdateTrackIconTooltip, TrickleDown.TrickleDown);
         trackScreen.RegisterCallback<PointerDownEvent>(HideTrackIconTooltip, TrickleDown.TrickleDown);
         trackScreen.RegisterCallback<PointerLeaveEvent>(HideTrackIconTooltip);
-        raceProgressLabel = trackScreen.Q<Label>("raceProgressLabel");
-        trackWeatherLabel = trackScreen.Q<Label>("trackWeatherLabel");
         trackSettingsButton = trackScreen.Q<Button>("trackSettingsButton");
         trackSettingsButton.clicked += OpenTrackSettings;
-        trackScreen.Q<Button>("trackCarDetailButton").clicked += OpenPracticeCarDetail;
-        trackGrandstandsButton = trackScreen.Q<Button>("trackGrandstandsButton");
-        trackGrandstandsButton.clicked += TogglePracticeGrandstands;
-        trackPracticeSkyButton = trackScreen.Q<Button>("trackPracticeSkyButton");
-        trackPracticeSkyButton.clicked += TogglePracticeSky;
         playerCarStatus = trackScreen.Q<Label>("playerCarStatus");
         playerPitStatus = trackScreen.Q<Label>("playerPitStatus");
         requestPitStop = trackScreen.Q<Button>("requestPitStop");
@@ -378,9 +358,6 @@ public sealed class StartupMenu : MonoBehaviour
         pauseSessionButton = trackScreen.Q<Button>("pauseSessionButton");
         pauseSessionButton.clicked += PauseSession;
         cautionReasonLabel = trackScreen.Q<Label>("cautionReasonLabel");
-        requestCautionButton = trackScreen.Q<Button>("requestCautionButton");
-        requestCautionButton.clicked += CallCaution;
-        requestCautionButton.SetEnabled(false);
         startRaceButton = garageScreen.Q<Button>("startRaceButton");
         startRaceButton.clicked += OpenSelectedEvent;
         simulateEventButton = garageScreen.Q<Button>("simulateEventButton");
@@ -512,10 +489,7 @@ public sealed class StartupMenu : MonoBehaviour
         settings.CarLodChanged += level =>
         {
             if (trackPreview != null && trackPreview.SupportsCarDetail && trackPreview.SetCarDetail(level - 1))
-            {
                 trackFpsWarmupUntil = Time.unscaledTimeAsDouble + 1;
-                UpdateTrackDisplayControls();
-            }
         };
         settings.TrackMsaaSamplesChanged += samples =>
         {
@@ -774,7 +748,7 @@ public sealed class StartupMenu : MonoBehaviour
         var forecast = SessionWeatherForecast.Ensure(session, definition, race);
         developmentPracticeCareer = career;
         developmentPractice = true;
-        OpenTrack(track, true, car.number, SessionWeatherForecast.IsNightAt(forecast.startHour), car);
+        OpenTrack(track, session, true, car.number, SessionWeatherForecast.IsNightAt(forecast.startHour), car);
         if (trackPreview.Image == null)
         {
             CloseTrackSession(testPracticeMessage: $"Could not open {session.name.ToLowerInvariant()} at {definition.name}.");
@@ -808,7 +782,6 @@ public sealed class StartupMenu : MonoBehaviour
         };
         trackPreview.BeginSession(simulation, new TrackState001(), settings.SpeedModel, settings.BehaviorModel,
             session.qualifyingOrder, settings.UsePaceTruck);
-        UpdateTrackDisplayControls();
         raceEventView.EqualConditionTesting = trackPreview.EqualConditionTesting;
         RefreshTrackTiming();
         sessionPlaybackSpeed = 1;
@@ -930,7 +903,6 @@ public sealed class StartupMenu : MonoBehaviour
         if (playSessionButton != null) playSessionButton.clicked -= PlaySession;
         if (playbackSpeedButton != null) playbackSpeedButton.clicked -= OpenPlaybackSpeedMenu;
         if (pauseSessionButton != null) pauseSessionButton.clicked -= PauseSession;
-        if (requestCautionButton != null) requestCautionButton.clicked -= CallCaution;
         if (toggleTrackStandingsButton != null)
             toggleTrackStandingsButton.clicked -= ToggleTrackStandings;
         if (scoringRaceProgress != null)
@@ -939,12 +911,7 @@ public sealed class StartupMenu : MonoBehaviour
             pitSettingsButton.clicked -= TogglePitSettings;
         if (cycleTrackCameraButton != null)
         {
-            CancelCameraMenuHold();
-            cycleTrackCameraButton.clicked -= CycleTrackCameraAngle;
-            cycleTrackCameraButton.UnregisterCallback<PointerDownEvent>(BeginCameraMenuHold, TrickleDown.TrickleDown);
-            cycleTrackCameraButton.UnregisterCallback<PointerUpEvent>(EndCameraMenuHold, TrickleDown.TrickleDown);
-            cycleTrackCameraButton.UnregisterCallback<PointerLeaveEvent>(CancelCameraMenuHold);
-            cycleTrackCameraButton.UnregisterCallback<PointerCancelEvent>(CancelCameraMenuHold);
+            cycleTrackCameraButton.clicked -= OpenTrackCameraMenu;
         }
         if (trackScreen != null)
         {
@@ -955,10 +922,6 @@ public sealed class StartupMenu : MonoBehaviour
         }
         if (trackSettingsButton != null)
             trackSettingsButton.clicked -= OpenTrackSettings;
-        if (trackGrandstandsButton != null)
-            trackGrandstandsButton.clicked -= TogglePracticeGrandstands;
-        if (trackPracticeSkyButton != null)
-            trackPracticeSkyButton.clicked -= TogglePracticeSky;
         if (startRaceButton != null)
             startRaceButton.clicked -= OpenSelectedEvent;
         if (simulateEventButton != null)
@@ -5945,7 +5908,7 @@ public sealed class StartupMenu : MonoBehaviour
         raceEventView.Screen.style.display = DisplayStyle.None;
         var forecast = SessionWeatherForecast.Ensure(session, track.Definition, activeRace);
         bool night = SessionWeatherForecast.IsNightAt(forecast.startHour);
-        OpenTrack(track, true, activeRace.carNumber, night);
+        OpenTrack(track, session, true, activeRace.carNumber, night);
         if (trackPreview.Image == null)
         {
             ReturnToGarage();
@@ -6204,10 +6167,12 @@ public sealed class StartupMenu : MonoBehaviour
     private void UpdateScoringHeader(RaceSessionRun timing)
     {
         var state = trackPreview.TrackState;
-        if (state != scoringFlagState)
+        bool beforeGreen = timing.IsRace && state is SessionTrackState.TrackClosed or SessionTrackState.Pacing;
+        var flagState = (state, beforeGreen);
+        if (scoringFlagState != flagState)
         {
-            scoringFlagState = state;
-            scoringFlag.style.backgroundColor = state switch
+            scoringFlagState = flagState;
+            scoringFlag.style.backgroundColor = beforeGreen ? Color.clear : state switch
             {
                 SessionTrackState.TrackOpen => ScoringGreen,
                 SessionTrackState.Pacing or SessionTrackState.Caution or SessionTrackState.StageEndingUnderCaution
@@ -6434,49 +6399,15 @@ public sealed class StartupMenu : MonoBehaviour
         return label;
     }
 
-    private void UpdateTrackDisplayControls()
+    private void ToggleTrackSky()
     {
-        var button = trackScreen.Q<Button>("trackCarDetailButton");
-        bool showPreviewControls = developmentPractice && trackPreview != null;
-        bool showLod = showPreviewControls && trackPreview.SupportsCarDetail;
-        button.style.display = showLod ? DisplayStyle.Flex : DisplayStyle.None;
-        if (showLod)
-            button.text = "Car LOD " + (trackPreview.CarDetailIndex + 1) + " - " + TrackPreview.CarDetailLabels[trackPreview.CarDetailIndex];
-
-        bool showGrandstands = showPreviewControls && trackPreview.SupportsGrandstands;
-        trackGrandstandsButton.style.display = showGrandstands ? DisplayStyle.Flex : DisplayStyle.None;
-        if (showGrandstands)
-            trackGrandstandsButton.text = trackPreview.GrandstandsVisible ? "Grandstands On" : "Grandstands Off";
-
-        trackPracticeSkyButton.style.display = showPreviewControls ? DisplayStyle.Flex : DisplayStyle.None;
-        if (showPreviewControls)
-        {
-            trackPracticeSkyButton.tooltip = trackPreview.SupportsIowaVenueLighting
-                ? "Switch between daylight and Iowa's race, street, and pit lights."
-                : trackPreview.SupportsRaceNightLighting
-                    ? "Switch between daylight and race-night floodlights at Bristol."
-                    : "Switch between the day and night skies in this test session.";
-            UpdatePracticeSkyButtonLabel();
-        }
-    }
-
-    private void UpdatePracticeSkyButtonLabel()
-    {
-        string label = trackPreview.TrackSkyIsNight ? "Night Sky" : "Day Sky";
-        if (trackPracticeSkyButton.text != label)
-            trackPracticeSkyButton.text = label;
-    }
-
-    private void TogglePracticeSky()
-    {
-        if (!developmentPractice || trackPreview?.SessionRun == null)
+        if (trackPreview?.SessionRun == null)
             return;
 
         trackPreview.SetPracticeSkyNight(!trackPreview.TrackSkyIsNight);
         if (trackPreview.SupportsRaceNightLighting || trackPreview.SupportsIowaVenueLighting)
             trackFpsWarmupUntil = Time.unscaledTimeAsDouble + 1;
         HideTrackIconTooltip();
-        UpdatePracticeSkyButtonLabel();
     }
 
     private void TogglePracticeGrandstands()
@@ -6487,14 +6418,11 @@ public sealed class StartupMenu : MonoBehaviour
         trackPreview.SetGrandstandsVisible(!trackPreview.GrandstandsVisible);
         trackFpsWarmupUntil = Time.unscaledTimeAsDouble + 1;
         HideTrackIconTooltip();
-        UpdateTrackDisplayControls();
     }
 
-    private void OpenPracticeCarDetail() => OpenCarDetailSelection(false);
-
-    private void OpenCarDetailSelection(bool saveSetting)
+    private void OpenCarDetailSelection()
     {
-        if ((!developmentPractice && !saveSetting) || trackPreview == null || !trackPreview.SupportsCarDetail)
+        if (trackPreview == null || !trackPreview.SupportsCarDetail)
             return;
         var overlay = new VisualElement { name = "practiceCarDetailDialog" };
         SettingsFormStyle.Apply(overlay);
@@ -6506,7 +6434,7 @@ public sealed class StartupMenu : MonoBehaviour
         dialog.style.borderTopColor = dialog.style.borderBottomColor =
             dialog.style.borderLeftColor = dialog.style.borderRightColor = trim;
         dialog.Add(SettingsFormStyle.Label("Car Detail", "settings-group-heading"));
-        dialog.Add(SettingsFormStyle.Label(saveSetting ? "Set the saved maximum detail for cars in Track View." : "Set the maximum detail for this practice session. Testing goal 120 FPS, minimum 100 FPS.", "settings-note"));
+        dialog.Add(SettingsFormStyle.Label("Set the saved maximum detail for cars in Track View.", "settings-note"));
         var error = SettingsFormStyle.Label("", "settings-validation-summary");
         dialog.Add(error);
         for (int i = 0; i < TrackPreview.CarDetailLabels.Length; i++)
@@ -6520,9 +6448,8 @@ public sealed class StartupMenu : MonoBehaviour
                     SettingsFormStyle.SetValidationMessage(error, "Could not load this detail level.", true);
                     return;
                 }
-                if (saveSetting) settings.SaveCarLod(index + 1);
+                settings.SaveCarLod(index + 1);
                 trackFpsWarmupUntil = Time.unscaledTimeAsDouble + 1;
-                UpdateTrackDisplayControls();
                 Close();
             });
             button.tooltip = "Allow up to level " + (i + 1) + " in Track View.";
@@ -6547,7 +6474,7 @@ public sealed class StartupMenu : MonoBehaviour
         {
             overlay.RemoveFromHierarchy();
             trackScreen.SetEnabled(true);
-            trackScreen.Q<Button>("trackCarDetailButton").Focus();
+            trackSettingsButton.Focus();
         }
     }
 
@@ -6567,11 +6494,22 @@ public sealed class StartupMenu : MonoBehaviour
         }
         else
             menu.AddDisabledItem("Preferred Line", false);
-        if (trackPreview != null && trackPreview.SupportsCarDetail)
-            menu.AddItem("Car LOD - " + (trackPreview.CarDetailIndex + 1), false, () => OpenCarDetailSelection(true));
-        if (trackPreview != null)
+        if (preview?.SessionRun != null)
+            menu.AddItem("Night Sky", preview.TrackSkyIsNight, ToggleTrackSky);
+        if (developmentPractice && preview?.SupportsGrandstands == true)
+            menu.AddItem("Grandstands", preview.GrandstandsVisible, TogglePracticeGrandstands);
+        if (preview?.SupportsCarDetail == true)
+            menu.AddItem("Car LOD - " + (preview.CarDetailIndex + 1), false, OpenCarDetailSelection);
+        if (preview != null)
             menu.AddItem("Track Anti-Aliasing - " + GameSettings.TrackMsaaLabel(settings.TrackMsaaSamples),
                 false, OpenTrackMsaaPicker);
+        if (preview?.SessionRun != null)
+        {
+            if (CanCallCaution)
+                menu.AddItem("Call Caution", false, CallCaution);
+            else
+                menu.AddDisabledItem("Call Caution", false);
+        }
         menu.DropDown(trackSettingsButton.worldBound, trackSettingsButton, DropdownMenuSizeMode.Content);
     }
 
@@ -6604,7 +6542,6 @@ public sealed class StartupMenu : MonoBehaviour
         playSessionButton.SetEnabled(available && sessionPaused);
         pauseSessionButton.SetEnabled(available && !sessionPaused);
         playbackSpeedButton.SetEnabled(available);
-        requestCautionButton.SetEnabled(CanCallCaution);
         playSessionButton.tooltip = $"Play at {sessionPlaybackSpeed}x";
         playbackSpeedButton.text = $"{sessionPlaybackSpeed}x \u25BE";
         playbackSpeedButton.tooltip = $"Playback speed \u00B7 {sessionPlaybackSpeed}x";
@@ -6794,13 +6731,7 @@ public sealed class StartupMenu : MonoBehaviour
     private void UpdateSessionLabel()
     {
         snapshotButton.SetEnabled(trackPreview.CanSaveSnapshot);
-        requestCautionButton.SetEnabled(CanCallCaution);
-        if (developmentPractice)
-            UpdatePracticeSkyButtonLabel();
         var run = trackPreview.SessionRun;
-        playerTrackLaps.text = $"Run laps: {trackPreview.PlayerRunLaps} / Session laps: {run.PlayerLaps}";
-        trackWeatherLabel.text = $"Air {run.Weather.AmbientFahrenheit:0}\u00B0F \u00B7 Track {run.Weather.TrackFahrenheit:0}\u00B0F";
-        trackWeatherLabel.tooltip = run.Weather.Summary;
         UpdatePlayerPitPanel(run);
         var state = trackPreview.TrackState;
         UpdateTrackFlags(state, trackPreview.OneToGoBeforeGreen);
@@ -6808,42 +6739,6 @@ public sealed class StartupMenu : MonoBehaviour
         string luckyDog = trackPreview.LuckyDogMessage;
         luckyDogLabel.text = luckyDog;
         luckyDogLabel.style.display = luckyDog.Length == 0 ? DisplayStyle.None : DisplayStyle.Flex;
-        if (trackPreview.RaceStartCountdown > 0)
-        {
-            raceProgressLabel.text = $"{activeSession.name}  /  Start in {trackPreview.RaceStartCountdown}";
-            return;
-        }
-        if (state == SessionTrackState.Pacing)
-        {
-            raceProgressLabel.text = activeSession.name;
-            return;
-        }
-        if (state == SessionTrackState.Checkered && !run.IsRace)
-        {
-            raceProgressLabel.text = $"{activeSession.name}  /  Best lap {RaceEventView.LapTime(run.PlayerBestLap)}";
-            return;
-        }
-        if (state == SessionTrackState.TrackClosed || state == SessionTrackState.ReturnToPits ||
-            state == SessionTrackState.Complete)
-        {
-            raceProgressLabel.text = activeSession.name;
-            return;
-        }
-        if (activeSession.minutes > 0)
-        {
-            var remaining = System.TimeSpan.FromSeconds(Mathf.CeilToInt(run.Remaining));
-            raceProgressLabel.text = $"{activeSession.name}  /  {remaining:mm\\:ss} remaining";
-        }
-        else
-        {
-            string stage = run.IsRace && run.BonusStageCount > 0 ? $"  /  Stage {run.CurrentStage} of {run.BonusStageCount + 1}" : string.Empty;
-            string pitStatus = trackPreview.PitRoadOpen is bool open ? (open ? "  /  Pits Open" : "  /  Pits Closed") : string.Empty;
-            int laps = run.IsRace ? run.LeaderLaps : run.PlayerLaps;
-            string progress = run.FinishSuspended ? $"{laps} laps - Overtime pending" : $"{laps} of {run.TargetLaps} laps";
-            string stageProgress = run.IsRace
-                ? $"  /  Stage lap {laps - run.StageStartLap} of {run.StageEnd - run.StageStartLap}" : string.Empty;
-            raceProgressLabel.text = $"{activeSession.name}{stage}  /  {progress}{stageProgress}{pitStatus}";
-        }
     }
 
     private void CompleteSession(RaceSession session, List<SessionCarResult> results)
@@ -7123,7 +7018,7 @@ public sealed class StartupMenu : MonoBehaviour
     private string ActiveSponsorName() => activeCareer?.PrimarySponsor is SponsorContract contract
         ? Sponsorships.CompanyName(contract.offer.companyId) : null;
 
-    private void OpenTrack(TrackCatalog.Entry track, bool restart, int carNumber, bool night = false, TeamCar playerCar = null)
+    private void OpenTrack(TrackCatalog.Entry track, RaceSession session, bool restart, int carNumber, bool night = false, TeamCar playerCar = null)
     {
         if (track == null)
             return;
@@ -7167,7 +7062,20 @@ public sealed class StartupMenu : MonoBehaviour
 
         cycleTrackCameraButton.SetEnabled(trackPreview.Image != null);
         UpdateCautionReason(trackPreview.CautionReason);
-        trackScreen.Q<Label>("selectedTrackName").text = track.Definition.name;
+        var trackName = trackScreen.Q<Label>("selectedTrackName");
+        trackName.text = $"{track.Definition.name} - {session.name}";
+        trackName.tooltip = trackName.text;
+        var seriesName = trackScreen.Q<Label>("trackSeriesName");
+        if (developmentPractice)
+        {
+            string model = playerCar?.modelResource;
+            var series = RacingSeries.Catalog.FirstOrDefault(item =>
+                item.carModel == model || item.ManufacturerChoices.Any(make => item.ModelFor(make) == model));
+            seriesName.text = series?.name ?? RacingSeries.ForId("nascar-cup").name;
+        }
+        else
+            seriesName.text = careerSetup.SeriesName(activeCareer);
+        seriesName.tooltip = seriesName.text;
         trackPreview.gameObject.SetActive(true);
         visitGarageButton.style.display = DisplayStyle.None;
         garageScreen.style.display = DisplayStyle.None;
@@ -7175,7 +7083,8 @@ public sealed class StartupMenu : MonoBehaviour
         fpsSampleFrames = 0;
         trackFpsLabel.text = "FPS --";
         HideTrackIconTooltip();
-        UpdateTrackDisplayControls();
+        scoringFlagState = null;
+        scoringFlag.style.backgroundColor = session.kind == RaceSessionKind.Race ? Color.clear : StyleKeyword.Null;
         trackScreen.style.display = DisplayStyle.Flex;
         returnToGarageButton.Focus();
     }
@@ -7307,9 +7216,6 @@ public sealed class StartupMenu : MonoBehaviour
         return angle;
     }
 
-    private void CycleTrackCameraAngle() =>
-        SelectTrackCamera(NextAvailableCamera(trackCameraSelection, includeCycle: true));
-
     private void SelectTrackCamera(TrackPreview.CameraAngle angle)
     {
         if (trackPreview?.Image == null || !IsTrackCameraAvailable(angle))
@@ -7361,36 +7267,17 @@ public sealed class StartupMenu : MonoBehaviour
         cockpitMirrorImage.parent.style.translate = new Translate(mirrorOffset.x, mirrorOffset.y, 0f);
     }
 
-    private void BeginCameraMenuHold(PointerDownEvent evt)
-    {
-        if (evt.button != 1)
-            return;
-
-        CancelCameraMenuHold();
-        cameraMenuHold = cycleTrackCameraButton.schedule.Execute(OpenTrackCameraMenu).StartingIn(CameraMenuHoldMs);
-        evt.StopPropagation();
-    }
-
-    private void EndCameraMenuHold(PointerUpEvent evt)
-    {
-        if (evt.button == 1)
-            CancelCameraMenuHold();
-    }
-
-    private void CancelCameraMenuHold(EventBase evt = null)
-    {
-        cameraMenuHold?.Pause();
-        cameraMenuHold = null;
-    }
-
     private void OpenTrackCameraMenu()
     {
-        cameraMenuHold = null;
         if (trackScreen.style.display != DisplayStyle.Flex || trackPreview?.Image == null)
             return;
 
         HideTrackIconTooltip();
         var menu = new GenericDropdownMenu();
+        menu.contentContainer.AddToClassList("track-camera-menu");
+        menu.contentContainer.AddToClassList("ui-default-font");
+        menu.contentContainer.styleSheets.Add(Resources.Load<StyleSheet>("Startup/Startup"));
+        menu.contentContainer.styleSheets.Add(Resources.Load<StyleSheet>("Fonts/GoogleSans/SettingsTypography"));
         foreach (var angle in TrackCameraChoices)
         {
             string label = TrackPreview.CameraAngleName(angle);
@@ -7399,6 +7286,11 @@ public sealed class StartupMenu : MonoBehaviour
             else
                 menu.AddDisabledItem(label, false);
         }
+        menu.contentContainer.Query<Label>().ForEach(label =>
+        {
+            label.style.color = (Color)new Color32(245, 245, 245, 255);
+            label.style.fontSize = 12f;
+        });
         menu.DropDown(cycleTrackCameraButton.worldBound, cycleTrackCameraButton, DropdownMenuSizeMode.Content);
     }
 
@@ -7607,7 +7499,6 @@ public sealed class StartupMenu : MonoBehaviour
         trackPreview.SetSessionSpeed(1);
         garageCarParked = trackPreview.PlayerParkedForGarage;
         trackPreview.SetTrackRendering(false);
-        CancelCameraMenuHold();
         HideTrackIconTooltip();
         trackScreen.style.display = DisplayStyle.None;
         raceEventView.Screen.style.display = DisplayStyle.Flex;
@@ -7661,7 +7552,6 @@ public sealed class StartupMenu : MonoBehaviour
         snapshotStatus.tooltip = null;
         snapshotStatus.style.display = DisplayStyle.None;
         playerPitStatus.text = string.Empty;
-        CancelCameraMenuHold();
         HideTrackIconTooltip();
         trackScreen.style.display = DisplayStyle.None;
         if (developmentPractice)
