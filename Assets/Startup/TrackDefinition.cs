@@ -39,6 +39,9 @@ public sealed class TrackDefinition
     public int[] raceStageLaps;
     public TrackWeights weights = new TrackWeights();
     public TrackLayoutPoint[] layoutPoints = Array.Empty<TrackLayoutPoint>();
+    // Signed offsets in metres along the banked surface, sampled at uniform
+    // lap intervals from layout station zero. The last sample wraps to the first.
+    public float[] preferredLineLaneMetres = Array.Empty<float>();
     public TrackBankingTransition[] bankingTransitions;
     // Opt in to continuous interpolation between authored bank values in layoutPoints.
     public bool smoothLayoutBanking;

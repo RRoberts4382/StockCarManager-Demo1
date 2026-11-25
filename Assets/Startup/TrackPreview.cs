@@ -28,6 +28,7 @@ public sealed partial class TrackPreview : MonoBehaviour
     internal const int NorthWilkesboroTrackId = 13;
     internal const int PhoenixTrackId = 9;
     private const int MichiganTrackId = 11;
+    private const int NashvilleFairgroundsTrackId = 17;
     private const int PoconoTrackId = 18;
     internal const int BristolTrackId = 27;
     internal const int OrangeCountyTrackId = 28;
@@ -3665,8 +3666,15 @@ public sealed partial class TrackPreview : MonoBehaviour
         return halfWidth + stripeCenter;
     }
 
+    private bool HasAuthoredPreferredLine => definition.preferredLineLaneMetres?.Length >= 3;
+
+    private bool UsesPreviewPreferredLine => customLayout != null &&
+        (HasAuthoredPreferredLine || definition.id is BristolTrackId or NashvilleFairgroundsTrackId or CharlotteTrackId);
+
     private float PreferredLaneOffset(int index, float width, float distanceToMerge, float line)
     {
+        if (UsesPreviewPreferredLine)
+            return line * Mathf.SmoothStep(0f, 1f, distanceToMerge / 15f);
         if (behaviorModel is VehicleBehavior004 && definition.majorStyle == "Oval" &&
             line * (customLayout?.InsideSign ?? -1f) > 0f)
         {
@@ -3702,6 +3710,21 @@ public sealed partial class TrackPreview : MonoBehaviour
     {
         sweepingLineTracking = null;
         kinkSteeringBlend = null;
+        if (UsesPreviewPreferredLine)
+        {
+            racingLine = HasAuthoredPreferredLine
+                ? BuildPreferredLaneLookup(definition.preferredLineLaneMetres)
+                : definition.id switch
+                {
+                    BristolTrackId => BuildBristolPreferredLine(),
+                    CharlotteTrackId => BuildCharlottePreferredLine(),
+                    _ => BuildNashvilleFairgroundsPreferredLine()
+                };
+            if (behaviorModel is VehicleBehavior006)
+                sweepingLineTracking = _ => 1f;
+            return;
+        }
+
         float inside = customLayout?.InsideSign ?? -1f;
         System.Func<float, Vector3> heading = distance =>
         {
@@ -3725,6 +3748,268 @@ public sealed partial class TrackPreview : MonoBehaviour
         racingLine = behaviorModel is VehicleBehavior003 current
             ? current.BuildTrackRacingLine(lapLength, inside, definition.majorStyle == "Oval", heading, definition)
             : behaviorModel.BuildRacingLine(lapLength, inside, definition.majorStyle == "Oval", heading);
+    }
+
+    private System.Func<float, float> BuildBristolPreferredLine()
+    {
+        // Reproduce the overhead preview as a closed plan-view path.
+        const int count = 1200;
+        const float smoothingDistance = 26f;
+        // Plan-view offsets from the approved preview, based on a 1.8 m
+        // tire footprint. The depth is calibrated after smoothing the arc.
+        const float outsideOffset = 5.008388f;
+        const float turnDepth = 5.743704f;
+        var start = definition.layoutPoints[0];
+        float halfStraight = -start.x;
+        float radius = -start.z;
+        float straight = 2f * halfStraight;
+        float turn = Mathf.PI * radius;
+        float planLength = 2f * (straight + turn);
+        var raw = new Vector2[count];
+
+        for (int i = 0; i < count; i++)
+        {
+            float station = i * planLength / count;
+            float side = station < straight + turn ? 1f : -1f;
+            float local = station % (straight + turn);
+            if (local < straight)
+            {
+                raw[i] = side * new Vector2(local - halfStraight, -radius - outsideOffset);
+                continue;
+            }
+
+            float angle = (local - straight) / radius;
+            float sine = Mathf.Sin(angle);
+            float lineRadius = radius + outsideOffset - turnDepth * sine * sine;
+            raw[i] = side * new Vector2(halfStraight + lineRadius * sine, -lineRadius * Mathf.Cos(angle));
+        }
+
+        var weights = PreferredLineSmoothingWeights(smoothingDistance * count / planLength);
+        return ProjectPreferredLine(SmoothPreferredLine(raw, weights), weights.Length / 2);
+    }
+
+    private System.Func<float, float> BuildNashvilleFairgroundsPreferredLine()
+    {
+        const int count = 1200;
+        const float smoothingDistance = 29f;
+        const float straightClearance = 1.05f;
+        const float apexClearance = .96f;
+        int apex = count / 4;
+        var outside = new Vector2[count];
+        var turnOffset = new Vector2[count];
+        Vector2 apexCenter = default;
+        Vector2 apexNormal = default;
+        float apexLane = 0f;
+
+        for (int i = 0; i < count; i++)
+        {
+            float fraction = (float)i / count;
+            float station = fraction * lapLength;
+            Vector3 point = customLayout.Sample(station, out var forward, out float bank);
+            var center = new Vector2(point.x, point.z);
+            var normal = new Vector2(forward.z, -forward.x).normalized;
+            float halfWidth = RoadWidths(station).x * .5f;
+            float horizontal = Mathf.Cos(bank * Mathf.Deg2Rad);
+
+            // Use the local width on each straight and concentrate the inside
+            // offset near the two turn midpoints.
+            outside[i] = center + normal * ((halfWidth - straightClearance) * horizontal);
+            turnOffset[i] = normal * Mathf.Pow(Mathf.Sin(fraction * 2f * Mathf.PI), 4f);
+            if (i == apex)
+            {
+                apexCenter = center;
+                apexNormal = normal;
+                apexLane = (apexClearance - halfWidth) * horizontal;
+            }
+        }
+
+        float sourceMetresPerTrackMetre =
+            (customLayout.ToSourceSpace(Vector3.right) - customLayout.ToSourceSpace(Vector3.zero)).x;
+        float planLength = lapLength * sourceMetresPerTrackMetre;
+        var weights = PreferredLineSmoothingWeights(smoothingDistance * count / planLength);
+        var path = SmoothPreferredLine(outside, weights);
+        var smoothedTurnOffset = SmoothPreferredLine(turnOffset, weights);
+        float depth = (Vector2.Dot(path[apex] - apexCenter, apexNormal) - apexLane) /
+            Vector2.Dot(smoothedTurnOffset[apex], apexNormal);
+        for (int i = 0; i < count; i++)
+            path[i] -= smoothedTurnOffset[i] * depth;
+
+        return ProjectPreferredLine(path, weights.Length / 2);
+    }
+
+    private System.Func<float, float> BuildCharlottePreferredLine()
+    {
+        const int count = 1600;
+        const float turnSweepMetres = 240f;
+        // Calibrated on the approved preview with a 1.8 m tire footprint.
+        const float turns12Depth = 7.154903f;
+        const float turns34Depth = 7.733173f;
+        float turns12Apex = Mathf.Round(customLayout.ControlFraction(8) * count);
+        float turns34Apex = Mathf.Round(customLayout.ControlFraction(24) * count);
+        var raw = new Vector2[count];
+        var turnOffsets = new Vector2[count];
+
+        for (int i = 0; i < count; i++)
+        {
+            float station = (float)i / count * lapLength;
+            Vector3 point = customLayout.Sample(station, out var forward, out float bank);
+            var normal = new Vector2(forward.z, -forward.x).normalized;
+            float outside = (RoadWidths(station).x * .5f - 1.1f) * Mathf.Cos(bank * Mathf.Deg2Rad);
+            raw[i] = new Vector2(point.x, point.z) + normal * outside;
+            turnOffsets[i] = normal * (TurnOffset(turns12Apex, turns12Depth) +
+                TurnOffset(turns34Apex, turns34Depth));
+
+            float TurnOffset(float apex, float depth)
+            {
+                float progress = Mathf.Abs(i - apex) * lapLength / (count * turnSweepMetres);
+                return progress < 1f ? depth * Mathf.Pow(Mathf.Cos(progress * Mathf.PI * .5f), 4f) : 0f;
+            }
+        }
+
+        var weights = PreferredLineSmoothingWeights(46f * count / lapLength);
+        var path = SmoothPreferredLine(raw, weights);
+        var smoothedTurnOffsets = SmoothPreferredLine(turnOffsets, weights);
+        for (int i = 0; i < count; i++)
+            path[i] -= smoothedTurnOffsets[i];
+
+        // Straighten shallow reverse bends on the base path, then round the
+        // transitions into those straight runs before fitting the frontstretch.
+        RemoveCharlotteRightBends(path);
+        var transitionWeights = PreferredLineSmoothingWeights(1.5f * count / lapLength);
+        path = SmoothPreferredLine(path, transitionWeights);
+
+        // The approved circle is expressed in source layout metres. Both
+        // kinks are on the exact circle, with blending only beyond the arc.
+        const float frontstretchRadius = 817f;
+        const float arcHalfSpan = 310f;
+        const float blendOuterLimit = 440f;
+        var circleCenter = new Vector2(8f, 581.28f);
+        for (int i = 0; i < count; i++)
+        {
+            Vector3 source = customLayout.ToSourceSpace(new Vector3(path[i].x, 0f, path[i].y));
+            float blend = Mathf.Clamp01((blendOuterLimit - Mathf.Abs(source.x)) / (blendOuterLimit - arcHalfSpan));
+            if (source.z >= 0f || blend <= 0f)
+                continue;
+
+            float fromCenter = source.x - circleCenter.x;
+            float arcZ = circleCenter.y - Mathf.Sqrt(frontstretchRadius * frontstretchRadius - fromCenter * fromCenter);
+            blend = blend * blend * blend * (10f + blend * (6f * blend - 15f));
+            source.z = Mathf.Lerp(source.z, arcZ, blend);
+            Vector3 point = customLayout.ToTrackSpace(source);
+            path[i].y = point.z;
+        }
+
+        return ProjectPreferredLine(path, weights.Length / 2);
+    }
+
+    private static void RemoveCharlotteRightBends(Vector2[] path)
+    {
+        // The preferred line travels counterclockwise. Its convex hull
+        // replaces each inward dent with a straight-ahead run.
+        int count = path.Length;
+        var order = new int[count];
+        for (int i = 0; i < count; i++)
+            order[i] = i;
+        System.Array.Sort(order, (a, b) =>
+        {
+            int horizontal = path[a].x.CompareTo(path[b].x);
+            return horizontal != 0 ? horizontal : path[a].y.CompareTo(path[b].y);
+        });
+
+        var hull = new int[2 * count];
+        int used = 0;
+        for (int pass = 0; pass < 2; pass++)
+        {
+            int start = used;
+            for (int j = 0; j < count; j++)
+            {
+                int i = order[pass == 0 ? j : count - 1 - j];
+                while (used >= start + 2 && Turn(hull[used - 2], hull[used - 1], i) <= 0d)
+                    used--;
+                hull[used++] = i;
+            }
+            used--; // The next half supplies the shared endpoint.
+        }
+
+        System.Array.Sort(hull, 0, used);
+        for (int j = 0; j < used; j++)
+        {
+            int first = hull[j];
+            int last = j + 1 < used ? hull[j + 1] : hull[0] + count;
+            for (int i = first + 1; i < last; i++)
+                path[i % count] = Vector2.Lerp(path[first], path[last % count], (float)(i - first) / (last - first));
+        }
+
+        double Turn(int a, int b, int c)
+        {
+            Vector2 first = path[b] - path[a];
+            Vector2 second = path[c] - path[b];
+            return (double)first.x * second.y - (double)first.y * second.x;
+        }
+    }
+
+    private static float[] PreferredLineSmoothingWeights(float smoothingSigma)
+    {
+        int smoothingRadius = Mathf.CeilToInt(4f * smoothingSigma);
+        var weights = new float[2 * smoothingRadius + 1];
+        float weightSum = 0f;
+        for (int j = -smoothingRadius; j <= smoothingRadius; j++)
+        {
+            float weight = Mathf.Exp(-0.5f * j * j / (smoothingSigma * smoothingSigma));
+            weights[j + smoothingRadius] = weight;
+            weightSum += weight;
+        }
+        for (int i = 0; i < weights.Length; i++)
+            weights[i] /= weightSum;
+        return weights;
+    }
+
+    private static Vector2[] SmoothPreferredLine(Vector2[] raw, float[] weights)
+    {
+        int count = raw.Length;
+        int smoothingRadius = weights.Length / 2;
+        var path = new Vector2[count];
+        for (int i = 0; i < count; i++)
+            for (int j = -smoothingRadius; j <= smoothingRadius; j++)
+                path[i] += raw[(i + j + count) % count] * weights[j + smoothingRadius];
+        return path;
+    }
+
+    private System.Func<float, float> ProjectPreferredLine(Vector2[] path, int smoothingRadius)
+    {
+        int count = path.Length;
+        var lanes = new float[count];
+        // Intersect the preview path with each road cross section, then convert
+        // the horizontal offset to metres along the banked surface.
+        int segment = count - smoothingRadius;
+        for (int i = 0; i < count; i++)
+        {
+            float station = i * lapLength / count;
+            Vector3 center = customLayout.Sample(station, out var forward, out float bank);
+            var origin = new Vector2(center.x, center.z);
+            var along = new Vector2(forward.x, forward.z).normalized;
+            var across = new Vector2(along.y, -along.x);
+            float Along(int index) => Vector2.Dot(path[index % count] - origin, along);
+
+            while (Along(segment + 1) < 0f)
+                segment++;
+            float t = Mathf.InverseLerp(Along(segment), Along(segment + 1), 0f);
+            Vector2 hit = Vector2.Lerp(path[segment % count], path[(segment + 1) % count], t);
+            lanes[i] = Vector2.Dot(hit - origin, across) / Mathf.Cos(bank * Mathf.Deg2Rad);
+        }
+
+        return BuildPreferredLaneLookup(lanes);
+    }
+
+    private System.Func<float, float> BuildPreferredLaneLookup(float[] lanes)
+    {
+        int count = lanes.Length;
+        return distance =>
+        {
+            float sample = Mathf.Repeat(distance, lapLength) / lapLength * count;
+            int index = Mathf.FloorToInt(sample);
+            return Mathf.Lerp(lanes[index % count], lanes[(index + 1) % count], sample - index);
+        };
     }
 
     // Advance the road-relative offset with the fitted path. The traffic model
