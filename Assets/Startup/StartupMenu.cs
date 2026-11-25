@@ -6618,7 +6618,7 @@ public sealed class StartupMenu : MonoBehaviour
         else if (state == SessionTrackState.TrackOpen)
         {
             primaryPracticeFlag.style.backgroundColor = (Color)new Color32(66, 199, 100, 255);
-            practiceStateLabel.text = "Track Open";
+            practiceStateLabel.text = "Green Flag";
         }
         else if (state == SessionTrackState.WhiteFlag)
         {
