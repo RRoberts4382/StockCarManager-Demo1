@@ -43,6 +43,8 @@ internal sealed class TrackSnapshot
         public int draftBumpsGiven, draftBumpsReceived;
         public string draftPassPhase;
         public int draftPassTargetNumber;
+        public int draftBlockTargetNumber;
+        public float draftBlockTargetLaneMeters;
         public double fuelGallons;
         public float nextPitEntryMeters;
         // All poses use TrackPreview local space, in meters. Rotation includes banking.
@@ -74,7 +76,7 @@ internal sealed class TrackSnapshot
     [Serializable]
     private sealed class FileData
     {
-        public int formatVersion = 21;
+        public int formatVersion = 22;
         public string poseSpace = "TrackPreview local space (meters)";
         public float centerToRearAxleMeters = RearAxleHeading.CenterToRearAxle;
         public string savedUtc;

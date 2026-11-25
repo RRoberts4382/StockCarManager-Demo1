@@ -91,6 +91,12 @@ internal sealed class TrackDraft
     }
 
     public float SpeedBoost(int index) => boost[index] + lineBoost[index];
+    internal bool LeadsDraftLine(int index)
+    {
+        int follower = lineBehind[index];
+        return lineAhead[index] < 0 && follower >= 0 && lineAhead[follower] == index;
+    }
+
     public bool[] InLine => inLine;
     public int[] CloseFollowLeaders => closeFollowLeaders;
     public float[] BumpIntent => bumpIntent;
