@@ -8,6 +8,17 @@ public sealed partial class TrackPreview
     private static readonly float[] CarLodThresholds = { .04f, .075f, .12f, .18f };
     private const float CarLodHysteresis = .15f;
     private const float RenderedCarLength = 2.9f;
+    private const double TargetCarLodFps = 60d;
+    private const double CarLodReductionDelay = 5d;
+    private const double CarLodRecoveryDelay = 20d;
+    private const double CarLodRecoveryTrial = 10d;
+    private const double CarLodRecoveryRetryDelay = 60d;
+    private int carLodReduction, carLodFrameCount;
+    private double carLodSampleTime, carLodSlowTime, carLodHealthyTime;
+    private double carLodRecoveryTrialTime;
+    private bool carLodRecoveryBackoff, forceLowestCarLod;
+
+    private int EffectiveMaximumCarLod => forceLowestCarLod ? 1 : CarDetailIndex + 1 - carLodReduction;
     private readonly CarVisualLods[] carVisualLods = new CarVisualLods[CarCount];
     private readonly HashSet<string> loadedCarLodResources = new();
     private readonly HashSet<string> missingCarLodResources = new();
@@ -28,7 +39,7 @@ public sealed partial class TrackPreview
         public CarVisual Current;
         // Keep one previous visual so returning to the last level is cheap.
         public CarVisual Previous;
-        public int Level;
+        public int Level, CoverageLevel;
     }
 
     private void InitializeCarVisualLods(int index, string modelResource, int number, string numberText,
@@ -43,6 +54,7 @@ public sealed partial class TrackPreview
         var state = new CarVisualLods
         {
             Resources = resources,
+            CoverageLevel = CarDetailIndex + 1,
             Build = (root, resource, first) =>
                 BuildCar(root, number, hoodPaint, bodyPaint, glass, rubber, sponsors, paint, texture =>
                 {
@@ -129,12 +141,87 @@ public sealed partial class TrackPreview
     private bool UsesMaximumCarLod(int index) =>
         ViewAngle == CameraAngle.InCar && (index == 0 || cars[index] == CameraSubject);
 
+    private void ResetCarLodSampling()
+    {
+        carLodFrameCount = 0;
+        carLodSampleTime = carLodSlowTime = carLodHealthyTime = 0d;
+        carLodRecoveryTrialTime = 0d;
+    }
+
+    private void ResetCarLodBudget()
+    {
+        carLodReduction = 0;
+        carLodRecoveryBackoff = false;
+        ResetCarLodSampling();
+    }
+
+    private void ApplyCarLodPlaybackOverride(int speed)
+    {
+        if (speed == 0 || forceLowestCarLod == (speed > 1)) return;
+        forceLowestCarLod = speed > 1;
+        ResetCarLodSampling();
+        if (!forceLowestCarLod || !SupportsCarDetail) return;
+
+        // Apply the override before advancing the simulation at the higher speed.
+        for (int i = 0; i < cars.Length; i++)
+            if (carVisualLods[i] != null)
+                ApplyCarVisualLod(i, 1);
+        ApplyCameraPose();
+    }
+
+    private void SampleCarLodFrameRate(double frameSeconds)
+    {
+        if (sessionSpeed != 1 || SessionRun == null || !Application.isFocused)
+        {
+            ResetCarLodSampling();
+            return;
+        }
+
+        carLodFrameCount++;
+        carLodSampleTime += frameSeconds;
+        if (carLodSampleTime < 1d) return;
+
+        double sampled = carLodSampleTime;
+        // Allow sub-millisecond timing noise around a display locked to 60 Hz.
+        bool healthy = sampled <= carLodFrameCount / TargetCarLodFps + .0001d;
+        carLodSampleTime = 0d;
+        carLodFrameCount = 0;
+        bool testingRecovery = carLodRecoveryTrialTime > 0d;
+        carLodRecoveryTrialTime = Math.Max(0d, carLodRecoveryTrialTime - sampled);
+
+        if (!healthy)
+        {
+            carLodHealthyTime = 0d;
+            carLodSlowTime += sampled;
+            if (carLodSlowTime < CarLodReductionDelay || carLodReduction >= CarDetailIndex) return;
+
+            carLodReduction++;
+            carLodSlowTime = 0d;
+            carLodRecoveryBackoff |= testingRecovery;
+            carLodRecoveryTrialTime = 0d;
+            return;
+        }
+
+        carLodSlowTime = 0d;
+        if (testingRecovery && carLodRecoveryTrialTime == 0d)
+            carLodRecoveryBackoff = false;
+        if (carLodReduction == 0) return;
+
+        carLodHealthyTime += sampled;
+        double recoveryDelay = carLodRecoveryBackoff ? CarLodRecoveryRetryDelay : CarLodRecoveryDelay;
+        if (carLodHealthyTime < recoveryDelay) return;
+
+        carLodReduction--;
+        carLodHealthyTime = 0d;
+        carLodRecoveryTrialTime = CarLodRecoveryTrial;
+    }
+
     private void KeepOnboardCarLod()
     {
         if (ViewAngle != CameraAngle.InCar || carVisualLods[0] == null)
             return;
 
-        int maximum = CarDetailIndex + 1;
+        int maximum = EffectiveMaximumCarLod;
         ApplyCarVisualLod(0, maximum);
         int subject = Array.IndexOf(cars, CameraSubject);
         if (subject > 0)
@@ -146,6 +233,7 @@ public sealed partial class TrackPreview
         if (raceCamera == null || !raceCamera.enabled || carVisualLods[0] == null)
             return;
 
+        SampleCarLodFrameRate(Time.unscaledDeltaTime);
         if (carLodRequest != null && carLodRequest.isDone)
         {
             if (carLodRequest.asset != null)
@@ -159,20 +247,26 @@ public sealed partial class TrackPreview
         int bestCar = -1, bestLevel = 0;
         float bestPriority = -1f, loadPriority = -1f;
         string loadResource = null;
-        int maximum = CarDetailIndex + 1;
+        int maximum = EffectiveMaximumCarLod;
+        int configuredMaximum = CarDetailIndex + 1;
         for (int i = 0; i < cars.Length; i++)
         {
             var state = carVisualLods[i];
-            if (!cars[i].gameObject.activeSelf || UsesMaximumCarLod(i) || maximum == 1 ||
-                state.Resources[0] == state.Resources[maximum - 1])
-                continue;
+            if (!cars[i].gameObject.activeSelf) continue;
 
-            Vector3 center = cars[i].position + Vector3.up * .5f;
-            float coverage = CarCameraCoverage(raceCamera, center);
-            if (rearViewCamera != null && rearViewCamera.enabled)
-                coverage = Mathf.Max(coverage, CarCameraCoverage(rearViewCamera, center));
+            float coverage = 0f;
+            int level = maximum;
+            if (maximum > 1 && !UsesMaximumCarLod(i))
+            {
+                Vector3 center = cars[i].position + Vector3.up * .5f;
+                coverage = CarCameraCoverage(raceCamera, center);
+                if (rearViewCamera != null && rearViewCamera.enabled)
+                    coverage = Mathf.Max(coverage, CarCameraCoverage(rearViewCamera, center));
 
-            int level = CarLodForCoverage(coverage, state.Level, maximum);
+                int coverageLevel = CarLodForCoverage(coverage, state.CoverageLevel, configuredMaximum);
+                state.CoverageLevel = coverageLevel;
+                level = Mathf.Max(1, coverageLevel - carLodReduction);
+            }
             string resource = state.Resources[level - 1];
             if (resource == state.Current.Resource)
             {
@@ -206,7 +300,7 @@ public sealed partial class TrackPreview
         // A camera cut can change the requested detail for the whole field.
         // Process only one nonessential visual swap per frame.
         if (bestCar >= 0 && ApplyCarVisualLod(bestCar, bestLevel) &&
-            ViewAngle == CameraAngle.Hood && cars[bestCar] == CameraSubject)
+            (ViewAngle is CameraAngle.Hood or CameraAngle.InCar) && cars[bestCar] == CameraSubject)
             ApplyCameraPose();
     }
 

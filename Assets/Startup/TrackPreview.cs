@@ -935,9 +935,9 @@ public sealed partial class TrackPreview : MonoBehaviour
             return false;
         if (index == CarDetailIndex)
             return true;
-        int maximum = index + 1;
-        foreach (var state in carVisualLods)
+        for (int i = 0; i < cars.Length; i++)
         {
+            var state = carVisualLods[i];
             string resource = state.Resources[index];
             if (resource == state.Current.Resource || loadedCarLodResources.Contains(resource))
                 continue;
@@ -947,6 +947,8 @@ public sealed partial class TrackPreview : MonoBehaviour
         }
 
         CarDetailIndex = index;
+        ResetCarLodBudget();
+        int maximum = EffectiveMaximumCarLod;
         for (int i = 0; i < cars.Length; i++)
             if (carVisualLods[i].Level > maximum || UsesMaximumCarLod(i))
                 ApplyCarVisualLod(i, maximum);
@@ -1539,7 +1541,8 @@ public sealed partial class TrackPreview : MonoBehaviour
         foreach (var wheels in raceWheels)
             wheels?.Reset();
         pendingSessionTime = 0;
-        sessionSpeed = 1;
+        SetSessionSpeed(1);
+        ResetCarLodBudget();
         SessionRun = new RaceSessionRun(session, lapLength, startLine, simulation, speedModel, simulationRandom, initialDistances: sessionDistances);
         if (trackSkyMaterial != null)
         {
@@ -1748,6 +1751,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             pausedAt = null;
         }
 
+        ApplyCarLodPlaybackOverride(speed);
         sessionSpeed = speed;
     }
 
