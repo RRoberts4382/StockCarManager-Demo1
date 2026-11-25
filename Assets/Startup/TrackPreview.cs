@@ -637,7 +637,7 @@ public sealed partial class TrackPreview : MonoBehaviour
 
         // Keep the preview outside the startup camera's view.
         transform.position = new Vector3(0f, -1000f, 0f);
-        Image = new RenderTexture(960, 540, 24) { name = "Track View" };
+        Image = new RenderTexture(1920, 1080, 24) { name = "Track View" };
         SetTrackMsaaSamples(GameSettings.LoadTrackMsaaSamples());
 
         raceCamera = CreateObject("Track Camera", transform).AddComponent<Camera>();
@@ -765,8 +765,8 @@ public sealed partial class TrackPreview : MonoBehaviour
         var bodyPaints = new Material[Liveries.Length];
         for (int i = 0; i < Liveries.Length; i++)
         {
-            hoodPaints[i] = MakeMaterial(Liveries[i].HoodAndTrunk);
-            bodyPaints[i] = MakeMaterial(Liveries[i].RoofAndSides);
+            hoodPaints[i] = MakeCarPaintMaterial(Liveries[i].HoodAndTrunk);
+            bodyPaints[i] = MakeCarPaintMaterial(Liveries[i].RoofAndSides);
         }
 
         int playerLivery = Mathf.Clamp(playerCarNumber - 27, 0, cars.Length - 1);
@@ -788,8 +788,8 @@ public sealed partial class TrackPreview : MonoBehaviour
             {
                 var paint = liveryCar.PaintStyle;
                 playerPaint = paint;
-                hoodAndTrunkPaint = MakeMaterial(paint.Primary);
-                bodyPaint = MakeMaterial(paint.Secondary);
+                hoodAndTrunkPaint = MakeCarPaintMaterial(paint.Primary);
+                bodyPaint = MakeCarPaintMaterial(paint.Secondary);
             }
             renderedCarPaint[i] = (hoodAndTrunkPaint.color, bodyPaint.color);
             scoringPaint[i] = playerPaint;
@@ -5384,6 +5384,14 @@ public sealed partial class TrackPreview : MonoBehaviour
         for (int i = 0; i < vertices.Length; i++)
             uv[i] = new Vector2(vertices[i].x, vertices[i].z) / 16f;
         mesh.uv = uv;
+    }
+
+    private Material MakeCarPaintMaterial(Color color)
+    {
+        var material = MakeMaterial(color);
+        material.SetFloat("_Metallic", 0.23f);
+        material.SetFloat("_Smoothness", 0.62f);
+        return material;
     }
 
     private Material MakeMaterial(Color color)

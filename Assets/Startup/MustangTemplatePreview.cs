@@ -86,6 +86,7 @@ internal static class MustangTemplatePreview
         var banner = new Material(paint);
         retainAsset(banner);
         banner.SetTexture("_BaseMap", bannerTexture);
+        banner.SetFloat("_Metallic", 0f);
         banner.SetFloat("_Smoothness", .16f);
         banner.SetFloat("_AlphaClip", 1);
         banner.SetFloat("_Cutoff", .5f);
