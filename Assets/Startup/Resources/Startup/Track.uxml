@@ -120,7 +120,7 @@
                 </ui:VisualElement>
             </ui:VisualElement>
         </ui:VisualElement>
-        <ui:VisualElement class="footer track-footer ui-default-font">
+        <ui:VisualElement name="trackFooter" class="footer track-footer ui-default-font">
             <ui:VisualElement class="track-footer-driving">
                 <ui:VisualElement name="footerThrottle" class="driving-meter track-icon-tooltip-target" tooltip="Throttle 0%">
                     <ui:VisualElement class="driving-meter-bar"><ui:VisualElement name="footerThrottleFill" class="driving-meter-fill throttle-fill" /></ui:VisualElement>
@@ -136,8 +136,18 @@
                 <ui:Label name="footerGear" text="Gear 1" class="track-footer-engine" />
             </ui:VisualElement>
             <ui:VisualElement class="track-footer-center">
-                <ui:Label name="trackFpsLabel" text="FPS --" class="muted" />
-                <ui:Label name="snapshotStatus" class="garage-detail" style="display: none;" />
+                <ui:VisualElement class="track-passing-criteria">
+                    <ui:Label text="Passing" class="track-passing-label" picking-mode="Ignore" />
+                    <ui:Label text="Easier" picking-mode="Ignore" />
+                    <ui:SliderInt name="passingCriteriaSlider" low-value="0" high-value="100" value="50"
+                                  class="track-passing-slider track-icon-tooltip-target"
+                                  tooltip="Move left to ease the requirements for new 007 passing attempts." />
+                    <ui:Label text="Strict" picking-mode="Ignore" />
+                </ui:VisualElement>
+                <ui:VisualElement class="track-footer-metrics">
+                    <ui:Label name="trackFpsLabel" text="FPS --" class="muted" />
+                    <ui:Label name="snapshotStatus" class="garage-detail" style="display: none;" />
+                </ui:VisualElement>
             </ui:VisualElement>
             <ui:VisualElement class="track-footer-pit">
                 <ui:Button name="cycleTrackCameraButton" tooltip="Choose a track camera" class="track-header-icon">

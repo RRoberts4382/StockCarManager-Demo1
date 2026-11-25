@@ -4,7 +4,9 @@ using UnityEngine;
 internal sealed class VehicleBehavior007 : VehicleBehavior006
 {
     internal new const string ModelId = "vehicle-behavior-007";
-    internal static bool OvalPassingEnabled => false;
+    // Preserve the previous Strict forecast thresholds exactly.
+    private static readonly float StrictPassingClosingSpeed = Mathf.Lerp(1.25f, .4f, 1f);
+    private static readonly float StrictPassingFinalSpeedAdvantage = Mathf.Lerp(.75f, .2f, 1f);
 
     public override string Id => ModelId;
     public override string Name => "VehicleBehavior007";
@@ -22,42 +24,61 @@ internal sealed class VehicleBehavior007 : VehicleBehavior006
         (int Index, float Station, float Lane, float Speed) blocker,
         float destinationLane, float initialGap,
         Func<int, float, float, (float TargetSpeed, float BrakingRate)> paceAt,
-        Func<int, float, float> blockerLaneAt = null)
+        Func<int, float, float> blockerLaneAt = null,
+        float contactWidth = VehicleCollision001.ContactWidth,
+        Func<int, float, Vector2> passingLaneRangeAt = null,
+        float passingEase = 0f)
     {
         const float step = .25f;
         const int steps = 12;
         const int closingWindow = 4;
-        const float minimumGain = .75f;
-        const float minimumClosingSpeed = .25f;
-        const float overlapTolerance = .5f;
-        const float arrivalToleranceSeconds = 1f;
+        const float clearanceMargin = .5f;
         const float contactLength = VehicleCollision001.ContactLength;
+        float alongsideTolerance = OvalPassingThreshold(contactLength, contactLength + .35f, contactLength + .60f, passingEase);
+        float minimumClosingSpeed = OvalPassingThreshold(StrictPassingClosingSpeed, .20f, .10f, passingEase);
+        float minimumFinalSpeedAdvantage = OvalPassingThreshold(StrictPassingFinalSpeedAdvantage, .10f, .05f, passingEase);
 
         float subjectTravel = 0f, blockerTravel = 0f;
         float subjectSpeed = subject.Speed, blockerSpeed = blocker.Speed;
         float lane = subject.Lane, lateralSpeed = 0f;
         float blockerLane = blocker.Lane;
+        float blockerReference = blockerLaneAt?.Invoke(blocker.Index, blocker.Station) ?? blockerLane;
+        float passOffset = destinationLane - blocker.Lane;
+        float passDirection = Mathf.Sign(passOffset);
         float gainBeforeClosingWindow = 0f;
         for (int i = 0; i < steps; i++)
         {
             if (i == steps - closingWindow)
                 gainBeforeClosingWindow = subjectTravel - blockerTravel;
 
-            lateralSpeed = Mathf.Min(MaximumLateralSpeed, lateralSpeed + TrafficLateralAcceleration * step);
-            float nextLane = Mathf.MoveTowards(lane, destinationLane, lateralSpeed * step);
-            float sampleLane = (lane + nextLane) * .5f;
             float subjectStation = subject.Station + subjectTravel + subjectSpeed * step * .5f;
             float blockerStation = blocker.Station + blockerTravel + blockerSpeed * step * .5f;
-            float nextBlockerLane = blockerLaneAt == null ? blockerLane : Mathf.MoveTowards(blockerLane,
-                blockerLaneAt(blocker.Index, blockerStation), MaximumLateralSpeed * step);
+            float nextBlockerReference = blockerLaneAt?.Invoke(blocker.Index, blockerStation + blockerSpeed * step * .5f) ?? blockerReference;
+            float nextBlockerLane = Mathf.MoveTowards(blockerLane, blockerReference, MaximumLateralSpeed * step) +
+                (nextBlockerReference - blockerReference);
             float sampleBlockerLane = (blockerLane + nextBlockerLane) * .5f;
+            // The live pass aims beside the blocker as its line moves through the turn.
+            float nextTarget = nextBlockerLane + passOffset;
+            if (passingLaneRangeAt != null)
+            {
+                Vector2 range = passingLaneRangeAt(subject.Index, subjectStation + subjectSpeed * step * .5f);
+                if (nextTarget < range.x || nextTarget > range.y)
+                {
+                    if (initialGap + blockerTravel - subjectTravel > -contactLength - clearanceMargin)
+                        return float.NegativeInfinity;
+                    nextTarget = Mathf.Clamp(nextTarget, range.x, range.y);
+                }
+            }
+            lateralSpeed = Mathf.Min(MaximumLateralSpeed, lateralSpeed + TrafficLateralAcceleration * step);
+            float nextLane = Mathf.MoveTowards(lane, nextTarget, lateralSpeed * step);
+            float sampleLane = (lane + nextLane) * .5f;
             float nextSubjectSpeed = AdvanceSpeed(subjectSpeed, paceAt(subject.Index, subjectStation, sampleLane), step);
             float nextBlockerSpeed = AdvanceSpeed(blockerSpeed, paceAt(blocker.Index, blockerStation, sampleBlockerLane), step);
             float subjectStep = (subjectSpeed + nextSubjectSpeed) * step * .5f;
             float blockerStep = (blockerSpeed + nextBlockerSpeed) * step * .5f;
 
             // Until it moves out, the closing car can use only the bumper gap ahead of it.
-            if (Mathf.Abs(sampleLane - sampleBlockerLane) < VehicleCollision001.ContactWidth)
+            if ((sampleLane - sampleBlockerLane) * passDirection < contactWidth)
             {
                 float room = Mathf.Max(0f, initialGap + blockerTravel - subjectTravel - contactLength);
                 if (subjectStep > blockerStep + room)
@@ -73,16 +94,17 @@ internal sealed class VehicleBehavior007 : VehicleBehavior006
             blockerSpeed = nextBlockerSpeed;
             lane = nextLane;
             blockerLane = nextBlockerLane;
+            blockerReference = nextBlockerReference;
         }
 
         float gain = subjectTravel - blockerTravel;
         float remainingGap = initialGap - gain;
         float closingSpeed = (gain - gainBeforeClosingWindow) / (closingWindow * step);
-        bool cleared = remainingGap <= -contactLength - overlapTolerance;
-        // A pass can be worthwhile before it is complete if the car is still closing near overlap.
-        bool approachingOverlap = closingSpeed >= minimumClosingSpeed &&
-            remainingGap <= contactLength + overlapTolerance + closingSpeed * arrivalToleranceSeconds;
-        return gain >= minimumGain && (cleared || approachingOverlap) ? gain : float.NegativeInfinity;
+        bool cleared = remainingGap <= -contactLength - clearanceMargin;
+        // A car approaching overlap still needs pace to pull ahead.
+        bool drawingAhead = gain > 0f && remainingGap <= alongsideTolerance && closingSpeed >= minimumClosingSpeed &&
+            subjectSpeed - blockerSpeed >= minimumFinalSpeedAdvantage;
+        return cleared || drawingAhead ? gain : float.NegativeInfinity;
     }
 
     private static float AdvanceSpeed(float speed, (float TargetSpeed, float BrakingRate) pace, float seconds)

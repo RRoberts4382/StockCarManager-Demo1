@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 
@@ -7,6 +8,7 @@ internal sealed class TrackSnapshot
     private const int SamplesPerSecond = 10;
     private const int Capacity = 60 * SamplesPerSecond + 1;
     private readonly Frame[] frames = new Frame[Capacity];
+    private readonly Queue<OvalPassAttempt> ovalPassAttempts = new();
     private int next;
     private int count;
     private double lastCapture = double.NegativeInfinity;
@@ -23,6 +25,7 @@ internal sealed class TrackSnapshot
         public double mergeCheckMilliseconds, maxMergeCheckMilliseconds;
         public float sessionSeconds;
         public int playbackSpeed;
+        public int ovalPassingStrictness;
         public string flag;
         public bool pitsOpen;
         public CarSample[] cars;
@@ -74,17 +77,40 @@ internal sealed class TrackSnapshot
     }
 
     [Serializable]
+    private struct OvalPassAttempt
+    {
+        public double simulationSeconds;
+        public int carNumber, blockerCarNumber, passingStrictness;
+        public string side;
+    }
+
+    [Serializable]
     private sealed class FileData
     {
-        public int formatVersion = 22;
+        // Version 26 puts the version 25 Easier criteria at the midpoint.
+        public int formatVersion = 26;
         public string poseSpace = "TrackPreview local space (meters)";
         public float centerToRearAxleMeters = RearAxleHeading.CenterToRearAxle;
         public string savedUtc;
         public string trackModel, speedModel, behaviorModel, session;
         public TrackDefinition track;
         public Frame[] frames;
-        public System.Collections.Generic.List<RivalSetupChange> rivalSetupChanges;
-        public System.Collections.Generic.List<RivalPracticeTelemetry> rivalPracticeTelemetry;
+        public int ovalPassAttemptCount;
+        public OvalPassAttempt[] ovalPassAttempts = Array.Empty<OvalPassAttempt>();
+        public List<RivalSetupChange> rivalSetupChanges;
+        public List<RivalPracticeTelemetry> rivalPracticeTelemetry;
+    }
+
+    internal void RecordOvalPassAttempt(double simulationSeconds, int carNumber, int blockerCarNumber, int passSide, int passingStrictness)
+    {
+        ovalPassAttempts.Enqueue(new OvalPassAttempt
+        {
+            simulationSeconds = simulationSeconds,
+            carNumber = carNumber,
+            blockerCarNumber = blockerCarNumber,
+            side = passSide > 0 ? "Inside" : "Outside",
+            passingStrictness = passingStrictness
+        });
     }
 
     public Frame BeginFrame(double simulationSeconds, int carCount, bool force)
@@ -99,6 +125,9 @@ internal sealed class TrackSnapshot
         next = (next + 1) % Capacity;
         count = Math.Min(count + 1, Capacity);
         frame.simulationSeconds = simulationSeconds;
+        double oldestCapture = frames[(next + Capacity - count) % Capacity].simulationSeconds;
+        while (ovalPassAttempts.Count > 0 && ovalPassAttempts.Peek().simulationSeconds < oldestCapture)
+            ovalPassAttempts.Dequeue();
         return frame;
     }
 
@@ -122,6 +151,19 @@ internal sealed class TrackSnapshot
         int oldest = (next + Capacity - count) % Capacity;
         for (int i = 0; i < count; i++)
             data.frames[i] = frames[(oldest + i) % Capacity];
+        if (count > 0 && ovalPassAttempts.Count > 0)
+        {
+            double latestCapture = data.frames[count - 1].simulationSeconds;
+            var attempts = new List<OvalPassAttempt>(ovalPassAttempts.Count);
+            foreach (var attempt in ovalPassAttempts)
+            {
+                if (attempt.simulationSeconds > latestCapture)
+                    break;
+                attempts.Add(attempt);
+            }
+            data.ovalPassAttempts = attempts.ToArray();
+            data.ovalPassAttemptCount = attempts.Count;
+        }
 
         string path = Path.Combine(directory, $"snapshot-{now:yyyyMMdd-HHmmss-fff}-{Guid.NewGuid():N}.json");
         File.WriteAllText(path, JsonUtility.ToJson(data, true));

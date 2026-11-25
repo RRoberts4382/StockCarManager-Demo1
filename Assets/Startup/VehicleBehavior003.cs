@@ -9,7 +9,9 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
     internal float RaceProgressAggression { get; set; }
     internal delegate float PassForecast(int car, int blocker, float lane, float gap);
     internal (Vector2[] PassingLaneRanges, bool[] CornerApproaches, PassForecast ForecastPass) OvalPassingContext { get; set; }
-    internal bool FollowPreferredLineWithoutPassing { get; set; }
+    internal Action<int, int, int> OvalPassCommitted { get; set; }
+    internal bool UsePreferredLineTraffic { get; set; }
+    internal float OvalPassingEase { get; set; }
     internal float[] TrackContactHalfWidths { get; set; }
     internal static float CombinedAggression(float driver, float race)
     {
@@ -242,6 +244,13 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
     private const float PassReturnBuffer = .35f;
     private const float PassingSpeedAdvantage = .65f;
     private const float PassingOpportunityDuration = .20f;
+    private const float StrictOvalPassingSpeedAdvantage = .65f;
+    private const float DefaultOvalPassingSpeedAdvantage = .30f;
+    private const float EasierOvalPassingSpeedAdvantage = .15f;
+    private const float DefaultOvalPassingOpportunityDuration = .12f;
+    private const float EasierOvalPassingOpportunityDuration = .08f;
+    // Keep the exact duration used by the previous Strict setting.
+    private static readonly float StrictOvalPassingOpportunityDuration = Mathf.Lerp(.5f, .20f, 1f);
     private const float StalledPassDuration = 1f;
     private const float InsidePassLookAheadSeconds = .75f;
     protected const float PassEdgeClearance = 1.05f;
@@ -270,6 +279,13 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
     private const float DraftLateralSpeed = .075f;
     private const float LaneVariationContactDepth = .02f;
 
+    protected static float OvalPassingThreshold(float strict, float midpoint, float easier, float ease)
+    {
+        // The tested midpoint is ease 1. Each half of the slider interpolates within its own range.
+        float threshold = Mathf.Lerp(strict, midpoint, ease);
+        return Mathf.Lerp(threshold, easier, ease - 1f);
+    }
+
     public void AvoidTraffic(float lapLength, float inside, float seconds, bool allowPassing,
         float[] distances, float[] widths, bool[] onTrack, float[] lanes, float[] targets,
         float[] currentSpeeds, float[] speeds, float brakingLimit, bool[] draftLine = null, bool respondToTraffic = true, float[] brakingFactors = null)
@@ -290,12 +306,22 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
         const float carWidth = VehicleCollision001.ContactWidth;
         const float passLookAhead = 2f * carLength; // One car length between bumpers.
         // Aggression changes the driver's caution, never the physical collision footprint.
-        // Retain neutral clearances when overtaking is prohibited (yellow flags).
-        float Risk(int index) => allowPassing ? Aggression(index) : .5f;
+        // Keep neutral spacing for 007 so merely looking for a pass does not change traffic following.
+        bool legacyPassing = allowPassing && !UsePreferredLineTraffic;
+        float Risk(int index) => legacyPassing ? Aggression(index) : .5f;
         float ContactWidthBetween(int first, int second) => VehicleCollision001.TrackContactWidth(TrackContactHalfWidths, first, second);
-        bool keepLaneControl = allowPassing || FollowPreferredLineWithoutPassing;
+        bool keepLaneControl = allowPassing || UsePreferredLineTraffic;
         var (passingLaneRanges, cornerApproaches, forecastPass) = OvalPassingContext;
-        float[] fittedAdvances = FollowPreferredLineWithoutPassing && this is VehicleBehavior004 fitted
+        bool canAttemptPass = allowPassing && (!UsePreferredLineTraffic || forecastPass != null && passingLaneRanges != null);
+        float passingAdvantage = UsePreferredLineTraffic
+            ? OvalPassingThreshold(StrictOvalPassingSpeedAdvantage, DefaultOvalPassingSpeedAdvantage,
+                EasierOvalPassingSpeedAdvantage, OvalPassingEase)
+            : PassingSpeedAdvantage;
+        float passingDuration = UsePreferredLineTraffic
+            ? OvalPassingThreshold(StrictOvalPassingOpportunityDuration, DefaultOvalPassingOpportunityDuration,
+                EasierOvalPassingOpportunityDuration, OvalPassingEase)
+            : PassingOpportunityDuration;
+        float[] fittedAdvances = UsePreferredLineTraffic && this is VehicleBehavior004 fitted
             ? fitted.PreferredLineAdvance : null;
         bool coordinateArc = respondToTraffic && startLanes != null && fittedAdvances != null;
         Span<int> laneOrder = coordinateArc ? stackalloc int[lanes.Length] : Span<int>.Empty;
@@ -341,10 +367,10 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
                 continue;
             }
 
-            float passOffset = carWidth + comfortMargin + Mathf.Lerp(.3f, .02f, aggression);
+            float passSideMargin = Mathf.Lerp(.3f, .02f, aggression);
             bool alongsideInCorner = stabilize && cornerApproaches?[i] == true &&
                 Mathf.Abs(lane) <= (widths[i] - carWidth) * .5f && HasAdjacentCar();
-            if (directedDraftPass || !allowPassing)
+            if (directedDraftPass || !canAttemptPass)
             {
                 control.PassSide = 0;
                 control.ReturningToLine = false;
@@ -391,7 +417,7 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
 
             float nearest = float.PositiveInfinity;
             int leader = -1;
-            if (allowPassing && stabilize && !directedDraftPass && !holdingPass && !control.ReturningToLine && !alongsideInCorner)
+            if (canAttemptPass && stabilize && !directedDraftPass && !holdingPass && !control.ReturningToLine && !alongsideInCorner)
             {
                 for (int j = 0; j < lanes.Length; j++)
                 {
@@ -409,19 +435,21 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
                 }
             }
 
-            bool followingLeader = leader >= 0;
-            if (followingLeader)
+            bool followingLeader = leader >= 0 && !UsePreferredLineTraffic;
+            if (leader >= 0)
             {
                 if (control.FollowingCar != leader + 1)
                     control.PassingOpportunitySeconds = 0f;
                 control.FollowingCar = leader + 1;
-                float currentAdvantage = currentSpeeds[i] - currentSpeeds[leader];
-                if (Mathf.Max(currentAdvantage, PaceAdvantage(leader)) >= PassingSpeedAdvantage)
+                float paceAdvantage = PaceAdvantage(leader);
+                if (!UsePreferredLineTraffic)
+                    paceAdvantage = Mathf.Max(paceAdvantage, currentSpeeds[i] - currentSpeeds[leader]);
+                if (paceAdvantage >= passingAdvantage)
                     control.PassingOpportunitySeconds += seconds;
                 else
                     control.PassingOpportunitySeconds = 0f;
 
-                if (control.PassingOpportunitySeconds >= PassingOpportunityDuration)
+                if (control.PassingOpportunitySeconds >= passingDuration)
                 {
                     float leaderLane = OtherLane(leader);
                     float side = leaderLane - lane;
@@ -453,8 +481,8 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
                     else if (PassCorridorClear(-1, PassLane(leader, -1, false)))
                         CommitPass(-1);
 
-                    float ScorePassingLane(int passSide, float destination) => PassCorridorClear(passSide, destination)
-                        ? forecastPass?.Invoke(i, leader, destination, nearest) ?? 1f : float.NegativeInfinity;
+                    float ScorePassingLane(int passSide, float destination) => forecastPass != null && PassCorridorClear(passSide, destination)
+                        ? forecastPass(i, leader, destination, nearest) : float.NegativeInfinity;
 
                     bool PassCorridorClear(int passSide, float destination) => PassFitsAhead(destination) &&
                         (destination - leaderLane) * inside * passSide >= clearance && LaneClear(destination, ahead, comfort: true);
@@ -480,7 +508,8 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
                 control.PassingOpportunitySeconds = 0f;
             }
 
-            if (alongsideInCorner)
+            bool holdLaneAlongside = alongsideInCorner && !UsePreferredLineTraffic;
+            if (holdLaneAlongside)
             {
                 // Keep the occupied side clear, while letting a car use open space toward its line.
                 float directionToLine = Mathf.Sign(targets[i] - lane);
@@ -488,20 +517,20 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
                 control.Easing = true;
             }
 
-            bool followingPreferred = !directedDraftPass && target == targets[i] && !holdingPass && !followingLeader && !alongsideInCorner;
+            bool followingPreferred = !directedDraftPass && target == targets[i] && !holdingPass && !followingLeader && !holdLaneAlongside;
             float insideLimit = Mathf.Max(0f, widths[i] * .5f - PreferredLaneEdgeClearance(i, lane, inside));
             bool recoveringInsideEdge = stabilize && lane * inside > insideLimit;
             float fittedAdvance = fittedAdvances?[i] ?? 0f;
             bool outwardArc = followingPreferred && fittedAdvance * inside < 0f;
             bool allowVariation = canVaryLane && !directedDraftPass && !holdingPass &&
-                !control.ReturningToLine && !recoveringInsideEdge && !alongsideInCorner;
+                !control.ReturningToLine && !recoveringInsideEdge && !holdLaneAlongside;
             float appliedOffset = allowVariation ? laneDraft.AppliedLaneOffsets[i] : 0f;
             // Follow the existing offset on the preferred path. When holding the
             // current lane in traffic, that lane already includes the offset.
             float drivingTarget = followingLeader || draftLine?[i] == true ? target : target + appliedOffset;
             if (recoveringInsideEdge)
                 drivingTarget = Mathf.Min(drivingTarget * inside, insideLimit) * inside;
-            float next = followingPreferred && !control.ReturningToLine && !recoveringInsideEdge
+            float next = followingPreferred && (!control.ReturningToLine || UsePreferredLineTraffic) && !recoveringInsideEdge
                 ? StepTowardPreferredLane(i, lane, drivingTarget, seconds)
                 : Mathf.MoveTowards(lane, drivingTarget, MaximumLateralSpeed * seconds);
             if (recoveringInsideEdge && outwardArc)
@@ -512,7 +541,7 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
                 float direction = Mathf.Sign(next - lane);
                 bool movingWithArc = followingPreferred && direction * fittedAdvance > 0f;
                 bool followOpeningGap = coordinateArc && movingWithArc;
-                bool closeSpacing = FollowPreferredLineWithoutPassing && followingPreferred && (!recoveringInsideEdge || outwardArc);
+                bool closeSpacing = UsePreferredLineTraffic && followingPreferred && (!recoveringInsideEdge || outwardArc);
                 float reserve = closeSpacing ? CloseTrafficClearanceReserve : TrafficClearanceReserve;
                 float resumeClearance = closeSpacing ? CloseTrafficResumeClearance : TrafficResumeClearance;
                 float easeDistance = closeSpacing ? CloseTrafficEaseDistance : TrafficEaseDistance;
@@ -588,12 +617,15 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
                 followingLeader = false;
                 holdingPass = true;
                 target = PassLane(leader, side, usePreferredLine);
+                if (UsePreferredLineTraffic)
+                    OvalPassCommitted?.Invoke(i, leader, side);
             }
 
             float PassLane(int other, int side, bool usePreferredLine)
             {
                 float direction = inside * side;
-                float offset = OtherLane(other) + direction * passOffset;
+                float contactWidth = UsePreferredLineTraffic ? ContactWidthBetween(i, other) : carWidth;
+                float offset = OtherLane(other) + direction * (contactWidth + comfortMargin + passSideMargin);
                 float preferred = targets[i];
                 if (usePreferredLine && (preferred - offset) * direction > 0f)
                     offset = preferred;
@@ -732,7 +764,7 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
                     float lateralClearance = keepLaneControl && stabilizeLane?[i] == true
                         ? LateralComfortClearance(contactWidth, comfortMargin, gap, side, currentSpeeds[i], currentSpeeds[j],
                             laneControl[i].LateralSpeed, laneControl[j].LateralSpeed,
-                            FollowPreferredLineWithoutPassing ? CloseParallelClearanceMargin : ParallelClearanceMargin)
+                            UsePreferredLineTraffic ? CloseParallelClearanceMargin : ParallelClearanceMargin)
                         : contactWidth + comfortMargin;
                     if (Mathf.Abs(side) >= lateralClearance)
                         continue;
@@ -741,7 +773,7 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
                     float leaderBrakingLimit = brakingLimit * (brakingFactors == null ? 1f : brakingFactors[j]);
                     bool closeDraft = false;
                     float bumpStrength = 0f;
-                    if (allowPassing && draftLeaders?[i] == j && stabilizeLane?[i] != false &&
+                    if (legacyPassing && draftLeaders?[i] == j && stabilizeLane?[i] != false &&
                         stabilizeLane?[j] != false && gap > 0f)
                     {
                         float startSide = startLanes == null ? side : startLanes[j] - startLanes[i];

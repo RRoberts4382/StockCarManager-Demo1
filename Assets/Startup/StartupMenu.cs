@@ -108,6 +108,8 @@ public sealed class StartupMenu : MonoBehaviour
     private Button playSessionButton;
     private Button playbackSpeedButton;
     private Button pauseSessionButton;
+    private VisualElement trackFooter;
+    private SliderInt passingCriteriaSlider;
     private Label cautionReasonLabel;
     private VisualElement throttleDisplay, brakeDisplay, fuelDisplay;
     private VisualElement throttleFill, brakeFill, fuelFill;
@@ -416,6 +418,9 @@ public sealed class StartupMenu : MonoBehaviour
         drivingInputMph = trackScreen.Q<Label>("footerMph");
         drivingInputRpm = trackScreen.Q<Label>("footerRpm");
         drivingInputGear = trackScreen.Q<Label>("footerGear");
+        trackFooter = trackScreen.Q("trackFooter");
+        passingCriteriaSlider = trackScreen.Q<SliderInt>("passingCriteriaSlider");
+        passingCriteriaSlider.RegisterValueChangedCallback(SetTrackPassingCriteria);
         raceViewport.RegisterCallback<WheelEvent>(ZoomTrack);
         raceViewport.RegisterCallback<PointerDownEvent>(BeginTrackPointer);
         raceViewport.RegisterCallback<PointerMoveEvent>(MoveTrackPointer);
@@ -788,6 +793,7 @@ public sealed class StartupMenu : MonoBehaviour
         sessionPaused = false;
         ApplySessionPlayback();
         ConfigureGarageVisitButton();
+        RefreshTrackPassingCriteria();
         UpdateSessionLabel();
     }
 
@@ -903,6 +909,7 @@ public sealed class StartupMenu : MonoBehaviour
         if (playSessionButton != null) playSessionButton.clicked -= PlaySession;
         if (playbackSpeedButton != null) playbackSpeedButton.clicked -= OpenPlaybackSpeedMenu;
         if (pauseSessionButton != null) pauseSessionButton.clicked -= PauseSession;
+        passingCriteriaSlider?.UnregisterValueChangedCallback(SetTrackPassingCriteria);
         if (toggleTrackStandingsButton != null)
             toggleTrackStandingsButton.clicked -= ToggleTrackStandings;
         if (scoringRaceProgress != null)
@@ -5942,6 +5949,7 @@ public sealed class StartupMenu : MonoBehaviour
         sessionPaused = false;
         ApplySessionPlayback();
         ConfigureGarageVisitButton();
+        RefreshTrackPassingCriteria();
         UpdateSessionLabel();
     }
 
@@ -6583,6 +6591,18 @@ public sealed class StartupMenu : MonoBehaviour
             });
         }
         menu.DropDown(playbackSpeedButton.worldBound, playbackSpeedButton, DropdownMenuSizeMode.Content);
+    }
+
+    private void RefreshTrackPassingCriteria()
+    {
+        trackFooter.EnableInClassList("track-footer-passing-visible", trackPreview.CanAdjustPassingCriteria);
+        passingCriteriaSlider.SetValueWithoutNotify(trackPreview.OvalPassingStrictness);
+    }
+
+    private void SetTrackPassingCriteria(ChangeEvent<int> change)
+    {
+        if (trackPreview?.CanAdjustPassingCriteria == true)
+            trackPreview.OvalPassingStrictness = change.newValue;
     }
 
     private void UpdateTrackFlags(SessionTrackState? state, bool oneToGo = false)
@@ -7317,6 +7337,11 @@ public sealed class StartupMenu : MonoBehaviour
     {
         trackIconHoverPosition = evt.position;
         var icon = TrackIconAt(trackIconHoverPosition);
+        if (icon == passingCriteriaSlider && evt.pressedButtons != 0)
+        {
+            HideTrackIconTooltip();
+            return;
+        }
         if (icon != hoveredTrackIcon)
         {
             HideTrackIconTooltip();
