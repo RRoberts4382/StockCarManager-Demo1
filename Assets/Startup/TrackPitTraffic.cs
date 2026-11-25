@@ -487,6 +487,17 @@ internal sealed class TrackPitTraffic
         if (car.Maneuver && !car.ArrivalManeuver)
             speed = Mathf.Min(speed, ApproachLimit(4f, Mathf.Max(0f, car.ManeuverStart - car.PitDistance), seconds));
         if (arrival) speed = Mathf.Min(speed, ApproachLimit(0f, Mathf.Max(0f, stopAt - car.PitDistance), seconds));
+        float laneVariation = 0f;
+        if (!car.Maneuver && !car.WaitingForExitMerge && (!arrival || stopAt - car.PitDistance > 40f))
+        {
+            // Fade before the connectors and vary below the posted limit.
+            float room = Mathf.Min(car.PitDistance - Mathf.Max(RoadStart, boundaries[0]),
+                Mathf.Min(RoadEnd, boundaries[1]) - car.PitDistance);
+            float blend = Mathf.SmoothStep(0f, 1f, room / 12f);
+            laneVariation = blend * TrackState001RaceStart.PaceSpeedVariation(index, stepTime, .08f);
+            float speedVariation = TrackState001RaceStart.PaceSpeedVariation(index, stepTime + 3f, .0125f);
+            speed *= 1f - blend * (.0125f + speedVariation);
+        }
         speed = StallEntryReservationSpeed(car, speed, seconds);
         if (car.WaitingForExitMerge)
             speed = Mathf.Min(speed, ApproachLimit(0f, Mathf.Max(0f, car.ExitHoldDistance - car.PitDistance), seconds));
@@ -506,7 +517,7 @@ internal sealed class TrackPitTraffic
                 car.ManeuverFrom, car.ManeuverTo, car.ArrivalManeuver);
         else
         {
-            nextLane = Mathf.MoveTowards(car.PitLane, ThroughLaneAt(car.PitDistance), 3f * seconds);
+            nextLane = Mathf.MoveTowards(car.PitLane, ThroughLaneAt(car.PitDistance) + laneVariation, 3f * seconds);
         }
         if (travel <= 0f) return 0f;
         // Test the complete step, including corner sweep and traffic approaching

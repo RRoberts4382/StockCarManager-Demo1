@@ -17,6 +17,7 @@ internal sealed class TrackState001RaceStart
     private readonly float firstRowOffset;
     private readonly float positionVariation;
     private float progress;
+    private float rolloutSeconds;
     private float fieldLead;
     private float paceLead;
     private float flashTime;
@@ -78,7 +79,14 @@ internal sealed class TrackState001RaceStart
             previousProgress = progress;
             previousFieldLead = fieldLead;
             float speed = progress < pit.RouteLength ? Math.Min(PaceSpeed, pit.SpeedLimit) : PaceSpeed;
+            if (progress < pit.RouteLength)
+            {
+                // Vary the rollout speed together so spacing and pit speed limits hold.
+                float variation = .0125f + PaceSpeedVariation(0, flashTime + 3f, .0125f);
+                speed *= 1f - PitVariationBlend(progress) * variation;
+            }
             progress += speed * seconds;
+            rolloutSeconds += seconds;
             paceLead = pit.ExitDistance + progress - pit.RouteLength;
             fieldLead = Math.Min(paceLead - firstRowOffset, greenAt);
             if (returningPaceCar == null && paceLead >= peelOffAt)
@@ -100,8 +108,18 @@ internal sealed class TrackState001RaceStart
         float offset = slot / 2 * rowSpacing;
         float distance = progress - firstRowOffset - offset;
         float side = slot % 2 == 0 ? -lane : lane;
-        return distance < pit.RouteLength ? (true, distance, side)
+        // Both cars in a row drift together, keeping the two lanes apart.
+        float pitLane = lane > 0f
+            ? side + PitVariationBlend(distance) * PaceSpeedVariation(slot / 2, flashTime, Mathf.Min(.08f, lane * .1f))
+            : side;
+        return distance < pit.RouteLength ? (true, distance, pitLane)
             : (false, fieldLead - offset + FormationVariation(index, distance, fieldLead, flashTime), side);
+    }
+
+    private float PitVariationBlend(float distance)
+    {
+        float room = Mathf.Min(distance - pit.RoadStart, pit.RoadEnd - distance);
+        return Mathf.SmoothStep(0f, 1f, room / 12f) * Mathf.SmoothStep(0f, 1f, rolloutSeconds);
     }
 
     internal float PacedMeters(int index, float fallback)
