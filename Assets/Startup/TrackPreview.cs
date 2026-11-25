@@ -185,6 +185,12 @@ public sealed partial class TrackPreview : MonoBehaviour
     private float[] pitHeights;
     private float pitEntryTrackLane;
     private float pitExitTrackLane;
+    private float formationExitLane, formationMergeLength;
+    private float pacePitEntryLane;
+    private Pose pacePitEntryPose;
+    private const float FormationSeamLength = 15f;
+    private const float FormationHalfWheelTrack = .85f;
+    private float FormationHalfLane => Mathf.Min(1.35f, definition.pitRoad.widthMeters * 0.25f);
     private float bristolFrontEntryLane, bristolBackExitLane, bristolBackExitTrackDistance;
     private readonly Dictionary<TrackPitSpline, Vector2> pitMergeAttachments = new Dictionary<TrackPitSpline, Vector2>();
     private bool importedTrackGeometry;
@@ -1408,6 +1414,8 @@ public sealed partial class TrackPreview : MonoBehaviour
         if (model is TrackState001 raceModel && session.kind == RaceSessionKind.Race && pitTraffic != null)
         {
             raceStart = raceModel.StartRace(pitTraffic, slots, definition, simulationRandom);
+            ConfigureFormationPitExit();
+            ConfigurePacePitApproach();
             CreatePaceCar(usePaceTruck);
             ConfigureRichmondPaceBay();
             CreatePitSignal();
@@ -1818,12 +1826,12 @@ public sealed partial class TrackPreview : MonoBehaviour
         if (draft == null || !TrafficLaneChangesEnabled || behaviorModel is not VehicleBehavior003)
             return;
 
-        float halfLane = Mathf.Min(1.35f, definition.pitRoad.widthMeters * 0.25f);
+        float halfLane = FormationHalfLane;
         for (int i = 0; i < cars.Length; i++)
         {
             var grid = raceStart.GridPosition(i, halfLane);
             onTrack[i] = !grid.OnPitRoad && cars[i].gameObject.activeSelf;
-            draftEligible[i] = onTrack[i] && (!UsesAuthoredApronHandoffs || grid.Distance - pitTraffic.ExitDistance >= 150f);
+            draftEligible[i] = onTrack[i] && grid.Distance - pitTraffic.ExitDistance >= formationMergeLength;
             if (!draftEligible[i])
                 draft.AppliedLaneOffsets[i] = 0f;
             draft.ApronEdgeAllowance[i] = 0f;
@@ -2900,7 +2908,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             float speed = SessionRun.CurrentSpeed(i);
             if (raceStart != null && !raceReleased)
             {
-                var grid = raceStart.GridPosition(i, Mathf.Min(1.35f, definition.pitRoad.widthMeters * 0.25f));
+                var grid = raceStart.GridPosition(i, FormationHalfLane);
                 inPit = grid.OnPitRoad;
                 distance = grid.Distance;
                 lane = inPit ? grid.Lane : FormationTrackLane(distance, drivingLanesReady ? drivingLanes[i] : grid.Lane);
@@ -3084,11 +3092,15 @@ public sealed partial class TrackPreview : MonoBehaviour
             if (!PositionRichmondPaceBay(pace))
             {
                 if (pace.OnPitRoad)
-                    PositionPitCar(paceCar, pace.Distance, pace.ParkingBlend * (definition.pitRoad.widthMeters * 0.5f + 1.5f));
-                else if (!raceReleased)
-                    PositionFormationTrackCar(paceCar, pace.Distance, 0f);
-                else
-                    PositionTrackCar(paceCar, pace.Distance, 0f);
+                    PositionPitCar(paceCar, pace.Distance, pace.ParkingBlend * (definition.pitRoad.widthMeters * 0.5f + 1.5f),
+                        isRaceFormation: !raceReleased && !raceStart.PaceReturning);
+                else if (!PositionPacePitApproach(pace.Distance))
+                {
+                    if (raceReleased)
+                        PositionTrackCar(paceCar, pace.Distance, 0f);
+                    else
+                        PositionFormationTrackCar(paceCar, pace.Distance, 0f);
+                }
             }
             paceWheels?.Sample(paceCar, false);
             paceLights.SetActive(!RichmondPaceIsParked &&
@@ -3104,7 +3116,7 @@ public sealed partial class TrackPreview : MonoBehaviour
 
             if (raceStart != null && !raceReleased)
             {
-                float halfLane = Mathf.Min(1.35f, definition.pitRoad.widthMeters * 0.25f);
+                float halfLane = FormationHalfLane;
                 var grid = raceStart.GridPosition(i, halfLane);
                 if (grid.OnPitRoad)
                     PositionPitCar(cars[i], grid.Distance, grid.Lane, isRaceFormation: true);
@@ -3440,7 +3452,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         float mergeLength = definition.id == BristolTrackId ? 60f : 15f;
         bool useBottomLaneMerge = traffic != null && UsesBottomLanePitMerge(definition.id) && toMerge < mergeLength;
         bool blendStart = BlendingStartLanes;
-        float gridLane = blendStart ? raceStart.GridPosition(i, Mathf.Min(1.35f, definition.pitRoad.widthMeters * 0.25f)).Lane : 0f;
+        float gridLane = blendStart ? raceStart.GridPosition(i, FormationHalfLane).Lane : 0f;
         float lane;
         if (IgnorePreferredDrivingLine)
         {
@@ -3549,29 +3561,126 @@ public sealed partial class TrackPreview : MonoBehaviour
             ? (endLane - startLane) * weight : 0f;
     }
 
-    private float FormationTrackLane(float distance, float lane)
+    private void ConfigureFormationPitExit()
     {
-        const float FormationMergeLength = 150f;
-        if (!UsesAuthoredApronHandoffs) return lane;
+        const float maxMergeLength = 150f;
+        if (UsesAuthoredApronHandoffs)
+        {
+            formationExitLane = pitExitTrackLane;
+            formationMergeLength = maxMergeLength;
+            return;
+        }
 
-        // Move both lanes across the apron together without narrowing the formation.
-        return lane + Mathf.SmoothStep(pitExitTrackLane, 0f,
-            (distance - pitTraffic.ExitDistance) / FormationMergeLength);
+        formationExitLane = TrackLaneAtPoint(pitTraffic.ExitDistance, FormationPitExitPoint(1f, 0f));
+        formationMergeLength = Mathf.Clamp(Mathf.Abs(formationExitLane) * 12f, FormationSeamLength, maxMergeLength);
     }
+
+    private float TrackLaneAtPoint(float station, Vector3 point)
+    {
+        // Project the connector endpoint onto the banked track cross section.
+        Vector3 center = TrackPoint(station, 0f, out var forward, out _);
+        Vector3 across = Vector3.Cross(Vector3.up, forward).normalized;
+        float target = Vector3.Dot(point - center, across);
+        Vector2 widths = RoadWidths(station);
+        float extent = widths.x + widths.y + definition.pitRoad.widthMeters;
+        float low = -extent, high = extent;
+        for (int i = 0; i < 16; i++)
+        {
+            float lane = (low + high) * .5f;
+            float offset = Vector3.Dot(TrackPoint(station, lane, out _, out _) - center, across);
+            if (offset < target) low = lane; else high = lane;
+        }
+        return (low + high) * .5f;
+    }
+
+    private void ConfigurePacePitApproach()
+    {
+        Vector3 mouth = PitDrivingPosition(pitRoute[0], 0f, 0f, pitHeights[0], pitHeights[1]);
+        Vector3 ahead = PitDrivingPosition(pitRoute[0], .001f, 0f, pitHeights[0], pitHeights[1]);
+        pacePitEntryPose = new Pose(mouth, Quaternion.LookRotation(ahead - mouth));
+        pacePitEntryLane = TrackLaneAtPoint(pitTraffic.EntryDistance, mouth);
+    }
+
+    private bool PositionPacePitApproach(float distance)
+    {
+        if (richmondPaceReturn != null) return false;
+        float entry = stages?.HasPaceCar == true ? stages.PacePitEntry : raceStart.PacePitEntry;
+        float approachLength = Mathf.Min(100f, lapLength * .45f);
+        float start = entry - approachLength;
+        if (distance <= start) return false;
+
+        Vector2 entryWidths = RoadWidths(entry);
+        float inside = customLayout.InsideSign;
+        float apronOffset = pacePitEntryLane * inside - entryWidths.x * .5f;
+        Vector3 mouthCorrection = pacePitEntryPose.position - TrackPoint(entry, pacePitEntryLane, out _, out _);
+        float lane = ApproachLane(distance);
+        Vector3 position = ApproachPoint(distance);
+        Vector3 forward = ApproachPoint(Mathf.Min(entry, distance + .4f)) -
+            ApproachPoint(Mathf.Max(start, distance - .4f));
+        Vector3 across = TrackPoint(distance, lane + FormationHalfWheelTrack, out _, out _) -
+            TrackPoint(distance, lane - FormationHalfWheelTrack, out _, out _);
+        Quaternion rotation = Quaternion.LookRotation(forward, Vector3.Cross(forward, across));
+        if (distance - start < 10f)
+        {
+            SampleTrackCarPose(distance, TrackPaceLane(distance), out var trackForward, out var trackUp);
+            rotation = Quaternion.Slerp(Quaternion.LookRotation(trackForward, trackUp), rotation,
+                Mathf.SmoothStep(0f, 1f, (distance - start) / 10f));
+        }
+        rotation = Quaternion.Slerp(rotation, pacePitEntryPose.rotation, SeamBlend(distance));
+        paceCar.SetLocalPositionAndRotation(position, rotation);
+        if (SupportsIowaVenueLighting)
+            ApplyIowaVehicleLighting(paceCar, IowaTrackVehicleLighting(distance, lane));
+        return true;
+
+        float SeamBlend(float station) => Mathf.SmoothStep(1f, 0f, (entry - station) / FormationSeamLength);
+
+        Vector3 ApproachPoint(float station) =>
+            TrackPoint(station, ApproachLane(station), out _, out _) + mouthCorrection * SeamBlend(station);
+
+        float TrackPaceLane(float station) => raceReleased ? 0f : FormationTrackLane(station, 0f);
+
+        float ApproachLane(float station)
+        {
+            float target = pacePitEntryLane;
+            if (apronOffset > 0f && entryWidths.y > 0f)
+            {
+                Vector2 widths = RoadWidths(station);
+                target = inside * (widths.x * .5f + apronOffset * widths.y / entryWidths.y);
+            }
+            return Mathf.SmoothStep(TrackPaceLane(station), target, (station - start) / approachLength);
+        }
+    }
+
+    private float FormationTrackLane(float distance, float lane) =>
+        lane + Mathf.SmoothStep(formationExitLane, 0f,
+            (distance - pitTraffic.ExitDistance) / formationMergeLength);
 
     private void PositionFormationTrackCar(Transform car, float distance, float lane)
     {
-        PositionTrackCar(car, distance, FormationTrackLane(distance, lane));
-        if (!UsesAuthoredApronHandoffs) return;
-        float afterExit = distance - pitTraffic.ExitDistance;
+        float trackLane = FormationTrackLane(distance, lane);
+        PositionTrackCar(car, distance, trackLane);
 
-        // Match the exact authored connector endpoint, including small grade and
-        // tangent alignment differences, before following the main layout.
-        float seamBlend = 1f - Mathf.SmoothStep(0f, 1f, afterExit / 15f);
+        // A row can straddle the inside stripe as the apron meets the banking.
+        // Derive roll across the wheels so the car banks over its full width.
+        Vector2 widths = RoadWidths(distance);
+        float stripe = widths.x * .5f * (customLayout?.InsideSign ?? -1f);
+        if (widths.y > 0f && Mathf.Abs(trackLane - stripe) < FormationHalfWheelTrack)
+        {
+            Vector3 across = TrackPoint(distance, trackLane + FormationHalfWheelTrack, out _, out _) -
+                TrackPoint(distance, trackLane - FormationHalfWheelTrack, out _, out _);
+            Vector3 forward = car.localRotation * Vector3.forward;
+            car.localRotation = Quaternion.LookRotation(forward, Vector3.Cross(forward, across));
+        }
+
+        float exit = pitTraffic.ExitDistance;
+        float seamBlend = 1f - Mathf.SmoothStep(0f, 1f, (distance - exit) / FormationSeamLength);
         if (seamBlend <= 0f) return;
-        Vector3 pitEnd = RawPitDrivingPosition(pitRoute[2], 1f, lane, pitHeights[2], pitHeights[3]);
-        Vector3 trackStart = TrackPoint(pitTraffic.ExitDistance, pitExitTrackLane + lane, out _, out _);
-        car.localPosition += (pitEnd - trackStart) * seamBlend;
+
+        // Match each lane's position and orientation at the connector seam.
+        Pose pitEnd = FormationPitExitPose(1f, lane);
+        Vector3 trackStart = TrackPoint(exit, formationExitLane + lane, out _, out _);
+        car.localPosition += (pitEnd.position - trackStart) * seamBlend;
+        car.localRotation = Quaternion.Slerp(car.localRotation, pitEnd.rotation, seamBlend);
     }
 
     private void PositionTrackCar(Transform car, float distance, float lane, float laneSlope = 0f)
@@ -3790,24 +3899,45 @@ public sealed partial class TrackPreview : MonoBehaviour
         while (segment < pitRoute.Length - 1 && distance >= pitLengths[segment])
             distance -= pitLengths[segment++];
         float fraction = Mathf.Clamp01(distance / pitLengths[segment]);
-        bool preserveExitLane = isRaceFormation && UsesAuthoredApronHandoffs && segment == 2;
-        PositionPitSpline(car, pitRoute[segment], fraction, lane, pitHeights[segment], pitHeights[segment + 1], preserveExitLane);
+        if (isRaceFormation && segment == 2)
+        {
+            Pose pose = FormationPitExitPose(fraction, lane);
+            car.SetLocalPositionAndRotation(pose.position, pose.rotation);
+        }
+        else
+            PositionPitSpline(car, pitRoute[segment], fraction, lane, pitHeights[segment], pitHeights[segment + 1]);
         if (SupportsIowaVenueLighting)
             ApplyIowaVehicleLighting(car, segment == 1 ? IowaPitLightingLayer :
                 IowaConnectorVehicleLighting(car.localPosition, segment == 0 ? pitTraffic.EntryDistance : pitTraffic.ExitDistance));
     }
 
-    private void PositionPitSpline(Transform car, TrackPitSpline spline, float fraction, float lane, float startHeight, float endHeight,
-        bool preserveExitLane = false)
+    private void PositionPitSpline(Transform car, TrackPitSpline spline, float fraction, float lane, float startHeight, float endHeight)
     {
         car.localPosition = DrivingPoint(fraction);
         Vector3 tangent = DrivingPoint(Mathf.Min(1f, fraction + 0.001f)) -
             DrivingPoint(Mathf.Max(0f, fraction - 0.001f));
         if (tangent.sqrMagnitude > 0f) car.localRotation = Quaternion.LookRotation(tangent);
 
-        Vector3 DrivingPoint(float sample) => preserveExitLane
-            ? RawPitDrivingPosition(spline, sample, lane, startHeight, endHeight)
-            : PitDrivingPosition(spline, sample, lane, startHeight, endHeight);
+        Vector3 DrivingPoint(float sample) => PitDrivingPosition(spline, sample, lane, startHeight, endHeight);
+    }
+
+    private Vector3 FormationPitExitPoint(float fraction, float lane)
+    {
+        // Rolling starts use the width of the exit connector. Individual pit
+        // departures still follow the single-car merge to the apron.
+        return UsesSharedPitConnectorSurface && ApronExitAvailable(pitTraffic.ExitDistance)
+            ? ApronConnectorPoint(pitRoute[2], fraction, lane, pitHeights[2], pitHeights[3], formation: true)
+            : RawPitDrivingPosition(pitRoute[2], fraction, lane, pitHeights[2], pitHeights[3]);
+    }
+
+    private Pose FormationPitExitPose(float fraction, float lane)
+    {
+        float halfWheelbase = RearAxleHeading.CenterToRearAxle / pitLengths[2];
+        Vector3 forward = FormationPitExitPoint(Mathf.Min(1f, fraction + halfWheelbase), lane) -
+            FormationPitExitPoint(Mathf.Max(0f, fraction - halfWheelbase), lane);
+        Vector3 across = FormationPitExitPoint(fraction, lane + FormationHalfWheelTrack) -
+            FormationPitExitPoint(fraction, lane - FormationHalfWheelTrack);
+        return new Pose(FormationPitExitPoint(fraction, lane), Quaternion.LookRotation(forward, Vector3.Cross(forward, across)));
     }
 
     private Vector3 RawPitDrivingPosition(TrackPitSpline spline, float fraction, float lane, float startHeight, float endHeight)
@@ -3825,13 +3955,15 @@ public sealed partial class TrackPreview : MonoBehaviour
     {
         internal readonly Vector3[] centers = new Vector3[129], across = new Vector3[129],
             edges = new Vector3[129], inward = new Vector3[129];
-        internal readonly float[] length = new float[129];
+        internal readonly float[] length = new float[129], bankRise = new float[129], apronWidth = new float[129];
         internal readonly float[,] surfaceHeight = new float[129, 9];
+        internal float formationShift;
     }
     private readonly System.Collections.Generic.Dictionary<TrackPitSpline, ApronConnectorGeometry> apronConnectors =
         new System.Collections.Generic.Dictionary<TrackPitSpline, ApronConnectorGeometry>();
 
-    private Vector3 ApronConnectorPoint(TrackPitSpline spline, float fraction, float lane, float startHeight, float endHeight)
+    private Vector3 ApronConnectorPoint(TrackPitSpline spline, float fraction, float lane, float startHeight, float endHeight,
+        bool formation = false, bool wideningPavement = false)
     {
         bool entry = spline == pitRoute[0] || spline == bristolFrontEntry;
         if (!apronConnectors.TryGetValue(spline, out var geometry))
@@ -3839,6 +3971,9 @@ public sealed partial class TrackPreview : MonoBehaviour
             long buildStarted = System.Diagnostics.Stopwatch.GetTimestamp();
             geometry = new ApronConnectorGeometry();
             float attachment = PitAttachment(spline.Sample(entry ? 0f : 1f));
+            bool sharedExit = !entry && UsesSharedPitConnectorSurface;
+            if (sharedExit)
+                geometry.formationShift = Mathf.Max(0f, FormationHalfLane + 1.05f - RoadWidths(attachment).y * .5f);
             Vector3 apron = TrackPoint(attachment, ApronLane(attachment), out var trackForward, out _);
             Vector3 start = entry ? apron : RawPitDrivingPosition(spline, 0f, 0f, startHeight, endHeight);
             float roadJoin = entry && spline == bristolFrontEntry
@@ -3856,13 +3991,21 @@ public sealed partial class TrackPreview : MonoBehaviour
                 float t = i / 128f;
                 Vector3 point = PitHermite(start, end, startForward * reach, endForward * reach, t);
                 float station = TrackUtilityGeometry.ClosestMainDistance(customLayout, lapLength, point);
-                Vector3 edge = TrackPoint(station, side * RoadWidths(station).x * .5f, out var forward, out _);
+                Vector2 widths = RoadWidths(station);
+                float stripe = side * widths.x * .5f;
+                Vector3 edge = TrackPoint(station, stripe, out var forward, out _);
                 Vector3 inward = Vector3.Cross(Vector3.up, forward).normalized * side;
                 // Keep the entire car inside the racing surface edge, including its body width.
                 point += inward * Mathf.Max(0f, 1.05f - Vector3.Dot(point - edge, inward));
                 geometry.centers[i] = point;
                 geometry.edges[i] = edge;
                 geometry.inward[i] = inward;
+                if (sharedExit)
+                {
+                    Vector3 bank = TrackPoint(station, stripe - side, out _, out _) - edge;
+                    geometry.bankRise[i] = bank.y / -Vector3.Dot(bank, inward);
+                    geometry.apronWidth[i] = widths.y;
+                }
                 Vector3 tangent = PitHermite(start, end, startForward * reach, endForward * reach, Mathf.Min(1f, t + .001f)) -
                     PitHermite(start, end, startForward * reach, endForward * reach, Mathf.Max(0f, t - .001f));
                 geometry.across[i] = Vector3.Cross(Vector3.up, i == 128 ? endForward : i == 0 ? startForward : tangent).normalized;
@@ -3897,12 +4040,33 @@ public sealed partial class TrackPreview : MonoBehaviour
         Vector3 Point(int index)
         {
             float t = index / 128f;
-            Vector3 point = geometry.centers[index] + geometry.across[index] * lane * (entry ? Mathf.SmoothStep(0f, 1f, t) : 1f - Mathf.SmoothStep(0f, 1f, t));
+            float taper = entry ? Mathf.SmoothStep(0f, 1f, t) : 1f - Mathf.SmoothStep(0f, 1f, t);
             Vector3 inward = geometry.inward[index], edge = geometry.edges[index];
-            point += inward * Mathf.Max(0f, 1.05f - Vector3.Dot(point - edge, inward));
-            // Pit road and apron are flat here; no excursion up the racing banking.
+            Vector3 center = geometry.centers[index];
+            if (formation || wideningPavement)
+            {
+                // Move both rows toward the racing surface on a narrow apron.
+                float remaining = geometry.length[128] - geometry.length[index];
+                center -= inward * Mathf.SmoothStep(geometry.formationShift, 0f, remaining / 30f);
+            }
+            if (wideningPavement)
+            {
+                // Keep the exit at pit-road width until the apron can support
+                // both rows. The ribbon then tapers into the existing pavement.
+                float apronClearance = geometry.apronWidth[index] - Vector3.Dot(center - edge, inward);
+                float clearanceNeeded = FormationHalfLane + FormationHalfWheelTrack;
+                taper = Mathf.Max(taper, 1f - Mathf.SmoothStep(0f, 1f, (apronClearance - clearanceNeeded) / .2f));
+            }
+            Vector3 point = center + geometry.across[index] * (formation ? lane : lane * taper);
+            if (!formation)
+                point += inward * Mathf.Max(0f, 1.05f - Vector3.Dot(point - edge, inward));
+            // Start with the connector grade and follow the racing surface
+            // where the formation crosses the inside stripe.
             point.y = entry ? Mathf.Lerp(edge.y, endHeight + PitSurfaceLift, Mathf.SmoothStep(0f, 1f, t)) :
                 Mathf.Lerp(startHeight + PitSurfaceLift, edge.y, Mathf.SmoothStep(0f, 1f, t));
+            float edgeOffset = Vector3.Dot(point - edge, inward);
+            if (formation && edgeOffset < 0f)
+                point.y = Mathf.Max(point.y, edge.y - edgeOffset * geometry.bankRise[index]);
             if (definition.id == BristolTrackId)
             {
                 float strip = Mathf.Clamp01(lane / definition.pitRoad.widthMeters + .5f) * 8f;
@@ -4823,7 +4987,8 @@ public sealed partial class TrackPreview : MonoBehaviour
                 : UsesDetailedPavement(definition.id) ? BristolMergeHeight(exit.Sample(1f), exitDistance)
                 : TrackPoint(exitDistance, 0f, out _, out _).y;
             if (!sharedConnectorSurface)
-                DrawPitRibbon("Pit exit", exit, pit.widthMeters, pavement, roadEnd, exitHeight, underMainTrack: true);
+                DrawPitRibbon("Pit exit", exit, pit.widthMeters, pavement, roadEnd, exitHeight, underMainTrack: true,
+                    startTangent: definition.id == BristolTrackId ? PitTangent(spline, 1f, roadStart, roadEnd) : null);
         }
         if (entrance != null && exit != null)
         {
@@ -4855,7 +5020,7 @@ public sealed partial class TrackPreview : MonoBehaviour
                 DrawPitRibbon("Pit entrance", entrance, pit.widthMeters, pavement, entryHeight, roadStart,
                     underMainTrack: true, useDrivingPath: true);
                 DrawPitRibbon("Pit exit", exit, pit.widthMeters, pavement, roadEnd, exitHeight,
-                    underMainTrack: true, useDrivingPath: true);
+                    underMainTrack: true, useDrivingPath: true, widenForFormation: true);
             }
             const int pitProgressSamples = 128;
             var trackDistances = new float[pitProgressSamples + 1];
@@ -5267,7 +5432,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         Mathf.SmoothStep(startHeight, endHeight, fraction) + PitSurfaceLift;
 
     private void DrawPitRibbon(string objectName, TrackPitSpline spline, float width, Material material, float startHeight, float endHeight,
-        bool underMainTrack = false, bool useDrivingPath = false)
+        bool underMainTrack = false, bool useDrivingPath = false, bool widenForFormation = false, Vector3? startTangent = null)
     {
         const int segments = PitRibbonSegments;
         int strips = underMainTrack ? PitConnectorStrips : 1;
@@ -5284,12 +5449,17 @@ public sealed partial class TrackPreview : MonoBehaviour
                 for (int j = 0; j <= strips; j++)
                 {
                     float lane = width * (j / (float)strips - .5f);
-                    vertices[i * stride + j] = PitDrivingPosition(spline, fraction, lane, startHeight, endHeight);
+                    vertices[i * stride + j] = widenForFormation
+                        ? ApronConnectorPoint(spline, fraction, lane, startHeight, endHeight, wideningPavement: true)
+                        : PitDrivingPosition(spline, fraction, lane, startHeight, endHeight);
                 }
                 continue;
             }
             Vector3 center = PitPosition(spline, fraction, startHeight, endHeight);
-            Vector3 across = Vector3.Cross(Vector3.up, PitTangent(spline, fraction, startHeight, endHeight)).normalized;
+            Vector3 tangent = PitTangent(spline, fraction, startHeight, endHeight);
+            if (startTangent.HasValue && fraction < .125f)
+                tangent = Vector3.Slerp(startTangent.Value, tangent, Mathf.SmoothStep(0f, 1f, fraction / .125f));
+            Vector3 across = Vector3.Cross(Vector3.up, tangent).normalized;
             for (int j = 0; j <= strips; j++)
             {
                 int index = i * stride + j;

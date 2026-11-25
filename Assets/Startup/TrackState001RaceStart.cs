@@ -82,7 +82,10 @@ internal sealed class TrackState001RaceStart
             paceLead = pit.ExitDistance + progress - pit.RouteLength;
             fieldLead = Math.Min(paceLead - firstRowOffset, greenAt);
             if (returningPaceCar == null && paceLead >= peelOffAt)
+            {
                 returningPaceCar = new TrackPitTraffic.Car { TrackDistance = peelOffAt, InPit = true };
+                seconds = Mathf.Clamp((paceLead - peelOffAt) / speed, 0f, seconds);
+            }
             if (fieldLead >= greenAt)
                 State = SessionTrackState.TrackOpen;
         }

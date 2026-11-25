@@ -181,6 +181,8 @@ internal sealed class TrackState001Stages
             {
                 pace = new TrackPitTraffic.Car { TrackDistance = peelOffAt, InPit = true };
                 paceReturning = true;
+                float pitSeconds = Mathf.Clamp((paceDistance - peelOffAt) / speed, 0f, seconds);
+                pit.Advance(pace, pitSeconds, PaceSpeed, pit.ParkingDistance);
             }
         }
     }
