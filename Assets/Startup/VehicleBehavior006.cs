@@ -1,7 +1,7 @@
 using System;
 using UnityEngine;
 
-internal sealed class VehicleBehavior006 : VehicleBehavior004
+internal class VehicleBehavior006 : VehicleBehavior004
 {
     internal new const string ModelId = "vehicle-behavior-006";
 

@@ -156,11 +156,11 @@ internal sealed class GameSettings
             PlayerPrefs.SetInt(Key + "VehicleBehavior004Enabled", 1);
             PlayerPrefs.Save();
         }
-        // Select 006 once and keep subsequent manual model selections.
-        if (!PlayerPrefs.HasKey(Key + "VehicleBehavior006Enabled"))
+        // Select 007 once and keep subsequent manual model selections.
+        if (!PlayerPrefs.HasKey(Key + "VehicleBehavior007Enabled"))
         {
-            PlayerPrefs.SetString(Key + "VehicleBehaviorModel", VehicleBehavior006.ModelId);
-            PlayerPrefs.SetInt(Key + "VehicleBehavior006Enabled", 1);
+            PlayerPrefs.SetString(Key + "VehicleBehaviorModel", VehicleBehaviorModels.DefaultModelId);
+            PlayerPrefs.SetInt(Key + "VehicleBehavior007Enabled", 1);
             PlayerPrefs.Save();
         }
         savedBehaviorModel = VehicleBehaviorModels.IndexForId(PlayerPrefs.GetString(Key + "VehicleBehaviorModel"));

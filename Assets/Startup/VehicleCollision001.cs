@@ -14,9 +14,13 @@ internal sealed class VehicleCollision001
     private readonly float[] crashImpulse;
     private readonly float[] draftBumpSpeedChange;
     private readonly bool[] gaveDraftBump, receivedDraftBump;
+    private readonly float[] trackHalfWidths;
 
-    public VehicleCollision001(int count)
+    public VehicleCollision001(int count) : this(count, null) { }
+
+    internal VehicleCollision001(int count, float[] trackHalfWidths)
     {
+        this.trackHalfWidths = trackHalfWidths;
         touching = new bool[count, count];
         gentleBumpContacts = new bool[count, count];
         impactDamage = new float[count];
@@ -24,6 +28,15 @@ internal sealed class VehicleCollision001
         draftBumpSpeedChange = new float[count];
         gaveDraftBump = new bool[count];
         receivedDraftBump = new bool[count];
+    }
+
+    internal static float TrackContactWidth(float[] halfWidths, int first, int second) => halfWidths == null
+        ? ContactWidth : TrackContactHalfWidth(halfWidths, first) + TrackContactHalfWidth(halfWidths, second);
+
+    private static float TrackContactHalfWidth(float[] halfWidths, int index)
+    {
+        float width = halfWidths != null && (uint)index < (uint)halfWidths.Length ? halfWidths[index] : 0f;
+        return width > 0f && !float.IsInfinity(width) ? width : ContactWidth * .5f;
     }
 
     public void ClearContacts()
@@ -70,6 +83,7 @@ internal sealed class VehicleCollision001
                     (endDistances[first] - startDistances[first]);
                 float side = startLanes[second] - startLanes[first];
                 float lateral = endLanes[second] - endLanes[first] - side;
+                float contactWidth = TrackContactWidth(trackHalfWidths, first, second);
                 float enter = 0f;
                 float exit = 1f;
                 bool oriented = startYaw != null && endYaw != null;
@@ -88,7 +102,7 @@ internal sealed class VehicleCollision001
                     }
                 }
                 else contact = OverlapsDuringStep(gap, longitudinal, ContactLength, ref enter, ref exit) &&
-                    OverlapsDuringStep(side, lateral, ContactWidth, ref enter, ref exit);
+                    OverlapsDuringStep(side, lateral, contactWidth, ref enter, ref exit);
                 bool continuingBump = gentleBumpContacts[first, second];
                 bool gentleBump = false;
                 if (contact && (!touching[first, second] || continuingBump))
@@ -141,7 +155,7 @@ internal sealed class VehicleCollision001
                 float releaseMargin = touching[first, second] || gentleBump || impactDamage[first] > 0f ? .05f : 0f;
                 touching[first, second] = oriented
                     ? PitFootprint.Overlaps(gap + longitudinal, side + lateral, endYaw[first], endYaw[second], releaseMargin * .5f)
-                    : Mathf.Abs(gap + longitudinal) < ContactLength + releaseMargin && Mathf.Abs(side + lateral) < ContactWidth + releaseMargin;
+                    : Mathf.Abs(gap + longitudinal) < ContactLength + releaseMargin && Mathf.Abs(side + lateral) < contactWidth + releaseMargin;
                 gentleBumpContacts[first, second] = touching[first, second] && (contact ? gentleBump : continuingBump);
             }
         }
@@ -203,7 +217,8 @@ internal sealed class VehicleCollision001
 
     // Position projection resolves penetration without changing commanded velocities.
     // Trailing cars move backward, never forward through another car or across a finish line.
-    internal static void Separate(float lapLength, bool[] active, float[] distances, float[] lanes, float[] widths)
+    internal static void Separate(float lapLength, bool[] active, float[] distances, float[] lanes, float[] widths,
+        float[] trackHalfWidths = null)
     {
         for (int pass = 0; pass < active.Length; pass++)
         {
@@ -213,15 +228,18 @@ internal sealed class VehicleCollision001
                 if (!active[i] || !active[j]) continue;
                 float gap = Mathf.Repeat(distances[j]-distances[i]+lapLength*.5f,lapLength)-lapLength*.5f;
                 float side = lanes[j]-lanes[i];
+                float halfWidthI = TrackContactHalfWidth(trackHalfWidths, i);
+                float halfWidthJ = TrackContactHalfWidth(trackHalfWidths, j);
+                float contactWidth = halfWidthI + halfWidthJ;
                 float longitudinal = ContactLength-Mathf.Abs(gap);
-                float lateral = ContactWidth-Mathf.Abs(side);
+                float lateral = contactWidth-Mathf.Abs(side);
                 if (longitudinal <= 0f || lateral <= 0f) continue;
                 float direction = side >= 0f ? 1f : -1f;
-                float halfI = Mathf.Max(0f,widths[i]*.5f-ContactWidth*.5f);
-                float halfJ = Mathf.Max(0f,widths[j]*.5f-ContactWidth*.5f);
+                float halfI = Mathf.Max(0f,widths[i]*.5f-halfWidthI);
+                float halfJ = Mathf.Max(0f,widths[j]*.5f-halfWidthJ);
                 float moveI = Mathf.Clamp(lanes[i]-direction*(lateral+.002f)*.5f,-halfI,halfI);
                 float moveJ = Mathf.Clamp(lanes[j]+direction*(lateral+.002f)*.5f,-halfJ,halfJ);
-                if (lateral < longitudinal && Mathf.Abs(moveJ-moveI) >= ContactWidth)
+                if (lateral < longitudinal && Mathf.Abs(moveJ-moveI) >= contactWidth)
                 { lanes[i]=moveI; lanes[j]=moveJ; }
                 else if (gap >= 0f) distances[i] -= longitudinal+.002f;
                 else distances[j] -= longitudinal+.002f;

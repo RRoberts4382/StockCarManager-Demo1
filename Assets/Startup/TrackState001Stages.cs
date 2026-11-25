@@ -75,6 +75,7 @@ internal sealed class TrackState001Stages
     internal bool StageWhiteOverriddenByCaution { get; private set; }
     public bool LightsVisible => State == SessionTrackState.Caution && !paceReturning &&
         (!paceMerged || paceDistance < doubleFileAt) && cautionTime % 0.5f < 0.25f;
+    private bool RestartRowsReady => !widenRestartFormationFirst || doubleFileSpacingBlend >= 1f;
 
     public TrackState001Stages(TrackPitTraffic pit, float lapLength, float startLine,
         float zoneStart, float zoneEnd, int count, System.Random random, bool scriptedCautions = false,
@@ -374,8 +375,7 @@ internal sealed class TrackState001Stages
         if (lead >= doubleFileAt && fieldSingleFile)
             doubleFile = true;
 
-        bool restartRowsReady = !widenRestartFormationFirst || doubleFileSpacingBlend >= 1f;
-        if (lead >= restartAt && paceReturning && caughtUp && fieldSingleFile && restartRowsReady && restartReady)
+        if (lead >= restartAt && paceReturning && caughtUp && fieldSingleFile && RestartRowsReady && restartReady)
         {
             State = SessionTrackState.TrackOpen;
             CautionReason = null;
