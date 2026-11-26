@@ -39,7 +39,7 @@ internal static class RivalRosterCsv
             throw new InvalidDataException("This series has " + entries.Length + " rival slots. Remove the extra rows.");
 
         var choices = series.ManufacturerChoices;
-        var updates = new List<(string number, CarManufacturer make, string driver, string team, int line)>();
+        var updates = new List<(string number, int make, string driver, string team, int line)>();
         foreach (var (line, rowNumber) in rows)
         {
             var fields = ReadFields(line, rowNumber);
@@ -50,9 +50,9 @@ internal static class RivalRosterCsv
                 throw Error(rowNumber, "Car number must be one to four letters or digits, such as 00 or 88BX.");
             number = number.ToUpperInvariant();
 
-            int id = (int)CarManufacturer.Chevrolet;
+            int id = ManufacturerCatalog.Chevrolet;
             if ((fields[1].Length > 0 && !int.TryParse(fields[1], NumberStyles.None, CultureInfo.InvariantCulture, out id)) ||
-                id < 0 || id > 3 || !choices.Contains((CarManufacturer)id))
+                !choices.Contains(id))
                 throw Error(rowNumber, "Manufacturer ID is invalid for " + series.name + ".");
             if (SettingsFormStyle.TextError(fields[2]) is string driverError)
                 throw Error(rowNumber, "Driver name. " + driverError);
@@ -61,7 +61,7 @@ internal static class RivalRosterCsv
             if (fields[2].Any(char.IsControl) || fields[3].Any(char.IsControl))
                 throw Error(rowNumber, "Driver and team names cannot contain control characters.");
 
-            updates.Add((number, (CarManufacturer)id, fields[2], fields[3], rowNumber));
+            updates.Add((number, id, fields[2], fields[3], rowNumber));
         }
 
         // Reserve explicitly listed numbers before assigning suffixes, even for later rows.

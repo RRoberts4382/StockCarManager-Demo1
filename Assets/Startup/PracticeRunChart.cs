@@ -611,7 +611,7 @@ internal sealed class PracticeRunChart : VisualElement
 
     private VisualElement BuildFieldRow(VisualElement overlay, int field, string label)
     {
-        var fieldSwitch = CreatePillSwitch(label, visibleSeries[field]);
+        var fieldSwitch = SettingsFormStyle.PillSwitch(label, visibleSeries[field]);
         fieldSwitch.tooltip = $"Show or hide {Series[field].Name} on the chart.";
         var row = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center } };
         fieldSwitch.style.flexGrow = 1;
@@ -663,64 +663,6 @@ internal sealed class PracticeRunChart : VisualElement
         return row;
     }
 
-    internal static Toggle CreatePillSwitch(string label, bool value)
-    {
-        var toggle = new Toggle { text = label, value = value };
-        toggle.style.minHeight = 24;
-
-        var input = toggle.Q(className: "unity-base-field__input");
-        input.Q(className: "unity-toggle__checkmark").style.display = DisplayStyle.None;
-        input.style.alignItems = Align.Center;
-        input.style.justifyContent = Justify.FlexStart;
-
-        var track = new VisualElement
-        {
-            pickingMode = PickingMode.Ignore,
-            style =
-            {
-                width = 38,
-                height = 21,
-                marginRight = 7,
-                flexShrink = 0,
-                paddingLeft = 3,
-                paddingRight = 3,
-                justifyContent = Justify.Center,
-                borderTopLeftRadius = 11,
-                borderTopRightRadius = 11,
-                borderBottomLeftRadius = 11,
-                borderBottomRightRadius = 11
-            }
-        };
-        var thumb = new VisualElement
-        {
-            pickingMode = PickingMode.Ignore,
-            style =
-            {
-                width = 15,
-                height = 15,
-                backgroundColor = (Color)new Color32(16, 21, 30, 255),
-                borderTopLeftRadius = 8,
-                borderTopRightRadius = 8,
-                borderBottomLeftRadius = 8,
-                borderBottomRightRadius = 8
-            }
-        };
-        track.Add(thumb);
-        input.Insert(0, track);
-
-        void UpdateSwitch(bool enabled)
-        {
-            track.style.backgroundColor = enabled
-                ? PettyBlue
-                : (Color)new Color32(74, 88, 105, 255);
-            track.style.alignItems = enabled ? Align.FlexEnd : Align.FlexStart;
-        }
-
-        UpdateSwitch(value);
-        toggle.RegisterValueChangedCallback(evt => UpdateSwitch(evt.newValue));
-        return toggle;
-    }
-
     private void BuildRunChoices(VisualElement runChoices)
     {
         runChoices.Clear();
@@ -728,7 +670,7 @@ internal sealed class PracticeRunChart : VisualElement
         for (int i = runPage * RunsPerPage; i < end; i++)
         {
             int index = i;
-            var runSwitch = CreatePillSwitch($"Run {runs[i].Number} ({runs[i].Run.lapTimes.Count} laps)", selected.Contains(i));
+            var runSwitch = SettingsFormStyle.PillSwitch($"Run {runs[i].Number} ({runs[i].Run.lapTimes.Count} laps)", selected.Contains(i));
             runSwitch.tooltip = $"Show or hide run {runs[i].Number} on the chart.";
             runSwitch.RegisterValueChangedCallback(evt =>
             {

@@ -131,7 +131,7 @@ internal static class GameColorPicker
                 customs.Add(customButtons[i]);
             }
             palettes.Add(customs);
-            addCustom = SettingsFormStyle.Button("Add to Custom Colors", SaveCustom);
+            addCustom = SettingsFormStyle.Button("Add", SaveCustom);
             addCustom.tooltip = "Save the new color in the highlighted custom slot. Saved colors remain available after restarting the game.";
             palettes.Add(addCustom); body.Add(palettes); dialog.Add(body);
             // Align with the editable box, rather than its label or reserved error area.

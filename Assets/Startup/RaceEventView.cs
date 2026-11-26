@@ -397,7 +397,7 @@ internal sealed class RaceEventView
             row.AddToClassList("schedule-race");
             row.EnableInClassList("schedule-race-completed", session.Completed);
         }
-        var selectedCar = Section(content, $"Chassis {car.chassisNumber} {car.manufacturer} {car.ChassisTypeName}", garagePanel: true);
+        var selectedCar = Section(content, $"Chassis {car.chassisNumber} {ManufacturerCatalog.Name(car.manufacturer)} {car.ChassisTypeName}", garagePanel: true);
         selectedCar.AddToClassList("event-selected-car");
         AddComponents(selectedCar, compactMetrics: true);
     }
@@ -981,7 +981,7 @@ internal sealed class RaceEventView
                 cells.Add(result.pointsEarned.ToString());
             }
             var car = ResultCar(result, roster);
-            var manufacturer = result.manufacturerRecorded ? result.manufacturer : car?.manufacturer ?? CarManufacturer.Chevrolet;
+            var manufacturer = result.manufacturerRecorded ? result.manufacturer : car?.manufacturer ?? ManufacturerCatalog.Chevrolet;
             string model = rules == null ? car?.modelResource : rules.ModelFor(manufacturer);
             if (car == null || car.manufacturer != manufacturer || car.modelResource != model)
             {

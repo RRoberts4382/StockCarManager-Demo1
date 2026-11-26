@@ -15,7 +15,7 @@ internal static class TeamCarCard
         card.Add(image);
         var title = AddLabel(card, $"Chassis {car.chassisNumber ?? "Unassigned"}", "team-home-heading");
         title.AddToClassList("car-card-title");
-        AddLabel(card, $"{car.manufacturer} · {car.ChassisTypeName}", "car-card-specs");
+        AddLabel(card, $"{ManufacturerCatalog.Name(car.manufacturer)} · {car.ChassisTypeName}", "car-card-specs");
 
         AddComponentRatings(card, car, useIcons: true);
 

@@ -7,7 +7,7 @@ using UnityEngine.UIElements;
 
 public sealed class StartupMenu : MonoBehaviour
 {
-    private CarManufacturer[] chassisManufacturers = System.Array.Empty<CarManufacturer>();
+    private int[] chassisManufacturers = System.Array.Empty<int>();
     private static readonly ChassisType[] NewChassisTypes =
         (ChassisType[])System.Enum.GetValues(typeof(ChassisType));
     private TeamCar selectedCarsChassis;
@@ -17,7 +17,7 @@ public sealed class StartupMenu : MonoBehaviour
     private int usedCarSort;
     private static readonly string[] UsedCarSortLabels =
         { "Price: Low to High", "Price: High to Low", "Condition: Best First", "Condition: Worst First" };
-    private CarManufacturer? usedManufacturerFilter;
+    private int? usedManufacturerFilter;
     private ChassisType? usedTypeFilter;
     private long? usedMaxPriceFilter;
     private const string TrackCameraAnglePreference = "StockCarManager.TrackCameraAngle";
@@ -515,7 +515,7 @@ public sealed class StartupMenu : MonoBehaviour
         garageScreen.Q<Button>("cancelSkipRaceButton").clicked += CloseSkipRacePrompt;
         garageScreen.Q<Button>("confirmSkipRaceButton").clicked += ConfirmSkipRace;
 
-        settings = new GameSettings(root, ApplyDisplaySettings, CloseSettings, SaveTeamColors, OpenRivalSettings);
+        settings = new GameSettings(root, ApplyDisplaySettings, CloseSettings, SaveTeamSettings);
         settings.CarLodChanged += level =>
         {
             if (trackPreview != null && trackPreview.SupportsCarDetail && trackPreview.SetCarDetail(level - 1))
@@ -537,9 +537,7 @@ public sealed class StartupMenu : MonoBehaviour
         AddGarageStyles(raceEventView.Screen);
         raceEventView.Screen.style.display = DisplayStyle.None;
         root.Add(raceEventView.Screen);
-        var garageSettings = garageScreen.Q<Button>("garageSettingsButton");
         BindStartupSettings(root);
-        garageSettings.clicked += () => OpenSettings(garageScreen, garageSettings);
         settings.RestorePalette();
         ApplyDisplaySettings();
     }
@@ -559,7 +557,7 @@ public sealed class StartupMenu : MonoBehaviour
         if (tooltipStyles != null)
             screen.styleSheets.Add(tooltipStyles);
         SettingsFormStyle.AddHoverTooltips(screen);
-        DrawButtonIcon(screen.Q<Button>("garageSettingsButton"), DrawSettingsSlidersIcon);
+
         DrawButtonIcon(screen.Q<Button>("backButton"), DrawStartupHomeIcon);
         DrawButtonIcon(screen.Q<Button>("garageQuitButton"), DrawLeaveSessionIcon);
     }
@@ -647,25 +645,55 @@ public sealed class StartupMenu : MonoBehaviour
         {
             menu.style.display = DisplayStyle.None;
             titleScreen.style.display = DisplayStyle.Flex;
+            RefreshLoadCareerButton();
             startupButton.Focus();
         }));
         frame.Add(footer);
         root.Add(menu);
 
+        var settingsPages = new System.Collections.Generic.List<VisualElement>();
         var seriesButton = SettingsFormStyle.Button("Series Settings", null);
         var carTypeButton = SettingsFormStyle.Button("Car Type Settings", null);
-        var gameButton = SettingsFormStyle.Button("Game Settings", null);
-        var series = new SeriesSettings(() => ShowMenu(seriesButton));
+
+        var series = new SeriesSettings(catalog, () => ShowMenu(seriesButton));
         var cars = new CarTypeSettings(() => ShowMenu(carTypeButton));
 
         AddPage(seriesButton, series.Screen, series.Open);
         AddPage(carTypeButton, cars.Screen, cars.Open);
-        gameButton.clicked += () => OpenSettings(menu, gameButton);
-        options.Add(gameButton);
+        var manufacturerButton = SettingsFormStyle.Button("Manufacturer Settings", null);
+        manufacturerButton.tooltip = "Add, rename, or delete manufacturers and import their logos.";
+        var manufacturers = new ManufacturerSettings(() => ShowMenu(manufacturerButton));
+        AddPage(manufacturerButton, manufacturers.Screen, manufacturers.Open);
+        var trackButton = SettingsFormStyle.Button("Track Settings", null);
+        trackButton.tooltip = "Edit track names, logos, and attributes.";
+        var tracks = new TrackNameSettings(catalog, () => ShowMenu(trackButton));
+        AddPage(trackButton, tracks.Screen, tracks.Open);
+        AddSettingsGroup("Display", "Adjust the window, screen size, car detail, and anti-aliasing.", GameSettings.SettingsTab.Display);
+        AddSettingsGroup("Simulation", "Choose simulation models, the pace vehicle, and practice conditions.", GameSettings.SettingsTab.Simulation);
+        AddSettingsGroup("Color Scheme", "Customize the game's interface colors.", GameSettings.SettingsTab.ColorScheme);
+        var team = SettingsFormStyle.Button("Team", null);
+        team.tooltip = "Choose a saved career and edit its team name, manufacturer, supplier, and colors.";
+        team.clicked += () => OpenTeamSettingsPicker(menu, team);
+        options.Add(team);
+        var rivals = SettingsFormStyle.Button("Rivals", null);
+        rivals.tooltip = "Edit the shared rival roster for each racing series.";
+        rivals.clicked += () => RivalRosterSettings.Open(menu, rivals, PlayerNumbersForSeries);
+        options.Add(rivals);
+
+        void AddSettingsGroup(string label, string tooltip, GameSettings.SettingsTab tab)
+        {
+            var button = SettingsFormStyle.Button(label, null);
+            button.tooltip = tooltip;
+            button.clicked += () => OpenSettings(menu, button, tab);
+            options.Add(button);
+        }
+
         startupButton.clicked += () => ShowMenu(seriesButton);
 
         void ShowMenu(Button focus)
         {
+            foreach (var page in settingsPages)
+                page.style.display = DisplayStyle.None;
             titleScreen.style.display = DisplayStyle.None;
             menu.style.display = DisplayStyle.Flex;
             focus.Focus();
@@ -674,6 +702,7 @@ public sealed class StartupMenu : MonoBehaviour
         void AddPage(Button button, VisualElement screen, System.Action open)
         {
             options.Add(button);
+            settingsPages.Add(screen);
             screen.style.display = DisplayStyle.None;
             root.Add(screen);
             button.clicked += () =>
@@ -828,19 +857,92 @@ public sealed class StartupMenu : MonoBehaviour
         displayChange = StartCoroutine(settings.ApplyDisplay());
     }
 
-    private void OpenSettings(VisualElement screen, Button source)
+    private void OpenTeamSettingsPicker(VisualElement menu, Button source)
+    {
+        var overlay = new VisualElement();
+        overlay.AddToClassList("settings-confirmation-overlay");
+        var dialog = CareerSetup.CreateDialog(overlay, "Choose a Career");
+        dialog.style.width = 470;
+        var list = new ScrollView { verticalScrollerVisibility = ScrollerVisibility.Hidden };
+        list.style.maxHeight = 300;
+        dialog.Add(list);
+        var status = SettingsFormStyle.Label("", "settings-validation-summary");
+        status.style.minHeight = 26;
+        dialog.Add(status);
+        var actions = new VisualElement();
+        actions.AddToClassList("settings-row");
+        actions.AddToClassList("settings-confirmation-actions");
+        actions.style.borderTopColor = (Color)new Color32(0, 155, 221, 255);
+        actions.style.borderTopWidth = 1;
+        var cancel = SettingsFormStyle.Button("Cancel", Close);
+        cancel.tooltip = "Return to Settings without choosing a career.";
+        actions.Add(cancel);
+        dialog.Add(actions);
+        overlay.RegisterCallback<KeyDownEvent>(evt =>
+        {
+            if (evt.keyCode != KeyCode.Escape) return;
+            Close();
+            evt.StopPropagation();
+        }, TrickleDown.TrickleDown);
+        menu.SetEnabled(false);
+        menu.parent.Add(overlay);
+
+        try
+        {
+            var entries = careerSetup.ReadSavedCareers();
+            if (entries.Count == 0)
+                list.Add(SettingsFormStyle.Label("No saved careers. Start a career to edit its team.", "settings-note"));
+            foreach (var entry in entries)
+            {
+                string season = entry.SeasonYear > 0 ? $"{entry.SeasonYear} " : "";
+                var button = SettingsFormStyle.Button($"{entry.teamName} - {season}{entry.seriesName}", () =>
+                {
+                    try
+                    {
+                        var career = careerSetup.LoadSavedCareer(entry);
+                        if (career.cars[0] == null)
+                            throw new IOException("The saved career has no player car.");
+                        Close();
+                        OpenSettings(menu, source, GameSettings.SettingsTab.TeamColors, career);
+                    }
+                    catch (System.Exception ex) when (SeriesSettingsStore.IsSettingsError(ex))
+                    {
+                        SettingsFormStyle.SetValidationMessage(status, "Could not open team settings. " + ex.Message, true);
+                    }
+                });
+                button.tooltip = $"Edit {entry.teamName}. Last saved {entry.LastSaved.ToLocalTime():g}.";
+                list.Add(button);
+            }
+        }
+        catch (System.Exception ex) when (SeriesSettingsStore.IsSettingsError(ex))
+        {
+            SettingsFormStyle.SetValidationMessage(status, "Could not list saved careers. " + ex.Message, true);
+        }
+        (list.Q<Button>() ?? cancel).Focus();
+
+        void Close()
+        {
+            overlay.RemoveFromHierarchy();
+            menu.SetEnabled(true);
+            source.Focus();
+        }
+    }
+
+    private void OpenSettings(VisualElement screen, Button source, GameSettings.SettingsTab tab, Career career = null)
     {
         settingsReturnScreen = screen;
         settingsReturnButton = source;
         screen.style.display = DisplayStyle.None;
         settings.ScreenView.style.display = DisplayStyle.Flex;
-        settings.Open(screen == garageScreen ? activeCareer : null);
+        settings.Open(career, tab);
     }
 
-    private string SaveTeamColors(string primary, string secondary, string teamName, CarManufacturer manufacturer, EngineSupplier supplier)
+    private string SaveTeamSettings(Career career, string primary, string secondary, string teamName,
+        int manufacturer, EngineSupplier supplier, string logo)
     {
-        var career = activeCareer;
         string previousTeamName = career.teamName;
+        string previousLogo = career.teamLogo;
+        career.teamLogo = logo;
         var previousSupplier = career.engineSupplier;
         var previousManufacturers = career.cars.Select(car => car.manufacturer).ToArray();
         career.teamName = teamName;
@@ -857,6 +959,7 @@ public sealed class StartupMenu : MonoBehaviour
         catch (System.Exception ex) when (ex is IOException || ex is System.UnauthorizedAccessException)
         {
             career.teamName = previousTeamName;
+            career.teamLogo = previousLogo;
             career.engineSupplier = previousSupplier;
             for (int i = 0; i < career.cars.Count; i++) career.cars[i].manufacturer = previousManufacturers[i];
             career.primaryTeamColor = previousPrimary;
@@ -864,40 +967,17 @@ public sealed class StartupMenu : MonoBehaviour
             return "Could not save team settings. " + ex.Message;
         }
 
-        ApplyCareerCarModels(career);
-        var page = garagePages.FirstOrDefault(view => view.style.display == DisplayStyle.Flex);
-        if (page != null)
-            UpdateGarageBackground(page.name);
-        RefreshTeamHeader();
-        RefreshTeamCars();
-        RefreshDriverLabel(career);
-        DisplayEmployees(career);
         return null;
-    }
-
-    private void OpenRivalSettings(Button source)
-    {
-        RivalRosterSettings.Open(settings.ScreenView, source, PlayerNumbersForSeries, series =>
-        {
-            if (settingsReturnScreen != garageScreen || activeCareer == null || activeCareer.SeriesRules.id != series.id)
-                return;
-
-            RivalRosterStore.ApplyToCareer(activeCareer);
-            RefreshHomeDashboard();
-            DisplayTeamStandings(activeCareer.schedule);
-        });
     }
 
     private IEnumerable<int> PlayerNumbersForSeries(RacingSeries series)
     {
-        var savedNumbers = careerSetup.ReadSavedCareers()
+        return careerSetup.ReadSavedCareers()
             .Where(career => RacingSeries.CanonicalId(career.seriesId) == series.id)
             .SelectMany(career => career.cars ?? System.Array.Empty<TeamCar>())
             .Where(car => car != null)
             .Select(car => car.number);
-        return settingsReturnScreen == garageScreen && activeCareer?.SeriesRules.id == series.id
-            ? savedNumbers.Concat(activeCareer.cars.Select(car => car.number))
-            : savedNumbers;
+
     }
 
     private void CloseSettings()
@@ -2023,7 +2103,7 @@ public sealed class StartupMenu : MonoBehaviour
         var eventCar = EventGarageCar(race);
         var roster = TrackPreview.CreateTimingEntries(eventCar ?? activeCareer.cars[0], activeCareer);
         string chassisInfo = race.playerSkipped ? "Team did not participate" : eventCar != null
-            ? $"Chassis {eventCar.chassisNumber} - {eventCar.manufacturer} - {eventCar.ChassisTypeName}"
+            ? $"Chassis {eventCar.chassisNumber} - {ManufacturerCatalog.Name(eventCar.manufacturer)} - {eventCar.ChassisTypeName}"
             : !string.IsNullOrWhiteSpace(race.carChassisNumber)
                 ? $"Chassis {race.carChassisNumber} - Car details unavailable"
                 : "Event chassis not recorded";
@@ -2495,6 +2575,15 @@ public sealed class StartupMenu : MonoBehaviour
         }
         if (career.schedule.races != null)
         {
+            foreach (var race in career.schedule.races)
+            {
+                if (race == null) continue;
+                var trackName = catalog.Find(race.trackId)?.Definition.name;
+                if (trackName == null || race.trackName == trackName) continue;
+                race.trackName = trackName;
+                careerChanged = true;
+            }
+
             bool noStages = !career.SeriesRules.usesStages;
             foreach (var race in career.schedule.races.Where(race => !race.completed && race.noStages != noStages))
             {
@@ -3672,6 +3761,12 @@ public sealed class StartupMenu : MonoBehaviour
         RefreshEmployeeFooterBadge(activeCareer);
         RefreshMailFooterBadge();
         garageScreen.Q<Label>("teamHeaderName").text = activeCareer.teamName;
+        var teamLogo = garageScreen.Q<Image>("teamHeaderLogo");
+        teamLogo.scaleMode = ScaleMode.ScaleToFit;
+        teamLogo.image = SeriesSettingsStore.LoadArtwork(activeCareer.teamLogo);
+        teamLogo.style.display = teamLogo.image == null ? DisplayStyle.None : DisplayStyle.Flex;
+        garageScreen.Q("teamHeaderLogoPlaceholder").style.display =
+            teamLogo.image == null ? DisplayStyle.Flex : DisplayStyle.None;
         garageScreen.Q<Label>("teamHeaderSeriesTitle").text = careerSetup.SeriesName(activeCareer);
         var logo = garageScreen.Q<Image>("teamHeaderSeriesLogo");
         logo.scaleMode = ScaleMode.ScaleToFit;
@@ -4466,8 +4561,8 @@ public sealed class StartupMenu : MonoBehaviour
         var image = new Image { image = largeCarPreviews.Get(newChassisDraft, System.Array.Empty<string>(),
             cacheScope: "new-chassis-purchase", transparentBackground: true), scaleMode = ScaleMode.ScaleToFit };
         image.AddToClassList("new-chassis-preview"); preview.Add(image);
-        var manufacturer = SettingsFormStyle.Button(newManufacturerSelected ? newChassisDraft.manufacturer.ToString() : "Select manufacturer", () =>
-            OpenNewChassisChoice("Choose Manufacturer", chassisManufacturers.Select(x => x.ToString()).ToArray(), index =>
+        var manufacturer = SettingsFormStyle.Button(newManufacturerSelected ? ManufacturerCatalog.Name(newChassisDraft.manufacturer) : "Select manufacturer", () =>
+            OpenNewChassisChoice("Choose Manufacturer", chassisManufacturers.Select(ManufacturerCatalog.Name).ToArray(), index =>
             { newChassisDraft.manufacturer = chassisManufacturers[index]; newManufacturerSelected = true; SaveNewChassisConfiguration(); RefreshNewChassisPanel(); }));
         manufacturer.tooltip = "Choose a manufacturer available in your series."; preview.Add(manufacturer);
         var type = SettingsFormStyle.Button(newChassisTypeSelected ? newChassisDraft.ChassisTypeName : "Select Chassis Type", () =>
@@ -4616,8 +4711,7 @@ public sealed class StartupMenu : MonoBehaviour
     private void RestoreUsedCarFilters()
     {
         usedCarSort = Mathf.Clamp(activeCareer.usedCarSortOrder, 0, UsedCarSortLabels.Length - 1);
-        usedManufacturerFilter = System.Enum.TryParse<CarManufacturer>(activeCareer.usedCarManufacturerFilter, out var manufacturer) &&
-            System.Enum.IsDefined(typeof(CarManufacturer), manufacturer) ? manufacturer : (CarManufacturer?)null;
+        usedManufacturerFilter = ManufacturerCatalog.ParseSavedFilter(activeCareer.usedCarManufacturerFilter);
         usedTypeFilter = System.Enum.TryParse<ChassisType>(activeCareer.usedCarTypeFilter, out var type) &&
             System.Enum.IsDefined(typeof(ChassisType), type) ? type : (ChassisType?)null;
         usedMaxPriceFilter = long.TryParse(activeCareer.usedCarMaxPriceFilter, NumberStyles.Integer, CultureInfo.InvariantCulture, out var price) && price >= 0
@@ -4683,11 +4777,11 @@ public sealed class StartupMenu : MonoBehaviour
         }
         void UpdateLabels()
         {
-            manufacturerButton.text = manufacturer?.ToString() ?? "All manufacturers";
+            manufacturerButton.text = manufacturer.HasValue ? ManufacturerCatalog.Name(manufacturer.Value) : "All manufacturers";
             typeButton.text = type.HasValue ? TeamCar.DisplayChassisType(type.Value) : "All car types";
         }
-        manufacturerButton.clicked += () => Choose("Manufacturer", new[] { "All manufacturers" }.Concat(chassisManufacturers.Select(x => x.ToString())).ToArray(), index =>
-        { manufacturer = index == 0 ? (CarManufacturer?)null : chassisManufacturers[index - 1]; UpdateLabels(); });
+        manufacturerButton.clicked += () => Choose("Manufacturer", new[] { "All manufacturers" }.Concat(chassisManufacturers.Select(ManufacturerCatalog.Name)).ToArray(), index =>
+        { manufacturer = index == 0 ? (int?)null : chassisManufacturers[index - 1]; UpdateLabels(); });
         typeButton.clicked += () => Choose("Car type", new[] { "All car types" }.Concat(NewChassisTypes.Select(TeamCar.DisplayChassisType)).ToArray(), index =>
         { type = index == 0 ? (ChassisType?)null : NewChassisTypes[index - 1]; UpdateLabels(); });
         var actions = new VisualElement(); actions.AddToClassList("settings-footer");
@@ -4762,7 +4856,7 @@ public sealed class StartupMenu : MonoBehaviour
         garageScreen.Q<Button>("usedCarSortButton").text = UsedCarSortLabels[usedCarSort];
         garageScreen.Q<Label>("carPurchaseBudget").text = "Budget: " + RaceFinances.Dollars(career.teamBalance);
         var descriptions = new List<string>();
-        if (usedManufacturerFilter.HasValue) descriptions.Add(usedManufacturerFilter.Value.ToString());
+        if (usedManufacturerFilter.HasValue) descriptions.Add(ManufacturerCatalog.Name(usedManufacturerFilter.Value));
         if (usedTypeFilter.HasValue) descriptions.Add(TeamCar.DisplayChassisType(usedTypeFilter.Value));
         if (usedMaxPriceFilter.HasValue) descriptions.Add("Up to " + RaceFinances.Dollars(usedMaxPriceFilter.Value));
         garageScreen.Q<Label>("usedCarFilterSummary").text = descriptions.Count == 0 ? "All chassis" : string.Join(" | ", descriptions);
@@ -4781,7 +4875,7 @@ public sealed class StartupMenu : MonoBehaviour
                 scaleMode = ScaleMode.ScaleToFit, pickingMode = PickingMode.Ignore
             };
             image.AddToClassList("used-chassis-image"); identity.Add(image);
-            identity.Add(SettingsFormStyle.Label($"{car.manufacturer} - {car.ChassisTypeName}", "used-chassis-specs"));
+            identity.Add(SettingsFormStyle.Label($"{ManufacturerCatalog.Name(car.manufacturer)} - {car.ChassisTypeName}", "used-chassis-specs"));
             var buy = SettingsFormStyle.Button("Buy " + RaceFinances.Dollars(listing.price),
                 () => ConfirmCarPurchase(listing.car, listing.price, listing));
             buy.AddToClassList("car-purchase-buy-button");
@@ -5161,12 +5255,15 @@ public sealed class StartupMenu : MonoBehaviour
         ComponentWearGradient.Apply(bar, value, vertical: true);
         well.Add(bar);
         column.Add(well);
-        var icon = component.HasValue ? ShopComponentPanel.ComponentIcon(component.Value) : TrackIndicatorIcon(tireWear: true);
+        var icon = TrackAttributeIcon(component);
         icon.tooltip = help;
         icon.AddToClassList("track-attribute-icon");
         column.Add(icon);
         chart.Add(column);
     }
+
+    internal static VisualElement TrackAttributeIcon(CarComponent? component) =>
+        component.HasValue ? ShopComponentPanel.ComponentIcon(component.Value) : TrackIndicatorIcon(tireWear: true);
 
     private static VisualElement TrackIndicatorIcon(bool tireWear)
     {

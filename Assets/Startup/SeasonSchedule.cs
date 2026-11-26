@@ -4,12 +4,23 @@ using System.Globalization;
 using System.Linq;
 
 [Serializable]
+internal sealed class SeriesCalendarRace
+{
+    public string date;
+    public int trackId;
+    public int laps;
+    public string startTime;
+}
+
+[Serializable]
 internal sealed class ScheduledRace
 {
     public string date;
     public int trackId;
     public string trackName;
     public int laps;
+    public bool calendarLapCount;
+    public string raceStartTime;
     public bool noStages;
     public int stageCount;
     public int[] stageLaps;
@@ -88,7 +99,8 @@ internal sealed class ScheduledRace
         get
         {
             var raceSession = sessions?.Find(session => session.kind == RaceSessionKind.Race);
-            return raceSession?.Completed == true ? raceSession.laps : RaceSession.TestRaceLaps;
+            if (raceSession?.Completed == true) return raceSession.laps;
+            return calendarLapCount ? Math.Max(1, laps) : RaceSession.TestRaceLaps;
         }
     }
 }
@@ -108,17 +120,32 @@ internal sealed class SeasonSchedule
     public long sponsorSigningIncome;
     public List<ScheduledRace> races = new List<ScheduledRace>();
 
+    internal static bool TryScheduleDate(string value, int year, out DateTime date) =>
+        DateTime.TryParseExact($"{year:D4}/{value?.Trim()}", "yyyy/MM/dd",
+            CultureInfo.InvariantCulture, DateTimeStyles.None, out date);
+
+    private static DateTime FirstSunday(DateTime date) =>
+        date.AddDays(((int)DayOfWeek.Sunday - (int)date.DayOfWeek + 7) % 7);
+
     public static SeasonSchedule Generate(int year, IEnumerable<TrackDefinition> tracks, Random random,
-        float maximumTrackLengthMiles = 0f, bool usesStages = true, int[] defaultStagePercentages = null)
+        float maximumTrackLengthMiles = 0f, bool usesStages = true, int[] defaultStagePercentages = null,
+        string startDate = null, string endDate = null)
     {
         const int minimumEvents = 36;
         var schedule = new SeasonSchedule { season = year };
-        var date = new DateTime(year, 2, 1);
-        date = date.AddDays(7 + ((int)DayOfWeek.Sunday - (int)date.DayOfWeek + 7) % 7);
+        var date = FirstSunday(new DateTime(year, 2, 1)).AddDays(7);
+        int? sundayCount = null;
+        if (TryScheduleDate(startDate, year, out var start) && TryScheduleDate(endDate, year, out var end))
+        {
+            date = FirstSunday(start);
+            sundayCount = date <= end ? 1 + (end - date).Days / 7 : 0;
+        }
 
         var rotation = tracks.Where(track => maximumTrackLengthMiles <= 0f || track.lengthMiles <= maximumTrackLengthMiles)
             .GroupBy(track => track.id).Select(group => group.First()).ToArray();
         int eventsPerSeason = Math.Max(minimumEvents, rotation.Length);
+        if (sundayCount.HasValue)
+            eventsPerSeason = Math.Min(eventsPerSeason, sundayCount.Value);
         while (schedule.races.Count < eventsPerSeason && rotation.Length > 0)
         {
             for (int i = rotation.Length - 1; i > 0; i--)
@@ -128,26 +155,50 @@ internal sealed class SeasonSchedule
             }
             foreach (var track in rotation.Take(eventsPerSeason - schedule.races.Count))
             {
-                var race = new ScheduledRace
-                {
-                    date = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-                    trackId = track.id,
-                    trackName = track.name,
-                    laps = track.raceLaps,
-                    noStages = !usesStages,
-                    stageCount = track.raceStageLaps?.Length ?? 0,
-                    stageLaps = (int[])track.raceStageLaps?.Clone(),
-                    purse = RaceFinances.PurseForTrack(track.lengthMiles),
-                    sessions = RaceSession.Create(random.Next(1, 3), track.NumberOfQualifyingLaps)
-                };
-                foreach (var session in race.sessions)
-                    SessionWeatherForecast.Ensure(session, track, race);
-                race.EnsureStages(defaultStagePercentages);
-                schedule.races.Add(race);
-                date = date.AddDays(7);
+                schedule.races.Add(CreateRace(date, track, random, usesStages, defaultStagePercentages));
+                if (schedule.races.Count < eventsPerSeason)
+                    date = date.AddDays(7);
             }
         }
         return schedule;
+    }
+
+    internal static SeasonSchedule GenerateCalendar(int year, RacingSeries series, Func<int, TrackDefinition> findTrack, Random random)
+    {
+        var schedule = new SeasonSchedule { season = year };
+        foreach (var entry in series.calendarRaces.OrderBy(race => race.date, StringComparer.Ordinal))
+        {
+            var track = findTrack(entry.trackId);
+            if (track == null || !TryScheduleDate(entry.date, year, out var date))
+                continue;
+            schedule.races.Add(CreateRace(date, track, random, series.usesStages, series.stagePercentages, entry.laps, entry.startTime));
+        }
+        return schedule;
+    }
+
+    private static ScheduledRace CreateRace(DateTime date, TrackDefinition track, Random random,
+        bool usesStages, int[] stagePercentages, int? calendarLaps = null, string startTime = null)
+    {
+        var race = new ScheduledRace
+        {
+            date = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            trackId = track.id,
+            trackName = track.name,
+            laps = calendarLaps ?? track.raceLaps,
+            calendarLapCount = calendarLaps.HasValue,
+            raceStartTime = startTime,
+            noStages = !usesStages,
+            stageCount = calendarLaps.HasValue ? 0 : track.raceStageLaps?.Length ?? 0,
+            stageLaps = calendarLaps.HasValue ? null : (int[])track.raceStageLaps?.Clone(),
+            purse = RaceFinances.PurseForTrack(track.lengthMiles),
+            sessions = RaceSession.Create(random.Next(1, 3), track.NumberOfQualifyingLaps)
+        };
+        if (calendarLaps.HasValue)
+            race.sessions.Find(session => session.kind == RaceSessionKind.Race).laps = race.laps;
+        foreach (var session in race.sessions)
+            SessionWeatherForecast.Ensure(session, track, race);
+        race.EnsureStages(stagePercentages);
+        return race;
     }
 }
 
@@ -198,7 +249,7 @@ internal static class ChampionshipStandings
         return changed;
     }
 
-    internal static Tables Calculate(SeasonSchedule schedule, SessionCarResult[] roster, IEnumerable<CarManufacturer> manufacturers)
+    internal static Tables Calculate(SeasonSchedule schedule, SessionCarResult[] roster, IEnumerable<int> manufacturers)
     {
         var drivers = new Dictionary<string, Row>(StringComparer.Ordinal);
         var owners = new Dictionary<string, Row>(StringComparer.Ordinal);
@@ -217,19 +268,19 @@ internal static class ChampionshipStandings
             if (!table.TryGetValue(key, out var row)) table[key] = row = new Row { key = key };
             row.name = name; row.number = number; row.numberText = numberText; row.player |= player; return row;
         }
-        foreach (var manufacturer in manufacturers) Ensure(makers, manufacturer.ToString(), manufacturer.ToString(), 0, false);
+        foreach (var manufacturer in manufacturers) Ensure(makers, manufacturer.ToString(), ManufacturerCatalog.Name(manufacturer), 0, false);
         foreach (var entry in roster)
         {
             Ensure(drivers, DriverKey(entry), entry.driverName, entry.carNumber, entry.playerEntry, entry.DisplayCarNumber);
             Ensure(owners, OwnerKey(entry), entry.teamName, entry.carNumber, entry.playerEntry, entry.DisplayCarNumber);
-            Ensure(makers, entry.manufacturer.ToString(), entry.manufacturer.ToString(), 0, entry.playerEntry);
+            Ensure(makers, entry.manufacturer.ToString(), ManufacturerCatalog.Name(entry.manufacturer), 0, entry.playerEntry);
         }
         foreach (var race in schedule.races ?? Enumerable.Empty<ScheduledRace>())
         {
             if (!race.completed) continue;
             var results = race.sessions?.Find(session => session.kind == RaceSessionKind.Race)?.results;
             if (results == null) continue;
-            var highest = new Dictionary<CarManufacturer, SessionCarResult>();
+            var highest = new Dictionary<int, SessionCarResult>();
             foreach (var result in results)
             {
                 // Results from older saves lack identity and manufacturer snapshots.
@@ -253,7 +304,7 @@ internal static class ChampionshipStandings
                 if (result.position > 0 && result.position <= 10) driverRow.top10++;
                 if (!result.manufacturerRecorded && current == null) continue;
                 var manufacturer = result.manufacturerRecorded ? result.manufacturer : current.manufacturer;
-                Ensure(makers, manufacturer.ToString(), manufacturer.ToString(), 0, false);
+                Ensure(makers, manufacturer.ToString(), ManufacturerCatalog.Name(manufacturer), 0, false);
                 if (result.position > 0 && (!highest.TryGetValue(manufacturer, out var best) || result.position < best.position)) highest[manufacturer] = result;
             }
             foreach (var pair in highest)

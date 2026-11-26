@@ -61,7 +61,7 @@ internal static class RivalDriverEditor
         body.Add(info);
         var number = SettingsFormStyle.StyleField(new TextField { value = savedNumber });
         var name = SettingsFormStyle.StyleField(new TextField { value = driver.FullName });
-        var manufacturer = SettingsFormStyle.Button(make.ToString(), () => pickMake());
+        var manufacturer = SettingsFormStyle.Button(ManufacturerCatalog.Name(make), () => pickMake());
         manufacturer.tooltip = "Choose the manufacturer for this rival's car.";
         var makeField = new VisualElement();
         makeField.AddToClassList("settings-field");
@@ -222,15 +222,15 @@ internal static class RivalDriverEditor
             var dialog = OpenDialog("Choose a manufacturer", out var dismiss);
             foreach (var choice in choices)
             {
-                var row = SettingsFormStyle.Button(choice.ToString(), () =>
+                var row = SettingsFormStyle.Button(ManufacturerCatalog.Name(choice), () =>
                 {
                     make = choice;
-                    manufacturer.text = make.ToString();
+                    manufacturer.text = ManufacturerCatalog.Name(make);
                     dismiss();
                     RefreshValidation();
                 });
                 row.AddToClassList("rival-manufacturer-choice");
-                row.tooltip = "Select " + choice + " for this rival's car.";
+                row.tooltip = "Select " + ManufacturerCatalog.Name(choice) + " for this rival's car.";
                 dialog.Add(row);
             }
             var actions = DialogFooter(dialog);
@@ -306,7 +306,7 @@ internal static class RivalDriverEditor
             var discard = SettingsFormStyle.Button("Discard and Go Back", Close);
             discard.tooltip = "Return to Driver Points and discard unsaved changes.";
             actions.Add(discard);
-            var saveBack = SettingsFormStyle.Button("Save and Go Back", () =>
+            var saveBack = SettingsFormStyle.Button("Save", () =>
             {
                 if (Save())
                     Close();

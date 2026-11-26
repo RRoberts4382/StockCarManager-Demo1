@@ -53,6 +53,11 @@ internal abstract class DefinitionSettings<T> where T : class
     private Entry Selected => selector.index >= 0 && selector.index < entries.Length ? entries[selector.index] : null;
 
     protected DefinitionSettings(string title, string name, Action back, params string[] tabNames)
+        : this(title, name, back, false, tabNames)
+    {
+    }
+
+    protected DefinitionSettings(string title, string name, Action back, bool selectorInTabRow, params string[] tabNames)
     {
         this.back = back;
         SettingsFormStyle.Apply(Screen);
@@ -65,10 +70,20 @@ internal abstract class DefinitionSettings<T> where T : class
         header.Add(heading);
         selector = SettingsFormStyle.Field(new DropdownField(name), "", _ => Render(true));
         selector.AddToClassList("settings-series-selector");
-        header.Add(selector);
+        if (!selectorInTabRow)
+            header.Add(selector);
         frame.Add(header);
         var navigation = new VisualElement();
         navigation.AddToClassList("settings-tabs");
+        if (selectorInTabRow)
+        {
+            navigation.style.alignItems = Align.FlexEnd;
+            selector.style.flexGrow = 0;
+            navigation.Add(selector);
+            var spacer = new VisualElement();
+            spacer.style.flexGrow = 1;
+            navigation.Add(spacer);
+        }
         tabs = tabNames.Select((label, index) => SettingsFormStyle.Tab(label, () =>
         {
             activeTab = index;
@@ -90,7 +105,8 @@ internal abstract class DefinitionSettings<T> where T : class
             drafts.Remove(Selected.Id);
             Render(false, "Reverted unsaved changes.");
         });
-        save = SettingsFormStyle.Button("Save " + name, SaveCurrent, primary: true);
+        save = SettingsFormStyle.Button("Save", SaveCurrent, primary: true);
+        save.tooltip = $"Save changes to the selected {name.ToLowerInvariant()}.";
         footer.Add(backButton);
         footer.Add(revert);
         footer.Add(save);
@@ -108,7 +124,8 @@ internal abstract class DefinitionSettings<T> where T : class
         var actions = Row(dialog);
         actions.AddToClassList("settings-confirmation-actions");
         keepEditing = SettingsFormStyle.Button("Keep Editing", CancelBack);
-        saveBack = SettingsFormStyle.Button("Save and Go Back", SaveAll, primary: true);
+        saveBack = SettingsFormStyle.Button("Save", SaveAll, primary: true);
+        saveBack.tooltip = "Save all edited entries and return to the previous screen.";
         actions.Add(keepEditing);
         actions.Add(SettingsFormStyle.Button("Discard and Go Back", FinishBack));
         actions.Add(saveBack);
@@ -122,9 +139,10 @@ internal abstract class DefinitionSettings<T> where T : class
         Screen.Add(warning);
     }
 
-    public void Open()
+    public void Open() => OpenEntry(Selected?.Id);
+
+    protected void OpenEntry(string previous)
     {
-        string previous = Selected?.Id;
         entries = LoadEntries().ToArray();
         selector.choices = entries.Select(SelectorLabel).ToList();
         int selected = Array.FindIndex(entries, entry => entry.Id == previous);
@@ -134,6 +152,13 @@ internal abstract class DefinitionSettings<T> where T : class
         Render(true);
         selector.Focus();
     }
+
+    protected void AddFooterAction(Button button) =>
+        backButton.parent.Insert(backButton.parent.IndexOf(backButton), button);
+
+    protected void SetFormEnabled(bool enabled) => frame.SetEnabled(enabled);
+
+    protected void DiscardDraft(string id) => drafts.Remove(id);
 
     private string SelectorLabel(Entry entry) =>
         entries.Count(item => item.Name == entry.Name) > 1 ? $"{entry.Name} ({entry.Id})" : entry.Name;
@@ -315,9 +340,12 @@ internal abstract class DefinitionSettings<T> where T : class
     {
         var group = new VisualElement();
         group.AddToClassList("settings-group");
-        var heading = SettingsFormStyle.Label(name, "settings-group-heading");
-        heading.AddToClassList("google-sans-semibold");
-        group.Add(heading);
+        if (!string.IsNullOrEmpty(name))
+        {
+            var heading = SettingsFormStyle.Label(name, "settings-group-heading");
+            heading.AddToClassList("google-sans-semibold");
+            group.Add(heading);
+        }
         body.Add(group);
         return group;
     }
@@ -378,7 +406,7 @@ internal abstract class DefinitionSettings<T> where T : class
 
     protected void Toggle(VisualElement parent, string label, bool value, Action<bool> set, bool redraw = false)
     {
-        parent.Add(SettingsFormStyle.Field(new Toggle(label), value, enabled =>
+        parent.Add(SettingsFormStyle.Field(SettingsFormStyle.PillSwitch(label, labelAbove: true), value, enabled =>
         {
             set(enabled);
             Changed();

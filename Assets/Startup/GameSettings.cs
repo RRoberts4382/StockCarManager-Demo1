@@ -8,7 +8,7 @@ using UnityEngine.UIElements;
 
 internal sealed class GameSettings
 {
-    private enum SettingsTab { Display, Simulation, TeamColors, ColorScheme }
+    internal enum SettingsTab { Display, Simulation, TeamColors, ColorScheme }
 
     private const string Key = "StockCarManager.Settings.";
     // Keep the original preference key so existing choices carry over.
@@ -44,18 +44,17 @@ internal sealed class GameSettings
     private readonly Dictionary<SettingsTab, (Button Button, VisualElement Page)> tabs = new();
     private readonly Button revertButton;
     private readonly Button saveButton;
-    private SettingsTab activeTab;
     private readonly Action applyDisplay;
-    private readonly Func<string, string, string, CarManufacturer, EngineSupplier, string> saveTeamColors;
+    private readonly Func<Career, string, string, string, int, EngineSupplier, string, string> saveTeamSettings;
     private readonly VisualElement teamColors = new VisualElement();
     private Career teamCareer;
     private readonly TextField teamName = new TextField("Team name") { maxLength = 25 };
     private Button teamManufacturer;
     private Button teamSupplier;
-    private CarManufacturer draftManufacturer;
+    private int draftManufacturer;
     private EngineSupplier draftSupplier;
     private string savedTeamName;
-    private CarManufacturer savedManufacturer;
+    private int savedManufacturer;
     private EngineSupplier savedSupplier;
     private Action<string> teamNameError;
     private bool showTeamErrors;
@@ -64,6 +63,8 @@ internal sealed class GameSettings
     private readonly TextField secondaryTeamColor = new TextField("Secondary") { style = { flexGrow = 1 } };
     private Action refreshPrimaryTeamColor;
     private Action refreshSecondaryTeamColor;
+    private Action refreshTeamLogo;
+    private string savedTeamLogo, draftTeamLogo;
     private string[] savedColors;
     private string savedPrimaryTeamColor;
     private string savedSecondaryTeamColor;
@@ -72,7 +73,7 @@ internal sealed class GameSettings
     private int savedSimulationModel;
     private int savedSpeedModel;
     public bool EqualConditionPractice { get; private set; }
-    private readonly Toggle equalConditionPractice = new Toggle("Equal-condition practice testing");
+    private readonly Toggle equalConditionPractice = SettingsFormStyle.PillSwitch("Equal-condition practice testing", labelAbove: true);
     private int savedBehaviorModel;
     private int savedPaceVehicle;
     private int savedCarLod;
@@ -96,11 +97,11 @@ internal sealed class GameSettings
     public VisualElement ScreenView { get; } = new VisualElement();
 
     public GameSettings(VisualElement root, Action applyDisplay, Action close,
-        Func<string, string, string, CarManufacturer, EngineSupplier, string> saveTeamColors, Action<Button> openRivals)
+        Func<Career, string, string, string, int, EngineSupplier, string, string> saveTeamSettings)
     {
         this.root = root;
         this.applyDisplay = applyDisplay;
-        this.saveTeamColors = saveTeamColors;
+        this.saveTeamSettings = saveTeamSettings;
         savedMode = Mathf.Clamp(PlayerPrefs.GetInt(Key + "Mode"), 0, 1);
         savedSize = Mathf.Clamp(PlayerPrefs.GetInt(Key + "Size"), 0, Sizes.Length - 1);
         // Enable full flag/stage behavior once; later manual A/B choices remain persistent.
@@ -237,6 +238,15 @@ internal sealed class GameSettings
         simulation.Add(SettingsFormStyle.Field(equalConditionPractice, equalConditionPractice.value, _ => RefreshRevert()));
 
         AddTab(SettingsTab.TeamColors, "Team", teamColors);
+        var teamLayout = new VisualElement();
+        teamLayout.AddToClassList("settings-row");
+        teamLayout.style.alignItems = Align.FlexStart;
+        teamColors.Add(teamLayout);
+        var teamFields = new VisualElement();
+        teamFields.style.flexGrow = 1;
+        teamFields.style.flexBasis = 0;
+        teamFields.style.minWidth = 300;
+        teamLayout.Add(teamFields);
         var identity = new VisualElement();
         identity.AddToClassList("settings-row");
         teamName.style.flexGrow = 1;
@@ -245,13 +255,13 @@ internal sealed class GameSettings
         teamNameError = SettingsFormStyle.InlineError(teamName);
         teamName.RegisterValueChangedCallback(_ => RefreshValidation());
         teamName.tooltip = "Change your team name (up to 25 characters).";
-        teamColors.Add(identity);
+        teamFields.Add(identity);
         var choices = new VisualElement();
         choices.AddToClassList("settings-row");
         teamManufacturer = AddTeamSelection(choices, "Manufacturer", () =>
         {
             var values = teamCareer.SeriesRules.ManufacturerChoices;
-            OpenTeamChoice("Choose manufacturer", values.Select(value => value.ToString()).ToArray(), index =>
+            OpenTeamChoice("Choose manufacturer", values.Select(value => ManufacturerCatalog.Name(value)).ToArray(), index =>
             {
                 draftManufacturer = values[index];
                 var suppliers = teamCareer.SeriesRules.SuppliersFor(draftManufacturer);
@@ -272,9 +282,20 @@ internal sealed class GameSettings
         });
         teamManufacturer.tooltip = "Choose a manufacturer available in this team's series. Updates your team cars after saving.";
         teamSupplier.tooltip = "Choose an engine supplier for this series and manufacturer. Changes engine power, reliability, and running costs after saving.";
-        teamColors.Add(choices);
-        refreshPrimaryTeamColor = AddColorField(teamColors, primaryTeamColor, () => PickColor(primaryTeamColor, Color.white), RefreshValidation);
-        refreshSecondaryTeamColor = AddColorField(teamColors, secondaryTeamColor, () => PickColor(secondaryTeamColor, Color.white), RefreshValidation);
+        teamFields.Add(choices);
+        refreshPrimaryTeamColor = AddColorField(teamFields, primaryTeamColor, () => PickColor(primaryTeamColor, Color.white), RefreshValidation);
+        refreshSecondaryTeamColor = AddColorField(teamFields, secondaryTeamColor, () => PickColor(secondaryTeamColor, Color.white), RefreshValidation);
+
+        var logo = new VisualElement();
+        logo.style.width = 300;
+        logo.style.marginLeft = 24;
+        logo.style.flexShrink = 0;
+        teamLayout.Add(logo);
+        refreshTeamLogo = SettingsFormStyle.LogoField(logo, "Team Logo", () => draftTeamLogo, value =>
+        {
+            draftTeamLogo = value;
+            RefreshRevert();
+        });
 
         var appearance = AddTab(SettingsTab.ColorScheme, "Color scheme");
         appearance.Add(SettingsFormStyle.Label("Enter colors as #RRGGBB.", "settings-note"));
@@ -300,10 +321,7 @@ internal sealed class GameSettings
         footer.AddToClassList("settings-footer");
         status.AddToClassList("settings-status");
         footer.Add(status);
-        var rivals = SettingsFormStyle.Tab("Rivals", null);
-        rivals.tooltip = "Edit the shared rival roster for each racing series.";
-        rivals.clicked += () => openRivals(rivals);
-        navigation.Add(rivals);
+
 
         var backButton = SettingsFormStyle.Button("Back", null);
         footer.Add(backButton);
@@ -314,7 +332,8 @@ internal sealed class GameSettings
         });
         revertButton.SetEnabled(false);
         footer.Add(revertButton);
-        saveButton = SettingsFormStyle.Button("Save Settings", () => Save(), primary: true);
+        saveButton = SettingsFormStyle.Button("Save", () => Save(), primary: true);
+        saveButton.tooltip = "Save the current game settings.";
         footer.Add(saveButton);
         frame.Add(footer);
 
@@ -337,7 +356,7 @@ internal sealed class GameSettings
             DismissWarning();
             backButton.Focus();
         });
-        var saveBack = SettingsFormStyle.Button("Save and Go Back", () =>
+        var saveBack = SettingsFormStyle.Button("Save", () =>
         {
             if (!saveButton.enabledSelf)
                 return;
@@ -348,6 +367,7 @@ internal sealed class GameSettings
         }, primary: true);
         actions.Add(keepEditing);
         actions.Add(SettingsFormStyle.Button("Discard and Go Back", FinishBack));
+        saveBack.tooltip = "Save the game settings and return to the previous screen.";
         actions.Add(saveBack);
         dialog.Add(actions);
         warning.Add(dialog);
@@ -527,7 +547,7 @@ internal sealed class GameSettings
 
     private void RefreshTeamChoices()
     {
-        teamManufacturer.text = draftManufacturer.ToString();
+        teamManufacturer.text = ManufacturerCatalog.Name(draftManufacturer);
         teamSupplier.text = draftSupplier?.name ?? "No supplier available";
         teamSupplier.parent.style.display = teamCareer.SeriesRules.SuppliersFor(draftManufacturer).Length == 1
             ? DisplayStyle.None : DisplayStyle.Flex;
@@ -616,7 +636,6 @@ internal sealed class GameSettings
 
     private void ShowTab(SettingsTab selected)
     {
-        activeTab = selected;
         foreach (var (tab, (button, page)) in tabs)
         {
             bool current = tab == selected;
@@ -674,7 +693,7 @@ internal sealed class GameSettings
         return UpdateColor;
     }
 
-    public void Open(Career career)
+    public void Open(Career career, SettingsTab tab)
     {
         teamCareer = career;
         showTeamErrors = false;
@@ -682,6 +701,7 @@ internal sealed class GameSettings
         if (career != null)
         {
             savedTeamName = career.teamName;
+            savedTeamLogo = career.teamLogo ?? "";
             savedManufacturer = career.cars[0].manufacturer;
             savedSupplier = career.EngineSupplierFor(career.cars[0]);
             var colors = career.TeamColors;
@@ -689,7 +709,7 @@ internal sealed class GameSettings
             savedSecondaryTeamColor = "#" + ColorUtility.ToHtmlStringRGB(colors.Secondary);
         }
         RestoreSavedValues();
-        ShowTab(!HasTeamColors && activeTab == SettingsTab.TeamColors ? SettingsTab.Display : activeTab);
+        ShowTab(tab);
         SettingsFormStyle.SetValidationMessage(status, null, false);
     }
 
@@ -718,6 +738,8 @@ internal sealed class GameSettings
             secondaryTeamColor.SetValueWithoutNotify(savedSecondaryTeamColor);
             refreshPrimaryTeamColor();
             refreshSecondaryTeamColor();
+            draftTeamLogo = savedTeamLogo;
+            refreshTeamLogo();
         }
         RefreshValidation();
     }
@@ -777,7 +799,7 @@ internal sealed class GameSettings
                 return true;
 
         return HasTeamColors &&
-            (teamName.value != savedTeamName ||
+            (teamName.value != savedTeamName || draftTeamLogo != savedTeamLogo ||
              draftManufacturer != savedManufacturer || draftSupplier?.name != savedSupplier?.name ||
              ColorChanged(primaryTeamColor, savedPrimaryTeamColor) || ColorChanged(secondaryTeamColor, savedSecondaryTeamColor));
     }
@@ -805,7 +827,8 @@ internal sealed class GameSettings
             }
             string primaryHex = "#" + ColorUtility.ToHtmlStringRGB(primary);
             string secondaryHex = "#" + ColorUtility.ToHtmlStringRGB(secondary);
-            string error = saveTeamColors(primaryHex, secondaryHex, teamName.value.Trim(), draftManufacturer, draftSupplier);
+            string error = saveTeamSettings(teamCareer, primaryHex, secondaryHex, teamName.value.Trim(),
+                draftManufacturer, draftSupplier, draftTeamLogo);
             if (error != null)
             {
                 SettingsFormStyle.SetValidationMessage(status, error, true);
@@ -817,6 +840,7 @@ internal sealed class GameSettings
             savedSupplier = draftSupplier;
             savedPrimaryTeamColor = primaryHex;
             savedSecondaryTeamColor = secondaryHex;
+            savedTeamLogo = draftTeamLogo;
         }
 
         bool lodChanged = draftCarLod != savedCarLod;

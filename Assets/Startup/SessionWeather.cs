@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using UnityEngine;
 
 // Fictional session forecasts, persisted with the career. Coefficients are initial
@@ -21,6 +22,14 @@ internal sealed class SessionWeatherForecast
     private static bool InRange(float value, float minimum, float maximum) =>
         !float.IsNaN(value) && !float.IsInfinity(value) && value >= minimum && value <= maximum;
 
+    internal static bool TryStartTime(string value, out TimeSpan time)
+    {
+        bool valid = DateTime.TryParseExact(value?.Trim(), "HH:mm", CultureInfo.InvariantCulture,
+            DateTimeStyles.None, out var parsed);
+        time = parsed.TimeOfDay;
+        return valid;
+    }
+
     internal static bool IsNightAt(float hour) => hour < 6f || hour >= 18f;
 
     internal static SessionWeatherForecast Ensure(RaceSession session, TrackDefinition track, ScheduledRace race)
@@ -36,19 +45,22 @@ internal sealed class SessionWeatherForecast
         int month = Career.TryReadDate(race?.date, out var date) ? date.Month : 6;
         float seasonal = 70f + 16f * Mathf.Cos((month - 7f) / 12f * Mathf.PI * 2f);
         bool nightRace = session.kind == RaceSessionKind.Race && track.id == TrackPreview.BristolTrackId && month >= 8;
+        float startHour = nightRace ? 20f : session.kind == RaceSessionKind.Practice ? 10f + index :
+            session.kind == RaceSessionKind.Qualifying ? 13f : 15f;
+        if (session.kind == RaceSessionKind.Race && TryStartTime(race?.raceStartTime, out var raceTime))
+            startHour = (float)raceTime.TotalHours;
         return session.weather = new SessionWeatherForecast
         {
             id = key,
             ambientFahrenheit = Mathf.Clamp(seasonal + (float)random.NextDouble() * 16f - 8f, 40f, 98f),
             cloudCover = (float)random.NextDouble(),
             windMph = 2f + (float)random.NextDouble() * 16f,
-            startHour = nightRace ? 20f : session.kind == RaceSessionKind.Practice ? 10f + index :
-                session.kind == RaceSessionKind.Qualifying ? 13f : 15f,
+            startHour = startHour,
             variationPhase = (float)random.NextDouble() * Mathf.PI * 2f
         };
     }
 
-    internal string Summary => $"Forecast: {ambientFahrenheit:0}\u00B0F air \u00B7 Clouds {cloudCover:P0} \u00B7 Wind {windMph:0} mph \u00B7 Start {startHour:00}:00";
+    internal string Summary => $"Forecast: {ambientFahrenheit:0}\u00B0F air \u00B7 Clouds {cloudCover:P0} \u00B7 Wind {windMph:0} mph \u00B7 Start {TimeSpan.FromMinutes(Math.Round(startHour * 60)).ToString(@"hh\:mm", CultureInfo.InvariantCulture)}";
 }
 
 internal sealed class SessionWeatherState

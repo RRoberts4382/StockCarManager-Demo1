@@ -297,7 +297,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             thermalTrackPositionMeters = SessionRun.ThermalTrackPosition(index),
             thermalOnTrack = SessionRun.ThermalOnTrack(index),
             chassis = car?.chassisNumber,
-            manufacturer = car?.manufacturer.ToString(),
+            manufacturer = car == null ? null : ManufacturerCatalog.Name(car.manufacturer),
             carNumber = car?.number ?? 0,
             trackModel = simulationModel.Id,
             speedModel = speedModel.Id,
@@ -1680,7 +1680,7 @@ public sealed partial class TrackPreview : MonoBehaviour
                 rivalDriverId = i == 0 ? null : car?.rivalDriverId,
                 playerEntry = i == 0,
                 manufacturerRecorded = true,
-                manufacturer = car?.manufacturer ?? CarManufacturer.Chevrolet
+                manufacturer = car?.manufacturer ?? ManufacturerCatalog.Chevrolet
             };
         }
         return entries;

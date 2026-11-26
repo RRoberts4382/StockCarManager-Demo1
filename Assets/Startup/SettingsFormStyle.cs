@@ -199,7 +199,6 @@ internal static class SettingsFormStyle
     {
         "Back" => "Return to the previous screen.",
         "Revert" => "Restore the last saved values.",
-        "Save Settings" => "Save the current game settings.",
         "Save and Go Back" => "Save your changes and return to the previous screen.",
         "Discard and Go Back" => "Discard your changes and return to the previous screen.",
         "Keep Editing" => "Close this prompt and continue editing.",
@@ -226,11 +225,6 @@ internal static class SettingsFormStyle
         "Cameras & mirror" => "Position the cockpit cameras and rearview mirror for this car.",
         "Number placement" => "Position the car numbers on the body and roof.",
         "Dashboard" => "Choose the dashboard artwork and configure its gauges.",
-        "Save Series" => "Save changes to the selected racing series.",
-        "Save Track" => "Save changes to the selected track.",
-        "Save Car Type" => "Save changes to the selected car model.",
-        "Add supplier" => "Add a new engine supplier to this list.",
-        "Add expense" => "Add a recurring cost for each race event.",
         "Clear" => "Clear the artwork assigned to this field.",
         "Use drawn dashboard" => "Clear the custom dashboard image and use the built-in dashboard drawing.",
         _ => null
@@ -267,6 +261,208 @@ internal static class SettingsFormStyle
         _ => null
     };
 
+    internal static Toggle PillSwitch(string label, bool value = false, bool labelAbove = false) =>
+        new PillToggle(label, value, labelAbove);
+
+    private sealed class PillToggle : Toggle
+    {
+        private readonly VisualElement track;
+
+        internal PillToggle(string label, bool value, bool labelAbove) : base(labelAbove ? label : null)
+        {
+            if (!labelAbove)
+                text = label;
+            style.minHeight = 24;
+
+            var input = this.Q(className: "unity-base-field__input");
+            input.Q(className: "unity-toggle__checkmark").style.display = DisplayStyle.None;
+            input.style.alignItems = Align.Center;
+            input.style.justifyContent = Justify.FlexStart;
+            track = new VisualElement
+            {
+                pickingMode = PickingMode.Ignore,
+                style =
+                {
+                    width = 38,
+                    height = 21,
+                    marginRight = 7,
+                    flexShrink = 0,
+                    paddingLeft = 3,
+                    paddingRight = 3,
+                    justifyContent = Justify.Center,
+                    borderTopLeftRadius = 11,
+                    borderTopRightRadius = 11,
+                    borderBottomLeftRadius = 11,
+                    borderBottomRightRadius = 11
+                }
+            };
+            var thumb = new VisualElement
+            {
+                pickingMode = PickingMode.Ignore,
+                style =
+                {
+                    width = 15,
+                    height = 15,
+                    backgroundColor = (Color)new Color32(16, 21, 30, 255),
+                    borderTopLeftRadius = 8,
+                    borderTopRightRadius = 8,
+                    borderBottomLeftRadius = 8,
+                    borderBottomRightRadius = 8
+                }
+            };
+            track.Add(thumb);
+            input.Insert(0, track);
+            SetValueWithoutNotify(value);
+        }
+
+        public override void SetValueWithoutNotify(bool newValue)
+        {
+            base.SetValueWithoutNotify(newValue);
+            if (track == null) return;
+            track.style.backgroundColor = newValue
+                ? (Color)new Color32(0, 155, 221, 255)
+                : (Color)new Color32(74, 88, 105, 255);
+            track.style.alignItems = newValue ? Align.FlexEnd : Align.FlexStart;
+        }
+    }
+
+    internal static TextField NameAndLogo(VisualElement details, string nameLabelText, string logoLabelText,
+        string nameValue, string logoValue, Func<string, string> validateName, Action<string> setName,
+        Action<string> setLogo, bool sideBySide = false)
+    {
+        var content = new VisualElement();
+        details.Add(content);
+        if (sideBySide)
+        {
+            content.style.flexDirection = FlexDirection.Row;
+            content.style.alignItems = Align.FlexStart;
+        }
+        var nameColumn = new VisualElement();
+        nameColumn.style.flexShrink = 0;
+        if (sideBySide)
+        {
+            nameColumn.style.flexGrow = 1;
+            nameColumn.style.flexBasis = 0;
+            nameColumn.style.minWidth = 0;
+        }
+        var nameHeading = new VisualElement();
+        nameHeading.AddToClassList("settings-row");
+        nameColumn.Add(nameHeading);
+        nameHeading.style.alignItems = Align.Center;
+        nameHeading.style.flexWrap = Wrap.NoWrap;
+        var nameLabel = Label(nameLabelText, "settings-group-heading");
+        nameLabel.style.flexShrink = 0;
+        nameHeading.Add(nameLabel);
+        content.Add(nameColumn);
+
+        Action<string> showNameError = null;
+        var name = Field(new TextField(nameLabelText), nameValue ?? "", value =>
+        {
+            setName(value);
+            showNameError(validateName(value));
+        });
+        name.labelElement.style.display = DisplayStyle.None;
+        name.style.flexGrow = 0;
+        name.style.flexShrink = 0;
+        name.style.marginLeft = name.style.marginRight = 0;
+        name.style.marginTop = 0;
+        var nameInput = name.Q(className: "unity-base-field__input");
+        nameInput.style.height = 42;
+        nameInput.style.flexBasis = 42;
+        nameInput.style.flexGrow = 0;
+        nameInput.style.flexShrink = 0;
+        showNameError = InlineError(name);
+        var errorSlot = name.Q(className: "settings-error-slot");
+        nameColumn.Add(name);
+        if (sideBySide)
+            nameColumn.Add(errorSlot);
+        else
+        {
+            errorSlot.style.flexGrow = 1;
+            errorSlot.style.height = 24;
+            errorSlot.style.marginBottom = 0;
+            nameHeading.Add(errorSlot);
+        }
+        showNameError(validateName(nameValue));
+
+        var logoField = new VisualElement();
+        logoField.style.flexShrink = 0;
+        if (sideBySide)
+        {
+            logoField.style.marginLeft = 24;
+            logoField.style.width = 300;
+            logoField.style.maxWidth = Length.Percent(50);
+        }
+        else
+        {
+            logoField.style.marginTop = 18;
+            logoField.style.width = Length.Percent(100);
+        }
+        content.Add(logoField);
+        LogoField(logoField, logoLabelText, () => logoValue, logo =>
+        {
+            logoValue = logo;
+            setLogo(logo);
+        });
+        return name;
+    }
+
+    internal static Action LogoField(VisualElement logoField, string title, Func<string> getLogo, Action<string> setLogo)
+    {
+        logoField.Add(Label(title, "settings-group-heading"));
+        var preview = new Image { scaleMode = ScaleMode.ScaleToFit, pickingMode = PickingMode.Ignore };
+        preview.style.width = 160;
+        preview.style.height = 90;
+        preview.style.alignSelf = Align.Center;
+        logoField.Add(preview);
+        var buttons = new VisualElement();
+        buttons.AddToClassList("settings-row");
+        logoField.Add(buttons);
+        buttons.style.justifyContent = Justify.Center;
+        var status = Label("", "settings-validation-summary");
+        status.style.minHeight = 26;
+        status.style.whiteSpace = WhiteSpace.Normal;
+        status.style.unityTextAlign = TextAnchor.MiddleCenter;
+        logoField.Add(status);
+        AddButton("Browse", "Choose a PNG or JPEG logo.", () =>
+        {
+            string path = TrackImageFilePicker.Pick("Choose a logo");
+            if (!string.IsNullOrEmpty(path))
+                SetLogo(SeriesSettingsStore.SaveArtwork(path));
+        });
+        AddButton("Paste Image", "Paste a logo from the clipboard.", () =>
+            SetLogo(SeriesSettingsStore.PasteArtwork()));
+        AddButton("Clear", "Remove the logo.", () => SetLogo(""));
+        RefreshLogo();
+        return RefreshLogo;
+
+        void AddButton(string label, string tooltip, Action action)
+        {
+            var button = Button(label, () =>
+            {
+                try { action(); }
+                catch (Exception ex) when (SeriesSettingsStore.IsSettingsError(ex))
+                {
+                    SetValidationMessage(status, ex.Message, true);
+                }
+            });
+            button.tooltip = tooltip;
+            buttons.Add(button);
+        }
+
+        void SetLogo(string logo)
+        {
+            setLogo(logo);
+            RefreshLogo();
+        }
+
+        void RefreshLogo()
+        {
+            preview.image = SeriesSettingsStore.LoadArtwork(getLogo());
+            SetValidationMessage(status, preview.image == null ? "No logo selected." : "", false);
+        }
+    }
+
     public static T Field<T, TValue>(T field, TValue value, Action<TValue> changed) where T : BaseField<TValue>
     {
         StyleField(field);
@@ -282,6 +478,17 @@ internal static class SettingsFormStyle
     public static T StyleField<T>(T field) where T : VisualElement
     {
         field.AddToClassList("settings-field");
+        if (field is PillToggle)
+        {
+            // Keep the pill input the same height as neighboring settings inputs.
+            var pillInput = field.Q(className: "unity-base-field__input");
+            pillInput.style.height = 42;
+            pillInput.style.flexBasis = 42;
+            pillInput.style.flexGrow = 0;
+            pillInput.style.flexShrink = 0;
+            pillInput.style.flexDirection = FlexDirection.Row;
+            pillInput.style.alignItems = Align.Center;
+        }
         var input = field.Q(className: "unity-base-text-field__input");
         input?.Query<TextElement>().ForEach(text =>
         {

@@ -2,8 +2,9 @@
     <Style src="Startup.uss" />
     <ui:VisualElement name="garageScreen" class="screen game-neutral garage-screen">
         <ui:VisualElement class="header team-header-row">
-            <ui:VisualElement class="team-logo-placeholder" tooltip="Team logo placeholder.">
-                <ui:Label text="TEAM" picking-mode="Ignore" />
+            <ui:VisualElement class="team-logo-placeholder" tooltip="Team logo.">
+                <ui:Image name="teamHeaderLogo" picking-mode="Ignore" style="width: 100%; height: 100%; display: none;" />
+                <ui:Label name="teamHeaderLogoPlaceholder" text="TEAM" picking-mode="Ignore" />
             </ui:VisualElement>
             <ui:Label name="teamHeaderName" class="team-header-name" />
             <ui:VisualElement class="team-series-logo-slot">
@@ -22,9 +23,7 @@
                 <ui:Label name="teamHeaderRaceDate" class="team-header-date" />
             </ui:VisualElement>
             <ui:VisualElement class="actions team-header-actions">
-                <ui:Button name="garageSettingsButton" tooltip="Open game settings." class="team-header-icon">
-                    <ui:VisualElement class="track-icon-art" picking-mode="Ignore" />
-                </ui:Button>
+
                 <ui:Button name="backButton" tooltip="Return to the startup screen." class="team-header-icon">
                     <ui:VisualElement class="track-icon-art" picking-mode="Ignore" />
                 </ui:Button>

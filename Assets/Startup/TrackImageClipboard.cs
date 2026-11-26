@@ -6,6 +6,35 @@ internal static class TrackImageClipboard
 {
     public static TrackLayoutPoint[] Import(TrackDefinition track)
     {
+        var (png, pixels, width, height) = ReadImage();
+        return png != null ? TrackImageTrace.Import(png, track) : TrackImageTrace.Trace(pixels, width, height, track);
+    }
+
+    internal static byte[] ReadPng()
+    {
+        var (png, pixels, width, height) = ReadImage();
+        if (png != null)
+            return png;
+        if (width > 4096 || height > 4096)
+            throw new ArgumentException("Artwork must be 4096 x 4096 pixels or smaller.");
+
+        var texture = new Texture2D(width, height, TextureFormat.RGBA32, false);
+        try
+        {
+            texture.SetPixels32(pixels);
+            return ImageConversion.EncodeToPNG(texture);
+        }
+        finally
+        {
+            if (Application.isPlaying)
+                UnityEngine.Object.Destroy(texture);
+            else
+                UnityEngine.Object.DestroyImmediate(texture);
+        }
+    }
+
+    private static (byte[] Png, Color32[] Pixels, int Width, int Height) ReadImage()
+    {
 #if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
         if (!OpenClipboard(IntPtr.Zero))
             throw new ArgumentException("The clipboard is busy. Try Paste Image again.");
@@ -32,7 +61,7 @@ internal static class TrackImageClipboard
                     {
                         GlobalUnlock(png);
                     }
-                    return TrackImageTrace.Import(bytes, track);
+                    return (bytes, null, 0, 0);
                 }
             }
 
@@ -75,7 +104,7 @@ internal static class TrackImageClipboard
                 int offset = i * 4;
                 pixels[i] = new Color32(bytesBgra[offset + 2], bytesBgra[offset + 1], bytesBgra[offset], 255);
             }
-            return TrackImageTrace.Trace(pixels, width, height, track);
+            return (null, pixels, width, height);
         }
         finally
         {

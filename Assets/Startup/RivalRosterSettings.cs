@@ -6,7 +6,7 @@ using UnityEngine.UIElements;
 
 internal static class RivalRosterSettings
 {
-    public static void Open(VisualElement settings, Button source, Func<RacingSeries, System.Collections.Generic.IEnumerable<int>> playerNumbers, Action<RacingSeries> refreshActive)
+    public static void Open(VisualElement settings, Button source, Func<RacingSeries, System.Collections.Generic.IEnumerable<int>> playerNumbers)
     {
         var thumbnails = new CarThumbnails(256);
         int previewGeneration = 0;
@@ -35,7 +35,7 @@ internal static class RivalRosterSettings
         footer.AddToClassList("settings-footer");
         frame.Add(footer);
         var back = SettingsFormStyle.Button("Back", Close);
-        back.tooltip = "Return to Game Settings.";
+        back.tooltip = "Return to Settings.";
         footer.Add(back);
         var importStatus = SettingsFormStyle.Label("", "settings-status");
         footer.Add(importStatus);
@@ -188,7 +188,7 @@ internal static class RivalRosterSettings
                     return;
                 }
                 Dismiss();
-                refreshActive(draft.SeriesRules);
+
                 DisplayRoster(draft);
                 SettingsFormStyle.SetValidationMessage(importStatus, count == 1 ? "Imported 1 rival." : "Imported " + count + " rivals.", false);
             }
@@ -276,17 +276,8 @@ internal static class RivalRosterSettings
                 row.Add(SettingsFormStyle.Label(rival.teamName, "rival-roster-team"));
                 var edit = SettingsFormStyle.Button("", () =>
                 {
-                    bool saved = false;
-                    RivalDriverEditor.Open(screen, career, rival, () =>
-                    {
-                        RivalRosterStore.Save(career);
-                        saved = true;
-                    }, () =>
-                    {
-                        if (saved)
-                            refreshActive(career.SeriesRules);
-                        DisplayRoster(career, rival.rivalDriverId);
-                    });
+                    RivalDriverEditor.Open(screen, career, rival, () => RivalRosterStore.Save(career),
+                        () => DisplayRoster(career, rival.rivalDriverId));
                 });
                 edit.AddToClassList("rival-roster-edit");
                 edit.tooltip = "Edit " + rival.driverName + "'s driver info and paint scheme.";
@@ -389,19 +380,28 @@ internal static class RivalRosterSettings
         }
     }
 
-    private static VisualElement CreateManufacturerBadge(CarManufacturer make)
+    private static VisualElement CreateManufacturerBadge(int make)
     {
         // Use original placeholder marks until manufacturer artwork is available.
         var (letters, color, shape) = make switch
         {
-            CarManufacturer.Chevrolet => ("C", new Color32(218, 166, 65, 255), "amber"),
-            CarManufacturer.Ford => ("F", new Color32(66, 126, 214, 255), "blue"),
-            CarManufacturer.Toyota => ("T", new Color32(206, 66, 82, 255), "red"),
-            CarManufacturer.Dodge => ("D", new Color32(148, 108, 207, 255), "purple"),
+            ManufacturerCatalog.Chevrolet => ("C", new Color32(218, 166, 65, 255), "amber"),
+            ManufacturerCatalog.Ford => ("F", new Color32(66, 126, 214, 255), "blue"),
+            ManufacturerCatalog.Toyota => ("T", new Color32(206, 66, 82, 255), "red"),
+            ManufacturerCatalog.Dodge => ("D", new Color32(148, 108, 207, 255), "purple"),
             _ => ("?", new Color32(123, 139, 156, 255), "neutral")
         };
-        var column = new VisualElement { tooltip = make.ToString() };
+        var column = new VisualElement { tooltip = ManufacturerCatalog.Name(make) };
         column.AddToClassList("rival-roster-make");
+        var logo = ManufacturerCatalog.Logo(make);
+        if (logo != null)
+        {
+            var image = new Image { image = logo, scaleMode = ScaleMode.ScaleToFit, pickingMode = PickingMode.Ignore };
+            image.style.width = 27;
+            image.style.height = 20;
+            column.Add(image);
+            return column;
+        }
         var badge = SettingsFormStyle.Label(letters, "rival-roster-badge");
         badge.AddToClassList("rival-roster-badge-" + shape);
         badge.style.backgroundColor = (Color)color;

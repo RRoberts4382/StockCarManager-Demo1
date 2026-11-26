@@ -8,7 +8,7 @@ using UnityEngine.UIElements;
 
 internal sealed class SeriesSettings
 {
-    private static readonly string[] Tabs = { "General", "Manufacturers & engines", "Staff", "Costs & sponsorship", "Artwork", "Car Models" };
+    private static readonly string[] Tabs = { "General", "Manufacturers & engines", "Staff", "Costs & sponsorship", "Artwork", "Car Models", "Schedule" };
     private static readonly (string View, string Label)[] Backgrounds =
     {
         ("setup", "Career setup"), ("homePage", "Team home"), ("mailPage", "Mail"),
@@ -16,7 +16,9 @@ internal sealed class SeriesSettings
         ("schedulePage", "Schedule"), ("resultsPage", "Results"), ("financesPage", "Finances")
     };
 
-    private readonly RacingSeries[] series = RacingSeries.Catalog;
+    private RacingSeries[] series = RacingSeries.Catalog;
+    private readonly TrackCatalog catalog;
+    private readonly Button addSeries;
     private readonly Dictionary<string, Draft> drafts = new();
     private readonly List<Action> refreshNumericErrors = new();
     private readonly DropdownField selection;
@@ -27,13 +29,17 @@ internal sealed class SeriesSettings
     private readonly Button revert;
     private readonly Label status;
     private int tab;
+    private readonly Dictionary<string, (DateTime Month, DateTime Selected)> calendarViews = new();
+    private readonly HashSet<string> scheduleListViews = new(StringComparer.Ordinal);
+    private readonly SeriesRaceCalendar.Clipboard raceClipboard = new();
     private Draft Current => selection.index >= 0 && selection.index < series.Length
         ? GetDraft(series[selection.index]) : null;
 
     public VisualElement Screen { get; } = new VisualElement();
 
-    public SeriesSettings(Action back)
+    public SeriesSettings(TrackCatalog catalog, Action back)
     {
+        this.catalog = catalog;
         SettingsFormStyle.Apply(Screen);
         frame.AddToClassList("settings-frame");
         Screen.Add(frame);
@@ -43,7 +49,7 @@ internal sealed class SeriesSettings
         title.AddToClassList("google-sans-bold");
         header.Add(title);
 
-        var names = series.Select(item => item.name).ToList();
+        var names = SeriesChoices();
         selection = SettingsFormStyle.Field(new DropdownField("Racing series", names, names.Count > 0 ? 0 : -1),
             names.FirstOrDefault(), _ => Render(resetScroll: true));
         selection.AddToClassList("settings-series-selector");
@@ -89,7 +95,8 @@ internal sealed class SeriesSettings
         var backButton = SettingsFormStyle.Button("Back", null);
         footer.Add(backButton);
         var keepEditing = SettingsFormStyle.Button("Keep Editing", CancelBack);
-        var saveAndBack = SettingsFormStyle.Button("Save and Go Back", null, primary: true);
+        var saveAndBack = SettingsFormStyle.Button("Save", null, primary: true);
+        saveAndBack.tooltip = "Save all edited series and return to the previous screen.";
         backButton.clicked += RequestBack;
         saveAndBack.clicked += SaveAndBack;
         actions.Add(keepEditing);
@@ -175,14 +182,37 @@ internal sealed class SeriesSettings
             back();
         }
         revert = SettingsFormStyle.Button("Revert", Revert);
+        addSeries = SettingsFormStyle.Button("Add", OpenAddSeries);
+        addSeries.tooltip = "Create a new series using the selected series as a starting point.";
+        addSeries.SetEnabled(series.Length > 0);
+        footer.Add(addSeries);
         footer.Add(revert);
-        save = SettingsFormStyle.Button("Save Series", Save, primary: true);
+        save = SettingsFormStyle.Button("Save", Save, primary: true);
+        save.tooltip = "Save changes to the selected racing series.";
         footer.Add(save);
         frame.Add(footer);
     }
 
+    private List<string> SeriesChoices()
+    {
+        var repeated = series.GroupBy(item => item.name, StringComparer.OrdinalIgnoreCase)
+            .Where(group => group.Count() > 1).Select(group => group.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return series.Select(item => repeated.Contains(item.name) ? $"{item.name} ({item.id})" : item.name).ToList();
+    }
+
+    private void RefreshSeriesChoices(int? selectedIndex = null)
+    {
+        int index = selectedIndex ?? selection.index;
+        selection.choices = SeriesChoices();
+        selection.SetValueWithoutNotify(index >= 0 ? selection.choices[index] : null);
+    }
+
     public void Open()
     {
+        calendarViews.Clear();
+        catalog.Refresh();
+        RefreshSeriesChoices();
         Render(resetScroll: true);
         selection.Focus();
     }
@@ -232,6 +262,8 @@ internal sealed class SeriesSettings
     {
         var scroll = resetScroll ? Vector2.zero : body.scrollOffset;
         body.Clear();
+        body.contentContainer.style.minHeight = tab == 6
+            ? new StyleLength(Length.Percent(100)) : new StyleLength(StyleKeyword.Null);
         refreshNumericErrors.Clear();
         var draft = Current;
         for (int i = 0; i < tabs.Length; i++)
@@ -252,14 +284,137 @@ internal sealed class SeriesSettings
             case 3: DrawFinances(draft); break;
             case 4: DrawArtwork(draft); break;
             case 5: DrawCarModels(draft); break;
+            case 6: DrawSchedule(draft); break;
         }
         body.scrollOffset = scroll;
         SetStatus(message ?? (draft.Dirty ? "Unsaved changes" : string.Empty));
     }
 
+    private void OpenAddSeries()
+    {
+        if (selection.index < 0) return;
+        var template = series[selection.index];
+        var overlay = new VisualElement();
+        overlay.AddToClassList("settings-confirmation-overlay");
+        var dialog = new VisualElement();
+        dialog.AddToClassList("settings-confirmation-dialog");
+        dialog.AddToClassList("settings-msaa-dialog");
+        dialog.style.width = 410;
+        dialog.Add(SettingsFormStyle.Label("Add Series", "settings-group-heading"));
+        dialog.Add(SettingsFormStyle.Label($"Copy the saved settings from {template.name}.", "settings-note"));
+        var name = SettingsFormStyle.StyleField(new TextField("Display name"));
+        dialog.Add(name);
+        var showError = SettingsFormStyle.InlineError(name);
+        bool attempted = false;
+        var status = SettingsFormStyle.Label("", "settings-validation-summary");
+        status.style.minHeight = 34;
+        dialog.Add(status);
+        var actions = Row(dialog);
+        actions.AddToClassList("settings-confirmation-actions");
+        actions.style.borderTopColor = (Color)new Color32(0, 155, 221, 255);
+        actions.style.borderTopWidth = 1;
+        actions.style.paddingTop = 6;
+        var cancel = SettingsFormStyle.Button("Cancel", Close);
+        cancel.tooltip = "Close without creating a new series.";
+        actions.Add(cancel);
+        var create = SettingsFormStyle.Button("Add", () =>
+        {
+            attempted = true;
+            string error = SeriesSettingsStore.DisplayNameError(name.value);
+            showError(error);
+            if (error != null) return;
+            try
+            {
+                var created = SeriesSettingsStore.Create(template, name.value);
+                series = RacingSeries.Catalog;
+                Close();
+                RefreshSeriesChoices(Array.IndexOf(series, created));
+                tab = 0;
+                Render(resetScroll: true, message: $"Created {created.name}.");
+            }
+            catch (Exception failure) when (SeriesSettingsStore.IsSettingsError(failure))
+            {
+                SettingsFormStyle.SetValidationMessage(status, failure.Message, true);
+            }
+        }, primary: true);
+        create.tooltip = "Save the new series and open it for editing.";
+        actions.Add(create);
+        name.RegisterValueChangedCallback(evt =>
+        {
+            var error = SeriesSettingsStore.DisplayNameError(evt.newValue);
+            if (attempted) showError(error);
+            create.SetEnabled(error == null || !attempted);
+            SettingsFormStyle.SetValidationMessage(status, "", false);
+        });
+        overlay.Add(dialog);
+        overlay.RegisterCallback<KeyDownEvent>(evt =>
+        {
+            if (evt.keyCode != KeyCode.Escape) return;
+            Close();
+            evt.StopPropagation();
+        }, TrickleDown.TrickleDown);
+        frame.SetEnabled(false);
+        Screen.Add(overlay);
+        name.Focus();
+
+        void Close()
+        {
+            overlay.RemoveFromHierarchy();
+            frame.SetEnabled(true);
+            addSeries.Focus();
+        }
+    }
+
+    private void DrawSchedule(Draft draft)
+    {
+        var rules = draft.Rules;
+        int raceCount = rules.calendarRaces?.Length ?? 0;
+        var calendar = Group($"Race Calendar ({raceCount} {(raceCount == 1 ? "race" : "races")})");
+        calendar.style.flexGrow = 1;
+        var heading = calendar[0];
+        var header = Row(calendar);
+        header.style.alignItems = Align.Center;
+        header.style.justifyContent = Justify.SpaceBetween;
+        header.Add(heading);
+        bool listView = scheduleListViews.Contains(rules.id);
+        var toggleView = SettingsFormStyle.Button(listView ? "Calendar View" : "List View", () =>
+        {
+            if (listView) scheduleListViews.Remove(rules.id);
+            else scheduleListViews.Add(rules.id);
+            Render();
+            Screen.Q<Button>("scheduleViewToggle")?.Focus();
+        });
+        toggleView.name = "scheduleViewToggle";
+        toggleView.tooltip = listView ? "Show the three-month race calendar." : "Show scheduled races in date order.";
+        header.Add(toggleView);
+
+        calendarViews.TryGetValue(rules.id, out var view);
+        calendar.Add(SeriesRaceCalendar.CreatePanel(Screen, frame, catalog, rules, raceClipboard, view.Month, view.Selected, listView,
+            (month, selected) => calendarViews[rules.id] = (month, selected), () =>
+            {
+                Changed();
+                Render();
+            }));
+
+        calendar.Add(SettingsFormStyle.ErrorSlot(CalendarError(rules)));
+    }
+
+    private string CalendarError(RacingSeries rules)
+    {
+        if (SeriesSettingsStore.CalendarError(rules) is string error)
+            return error;
+        return rules.calendarRaces?.Any(race =>
+        {
+            var track = catalog.Find(race.trackId)?.Definition;
+            return track == null || (rules.maximumTrackLengthMiles > 0 && track.lengthMiles > rules.maximumTrackLengthMiles);
+        }) == true ? "Each calendar race needs an installed track within the series track length limit." : null;
+    }
+
     private void DrawGeneral(Draft draft)
     {
         var rules = draft.Rules;
+        var identity = Group("Series identity");
+        identity.Add(RequiredText("Display name", rules.name, value => rules.name = value, SeriesSettingsStore.DisplayNameError));
         var section = Group("Race format");
         var stageRow = Row(section);
         var stageFields = new TextField[ScheduledRace.MaximumStages];
@@ -306,27 +461,26 @@ internal sealed class SeriesSettings
     {
         var rules = draft.Rules;
         var choices = CarTypeDefinition.AvailableModels();
-        var defaultChoices = new List<(string Model, string Name)>(choices);
-        if (rules.id != "craftsman-truck")
-            defaultChoices.Insert(0, ("", "Use Cup Impala"));
-
         var seriesRow = Row(Group("Series default"));
-        string defaultModel = rules.carModel ?? string.Empty;
+        string defaultModel = string.IsNullOrEmpty(rules.carModel) ? "Impala" : rules.carModel;
         AddSelector(seriesRow, "Series car model", "seriesDefaultCarModel", "Choose the series model",
-            defaultChoices, defaultModel, "Impala", CarTypeDefinition.ForModel(defaultModel).displayName,
+            choices, defaultModel, "Impala", CarTypeDefinition.ForModel(defaultModel).displayName,
             model => rules.carModel = model);
 
-        var manufacturerChoices = new List<(string Model, string Name)>(choices);
-        manufacturerChoices.Insert(0, ("", "Use default model"));
+
         var modelsRow = Row(Group("Manufacturer models"));
         foreach (var make in rules.manufacturers)
         {
-            string name = make.manufacturer.ToString();
+            string name = ManufacturerCatalog.Name(make.manufacturer);
+            string inheritedModel = CarTypeDefinition.CanonicalModel(rules.DefaultModelFor(make.manufacturer));
+            string inheritedName = CarTypeDefinition.ForModel(inheritedModel).displayName;
+            var manufacturerChoices = choices.Where(option => CarTypeDefinition.CanonicalModel(option.Model) != inheritedModel).ToList();
+            manufacturerChoices.Insert(0, ("", $"{inheritedName} (default)"));
             string currentName = CarTypeDefinition.ForModel(rules.ModelFor(make.manufacturer)).displayName;
             if (string.IsNullOrWhiteSpace(make.carModel))
                 currentName += " (default)";
             AddSelector(modelsRow, name, "seriesCarModel" + name, $"Choose a model for {name}",
-                manufacturerChoices, make.carModel ?? "", rules.DefaultModelFor(make.manufacturer), currentName,
+                manufacturerChoices, make.carModel ?? "", inheritedModel, currentName,
                 model => make.carModel = string.IsNullOrEmpty(model) ? null : model);
         }
 
@@ -447,16 +601,24 @@ internal sealed class SeriesSettings
         }
     }
 
+    private static Toggle ManufacturerSwitch(int id)
+    {
+        string name = ManufacturerCatalog.Name(id);
+        var toggle = SettingsFormStyle.PillSwitch(name, labelAbove: true);
+        toggle.tooltip = $"Allow teams in this series to use {name} cars.";
+        return toggle;
+    }
+
     private void DrawManufacturers(Draft draft)
     {
         var rules = draft.Rules;
         var selected = Group("Manufacturers");
         selected.Add(SettingsFormStyle.ErrorSlot(rules.manufacturers.Length == 0 ? "Choose at least one manufacturer." : null));
         var row = Row(selected);
-        foreach (CarManufacturer make in Enum.GetValues(typeof(CarManufacturer)))
+        foreach (int make in ManufacturerCatalog.ActiveIds.Concat(rules.manufacturers.Select(entry => entry.manufacturer)).Distinct())
         {
             var existing = rules.manufacturers.FirstOrDefault(item => item.manufacturer == make);
-            row.Add(Field(new Toggle(make.ToString()) { tooltip = $"Allow teams in this series to use {make} cars." }, existing != null, include =>
+            row.Add(Field(ManufacturerSwitch(make), existing != null, include =>
             {
                 rules.manufacturers = include
                     ? rules.manufacturers.Append(new SeriesManufacturer { manufacturer = make, engineSuppliers = Array.Empty<SeriesEngine>() }).ToArray()
@@ -467,7 +629,7 @@ internal sealed class SeriesSettings
 
         bool truck = rules.id == "craftsman-truck";
         var availability = Group("Engine supplier availability");
-        var mode = Field(new Toggle("Share suppliers across manufacturers"), draft.SharedSuppliers, shared =>
+        var mode = Field(SettingsFormStyle.PillSwitch("Share suppliers across manufacturers", labelAbove: true), draft.SharedSuppliers, shared =>
         {
             draft.SharedSuppliers = shared;
             if (shared && rules.sharedEngineSuppliers.Length == 0)
@@ -488,7 +650,7 @@ internal sealed class SeriesSettings
             DrawSuppliers(Group("Shared suppliers"), rules.sharedEngineSuppliers, items => rules.sharedEngineSuppliers = items, truck);
         else
             foreach (var make in rules.manufacturers)
-                DrawSuppliers(Group(make.manufacturer.ToString()), make.engineSuppliers ?? Array.Empty<SeriesEngine>(),
+                DrawSuppliers(Group(ManufacturerCatalog.Name(make.manufacturer)), make.engineSuppliers ?? Array.Empty<SeriesEngine>(),
                     items => make.engineSuppliers = items, false);
     }
 
@@ -509,12 +671,13 @@ internal sealed class SeriesSettings
         }
         if (!single || suppliers.Length == 0)
         {
-            var add = SettingsFormStyle.Button("Add supplier", () =>
+            var add = SettingsFormStyle.Button("Add", () =>
             {
                 replace(suppliers.Append(new SeriesEngine { name = "", power = 0.85f, reliability = 0.85f }).ToArray());
                 Changed();
                 Render();
             });
+            add.tooltip = "Add a new engine supplier to this list.";
             group.Add(add);
         }
     }
@@ -529,9 +692,11 @@ internal sealed class SeriesSettings
         {
             var row = Row(roles);
             var selected = rules.employeeRoles.FirstOrDefault(item => item.role == role);
-            var choice = Field(new Toggle(Employee.NameOf(role)) { tooltip = role == EmployeeRole.Driver
+            var roleSwitch = SettingsFormStyle.PillSwitch(Employee.NameOf(role), labelAbove: true);
+            roleSwitch.tooltip = role == EmployeeRole.Driver
                 ? "Every team in this series must have a driver."
-                : $"Allow teams in this series to hire for the {Employee.NameOf(role)} role." }, selected != null, include =>
+                : $"Allow teams in this series to hire for the {Employee.NameOf(role)} role.";
+            var choice = Field(roleSwitch, selected != null, include =>
             {
                 rules.employeeRoles = include
                     ? rules.employeeRoles.Append(new SeriesEmployeeRole { role = role }).ToArray()
@@ -581,12 +746,14 @@ internal sealed class SeriesSettings
             row.Add(Number(item, "Amount per event ($)", item.amount, x => item.amount = x));
             row.Add(Remove("Remove expense", () => rules.eventCosts = rules.eventCosts.Where(cost => cost != item).ToArray()));
         }
-        expenses.Add(SettingsFormStyle.Button("Add expense", () =>
+        var addExpense = SettingsFormStyle.Button("Add", () =>
         {
             rules.eventCosts = rules.eventCosts.Append(new SeriesEventCost { id = Guid.NewGuid().ToString("N"), name = "" }).ToArray();
             Changed();
             Render();
-        }));
+        });
+        addExpense.tooltip = "Add a recurring expense for each race event.";
+        expenses.Add(addExpense);
     }
 
     private void DrawArtwork(Draft draft)
@@ -645,6 +812,7 @@ internal sealed class SeriesSettings
         var row = Row(parent);
         var field = SettingsFormStyle.Field(new TextField(label) { isReadOnly = true }, DisplayName(path), _ => {});
         field.AddToClassList("settings-field-art");
+        field.style.minWidth = 135;
         field.tooltip = string.IsNullOrWhiteSpace(path) ? defaultName : path;
         var showError = SettingsFormStyle.InlineError(field);
         showError(string.IsNullOrWhiteSpace(path) && defaultName == null ? "Choose an image." : null);
@@ -676,6 +844,20 @@ internal sealed class SeriesSettings
         });
         browse.tooltip = "Choose an image for " + label + ".";
         row.Add(browse);
+        var paste = SettingsFormStyle.Button("Paste Image", () =>
+        {
+            try
+            {
+                SetArtwork(SeriesSettingsStore.PasteArtwork());
+            }
+            catch (Exception ex) when (SeriesSettingsStore.IsSettingsError(ex))
+            {
+                showError(ex.Message);
+                SetStatus(ex.Message, error: true);
+            }
+        });
+        paste.tooltip = "Paste an image from the clipboard for " + label + ".";
+        row.Add(paste);
         var clear = SettingsFormStyle.Button(defaultName == null ? "Clear" : "Default", () => SetArtwork(string.Empty));
         clear.tooltip = defaultName == null ? "Remove the selected image." : "Restore the built-in " + label + " artwork.";
         row.Add(clear);
@@ -688,17 +870,18 @@ internal sealed class SeriesSettings
         return path.StartsWith("series-art:", StringComparison.Ordinal) ? "Imported image" : Path.GetFileName(path);
     }
 
-    private TextField RequiredText(string label, string value, Action<string> changed)
+    private TextField RequiredText(string label, string value, Action<string> changed, Func<string, string> validate = null)
     {
+        validate ??= SettingsFormStyle.TextError;
         Action<string> showError = null;
         var field = SettingsFormStyle.Field(new TextField(label), value ?? string.Empty, text =>
         {
             changed(text);
-            showError(SettingsFormStyle.TextError(text));
+            showError(validate(text));
             Changed();
         });
         showError = SettingsFormStyle.InlineError(field);
-        showError(SettingsFormStyle.TextError(value));
+        showError(validate(value));
         return field;
     }
 
@@ -828,7 +1011,7 @@ internal sealed class SeriesSettings
         revert.SetEnabled(dirty);
     }
 
-    private static HashSet<int> InvalidTabs(Draft draft)
+    private HashSet<int> InvalidTabs(Draft draft)
     {
         var rules = draft.Rules;
         var suppliers = draft.SharedSuppliers ? rules.sharedEngineSuppliers :
@@ -844,7 +1027,7 @@ internal sealed class SeriesSettings
                 invalid.Add(entry.Value.Tab);
         }
 
-        if (TrackLengthError(rules.maximumTrackLengthMiles) != null ||
+        if (SeriesSettingsStore.DisplayNameError(rules.name) != null || TrackLengthError(rules.maximumTrackLengthMiles) != null ||
             draft.StagePercentages.Any(percent => percent < 0 || percent > 100) ||
             draft.StagePercentages.Sum(percent => (long)percent) != 100)
             invalid.Add(0);
@@ -867,6 +1050,9 @@ internal sealed class SeriesSettings
         if (string.IsNullOrWhiteSpace(rules.ArtworkLogo) || Backgrounds.Any(page =>
             rules.DefaultBackgroundLabel(page.View) == null && string.IsNullOrWhiteSpace(rules.BackgroundFor(page.View))))
             invalid.Add(4);
+        var dates = SeriesSettingsStore.ScheduleDateErrors(rules.scheduleStartDate, rules.scheduleEndDate);
+        if (dates.Start != null || dates.End != null || CalendarError(rules) != null)
+            invalid.Add(6);
         return invalid;
     }
 
@@ -881,6 +1067,7 @@ internal sealed class SeriesSettings
             var original = series[selection.index];
             SeriesSettingsStore.Save(rules, original);
             drafts.Remove(original.id);
+            RefreshSeriesChoices();
             Render(message: $"Saved {original.name}.");
         }
         catch (Exception ex) when (SeriesSettingsStore.IsSettingsError(ex))

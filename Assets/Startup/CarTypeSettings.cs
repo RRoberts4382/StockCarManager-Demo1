@@ -8,7 +8,7 @@ using UnityEngine.UIElements;
 internal sealed class CarTypeSettings : DefinitionSettings<CarTypeDefinition>
 {
     public CarTypeSettings(Action back)
-        : base("Car Type Settings", "Car Type", back, "General", "Cameras & mirror", "Number placement", "Dashboard") {}
+        : base("Car Type Settings", "Car Type", back, selectorInTabRow: true, "General", "Cameras & mirror", "Number placement", "Dashboard") {}
 
     protected override IEnumerable<Entry> LoadEntries() => CarTypeDefinition.AvailableModels()
         .Select(item => new Entry(item.Model, item.Name, CarTypeDefinition.ForModel(item.Model),

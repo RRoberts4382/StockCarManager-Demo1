@@ -129,7 +129,7 @@ internal sealed class SessionCarResult
     public string rivalDriverId;
     public bool playerEntry;
     public bool manufacturerRecorded;
-    public CarManufacturer manufacturer;
+    public int manufacturer;
     public List<float> lapTimes = new List<float>();
     public int position;
     public int pitPaceLapLosses;

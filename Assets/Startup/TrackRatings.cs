@@ -24,6 +24,20 @@ internal static class TrackRatings
         yield return ("Tire Wear", weights.surfaceRoughness, null);
     }
 
+    internal static void SetAttribute(TrackWeights weights, CarComponent? component, float value)
+    {
+        switch (component)
+        {
+            case CarComponent.Engine: weights.horsepower = value; break;
+            case CarComponent.Transmission: weights.transmission = value; break;
+            case CarComponent.Suspension: weights.suspension = value; break;
+            case CarComponent.Brakes: weights.brakes = value; break;
+            case CarComponent.Aerodynamics: weights.aerodynamics = value; break;
+            case null: weights.surfaceRoughness = value; break;
+            default: throw new ArgumentOutOfRangeException(nameof(component));
+        }
+    }
+
     public static float TransmissionWeight(TrackDefinition track) =>
         track.majorStyle == "Road" ? 1f : track.lengthMiles <= 1f ? 0.25f : 0f;
 

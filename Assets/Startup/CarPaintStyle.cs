@@ -796,7 +796,7 @@ internal static class CarPaintEditor
 
     internal static Toggle CreateRenderNumberSwitch(bool value)
     {
-        var toggle = PracticeRunChart.CreatePillSwitch("Render number", value);
+        var toggle = SettingsFormStyle.PillSwitch("Render number", value);
         toggle.name = "render-car-number";
         toggle.style.flexShrink = 0;
         toggle.tooltip = "Show the game-rendered number on the car. Turn off if the paint already includes a number.";

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
+using System.Text;
 using UnityEngine;
 
 internal static class SeriesSettingsStore
@@ -25,22 +26,16 @@ internal static class SeriesSettingsStore
                 return defaults;
 
             var saved = Clone(defaults);
-            JsonUtility.FromJsonOverwrite(File.ReadAllText(path), saved);
+            JsonUtility.FromJsonOverwrite(File.ReadAllText(path, Encoding.UTF8), saved);
             // Catalog defaults still apply to manufacturers with no saved override.
             saved.manufacturerDefaultModels = defaults.manufacturerDefaultModels;
             saved.carModel = defaults.id == "craftsman-truck" && string.IsNullOrWhiteSpace(saved.carModel)
                 ? defaults.carModel : CarTypeDefinition.CanonicalModel(saved.carModel);
             NormalizeManufacturerModels(saved);
             saved.id = defaults.id;
-            saved.name = defaults.name;
+            saved.name = string.IsNullOrWhiteSpace(saved.name)
+                ? defaults.name : CareerSetup.LimitName(saved.name.Trim());
             saved.SeriesLevel = defaults.SeriesLevel;
-            string originalJson = File.ReadAllText(path);
-            var original = JsonUtility.FromJson<RacingSeries>(originalJson);
-            if (original.name != CareerSetup.LimitName(original.name))
-            {
-                original.name = CareerSetup.LimitName(original.name);
-                AtomicWrite(path, temporary => File.WriteAllText(temporary, JsonUtility.ToJson(original, true)));
-            }
             string error = Validate(saved);
             if (error != null)
                 throw new ArgumentException(error);
@@ -53,6 +48,52 @@ internal static class SeriesSettingsStore
         }
     }
 
+    internal static IEnumerable<RacingSeries> LoadCustomSeries()
+    {
+        if (!Directory.Exists(Folder))
+            yield break;
+        string[] paths;
+        try { paths = Directory.GetFiles(Folder, "custom-*.json"); }
+        catch (Exception ex) when (IsSettingsError(ex))
+        {
+            Debug.LogWarning($"Could not list custom series. {ex.Message}");
+            yield break;
+        }
+
+        foreach (string path in paths)
+        {
+            RacingSeries series;
+            try
+            {
+                string id = Path.GetFileNameWithoutExtension(path);
+                if (!Guid.TryParseExact(id.Substring("custom-".Length), "N", out _))
+                    continue;
+                series = JsonUtility.FromJson<RacingSeries>(File.ReadAllText(path, Encoding.UTF8));
+                if (series == null || series.id != id || Validate(series) != null)
+                    continue;
+                series.carModel = CarTypeDefinition.CanonicalModel(series.carModel);
+                NormalizeManufacturerModels(series);
+            }
+            catch (Exception ex) when (IsSettingsError(ex))
+            {
+                Debug.LogWarning($"Could not read {Path.GetFileName(path)}. {ex.Message}");
+                continue;
+            }
+            yield return series;
+        }
+    }
+
+    internal static RacingSeries Create(RacingSeries template, string name)
+    {
+        var series = Clone(template);
+        series.id = "custom-" + Guid.NewGuid().ToString("N");
+        series.name = name;
+        series.useCarsTourArtworkDefaults = template.UsesCarsTourArtworkDefaults;
+        Save(series, series);
+        RacingSeries.AddCustomSeries(series);
+        return series;
+    }
+
     public static RacingSeries Clone(RacingSeries series) => JsonUtility.FromJson<RacingSeries>(JsonUtility.ToJson(series));
 
     public static void Save(RacingSeries draft, RacingSeries series)
@@ -61,7 +102,9 @@ internal static class SeriesSettingsStore
         saved.carModel = CarTypeDefinition.CanonicalModel(saved.carModel);
         NormalizeManufacturerModels(saved);
         saved.id = series.id;
-        saved.name = CareerSetup.LimitName(series.name);
+        saved.name = draft.name?.Trim();
+        saved.scheduleStartDate = saved.scheduleStartDate?.Trim();
+        saved.scheduleEndDate = saved.scheduleEndDate?.Trim();
         saved.SeriesLevel = series.SeriesLevel;
         string error = Validate(saved);
         if (error != null)
@@ -72,7 +115,7 @@ internal static class SeriesSettingsStore
             background.image = SaveArtwork(background.image);
 
         string json = JsonUtility.ToJson(saved, true);
-        AtomicWrite(SettingsPath(series.id), temporary => File.WriteAllText(temporary, json));
+        AtomicWrite(SettingsPath(series.id), temporary => File.WriteAllText(temporary, json, new UTF8Encoding(false)));
         // Career setup keeps a reference to each catalog entry.
         JsonUtility.FromJsonOverwrite(json, series);
     }
@@ -89,13 +132,68 @@ internal static class SeriesSettingsStore
         }
     }
 
+    internal static string DisplayNameError(string name) =>
+        string.IsNullOrWhiteSpace(name) || name.Trim().Length > 25 || name.Any(char.IsControl)
+            ? "Series name must contain 1 to 25 characters." : null;
+
+    internal static (string Start, string End) ScheduleDateErrors(string start, string end)
+    {
+        if (string.IsNullOrWhiteSpace(start) && string.IsNullOrWhiteSpace(end))
+            return (null, null);
+
+        const string formatError = "Enter a month and day as MM/DD, valid every year.";
+        bool startValid = SeasonSchedule.TryScheduleDate(start, 2001, out var first);
+        bool endValid = SeasonSchedule.TryScheduleDate(end, 2001, out var last);
+        string rangeError = startValid && endValid && last < first
+            ? "End date cannot be before the start date."
+            : startValid && endValid && (last - first).Days < 6
+                ? "Allow at least seven days so every season has a Sunday."
+                : null;
+        return (startValid ? null : formatError, endValid ? rangeError : formatError);
+    }
+
+    internal static string CalendarDateError(string value) =>
+        SeasonSchedule.TryScheduleDate(value, 2001, out _) ? null : "Enter a race date as MM/DD, valid every year.";
+
+    internal static string CalendarTimeError(string value) =>
+        !SessionWeatherForecast.TryStartTime(value, out var time) ||
+        time < TimeSpan.FromHours(12) || time > TimeSpan.FromHours(21)
+            ? "Enter a start time from 12:00 to 21:00." : null;
+
+    internal static string CalendarError(RacingSeries series)
+    {
+        var races = series.calendarRaces;
+        if (races?.Length > 0 != true)
+            return null;
+        foreach (var race in races)
+        {
+            if (race == null || race.trackId <= 0 || race.laps <= 0)
+                return "Each calendar race needs a track and a positive lap count.";
+            if (CalendarTimeError(race.startTime) is string timeError)
+                return timeError;
+            if (CalendarDateError(race.date) is string error)
+                return error;
+        }
+        return races.Select(race => race.date.Trim()).Distinct(StringComparer.Ordinal).Count() == races.Length
+            ? null : "Choose a different date for each race.";
+    }
+
     public static string Validate(RacingSeries series)
     {
-        if (string.IsNullOrWhiteSpace(series.name) || series.name.Length > 25)
-            return "Series name must contain 1 to 25 characters.";
+        if (DisplayNameError(series.name) is string nameError)
+            return nameError;
+        var dates = ScheduleDateErrors(series.scheduleStartDate, series.scheduleEndDate);
+        if ((dates.Start ?? dates.End) is string dateError)
+            return dateError;
+        if (CalendarError(series) is string calendarError)
+            return calendarError;
+        if (series.calendarRaces?.Length > 0 != true && series.useSelectedTracks && (series.scheduleTrackIds?.Length > 0 != true ||
+            series.scheduleTrackIds.Any(id => id <= 0) ||
+            series.scheduleTrackIds.Distinct().Count() != series.scheduleTrackIds.Length))
+            return "Select at least one track and include each track only once.";
         if (series.manufacturers?.Length > 0 != true)
             return "Choose at least one manufacturer.";
-        if (series.manufacturers.Any(make => make == null || !Enum.IsDefined(typeof(CarManufacturer), make.manufacturer)) ||
+        if (series.manufacturers.Any(make => make == null || !ManufacturerCatalog.Contains(make.manufacturer)) ||
             series.manufacturers.Select(make => make.manufacturer).Distinct().Count() != series.manufacturers.Length)
             return "Manufacturer choices must be valid and unique.";
 
@@ -111,7 +209,7 @@ internal static class SeriesSettingsStore
         {
             foreach (var make in series.manufacturers)
             {
-                string error = ValidateSuppliers(make.engineSuppliers, make.manufacturer.ToString());
+                string error = ValidateSuppliers(make.engineSuppliers, ManufacturerCatalog.Name(make.manufacturer));
                 if (error != null) return error;
             }
         }
@@ -220,14 +318,24 @@ internal static class SeriesSettingsStore
         string extension = Path.GetExtension(location).ToLowerInvariant();
         if (extension != ".png" && extension != ".jpg" && extension != ".jpeg")
             throw new ArgumentException("Choose a PNG or JPEG image.");
-        byte[] data = ReadImage(location);
+        return SaveArtworkBytes(ReadImage(location), extension, validateOnly) ?? location;
+    }
+
+    internal static string PasteArtwork() => SaveArtworkBytes(TrackImageClipboard.ReadPng(), ".png", false);
+
+    private static string SaveArtworkBytes(byte[] data, string extension, bool validateOnly)
+    {
+        if (data == null || data.Length == 0)
+            throw new ArgumentException("The copied image could not be read.");
+        if (data.LongLength > MaximumImageBytes)
+            throw new ArgumentException("Artwork must be 16 MB or smaller.");
         var sample = DecodeImage(data);
         if (Application.isPlaying)
             UnityEngine.Object.Destroy(sample);
         else
             UnityEngine.Object.DestroyImmediate(sample);
         if (validateOnly)
-            return location;
+            return null;
 
         using var hash = SHA256.Create();
         string key = ArtworkPrefix + BitConverter.ToString(hash.ComputeHash(data)).Replace("-", "").ToLowerInvariant() + extension;

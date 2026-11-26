@@ -183,11 +183,12 @@ public sealed class TrackDefinition
         if (pits != null)
             yield return (TrackValidationSection.Pit, pits);
 
-        if (weights == null || !new[] { weights.surfaceRoughness, weights.aerodynamics, weights.horsepower,
-            weights.brakes, weights.suspension, weights.transmission }
-            .All(value => InRange(value, 0f, 1f)))
+        if (!ValidWeights(weights))
             yield return (TrackValidationSection.Ratings, "Enter weights from 0 to 1.");
     }
+
+    internal static bool ValidWeights(TrackWeights values) => values != null &&
+        TrackRatings.DisplayAttributes(values).All(attribute => InRange(attribute.Value, 0f, 1f));
 
     private string ValidateLayout()
     {
@@ -322,6 +323,15 @@ public sealed class TrackPitRoad
     public TrackPitPoint[] stalls = Array.Empty<TrackPitPoint>();
 }
 
+[Serializable]
+internal sealed class TrackSettingsValues
+{
+    public string name;
+    public string logo;
+    public TrackWeights weights;
+    public bool hasWeightOverride;
+}
+
 public sealed class TrackCatalog
 {
     public sealed class Entry
@@ -386,7 +396,9 @@ public sealed class TrackCatalog
                     if (error == null && !ids.Add(definition.id))
                         error = $"Duplicate ID {definition.id}.";
                     if (error == null)
+                    {
                         Entries.Add(new Entry(file, definition, json));
+                    }
                     else
                         errors.Add($"{Path.GetFileName(file)}: {error}");
                 }
@@ -399,7 +411,17 @@ public sealed class TrackCatalog
             {
                 float shortest = Entries.Min(entry => entry.Definition.lengthMiles);
                 foreach (var entry in Entries)
+                {
                     TrackRatings.Apply(entry.Definition, shortest);
+                    var track = entry.Definition;
+                    var saved = ReadTrackSettings(track.id);
+                    track.name = saved?.name ?? ReadDisplayName(track.id) ?? track.name;
+                    if (saved != null)
+                        track.logo = saved.logo;
+                    var weights = saved?.hasWeightOverride == true ? saved.weights : ReadAttributeOverride(track.id);
+                    if (weights != null)
+                        track.weights = weights;
+                }
             }
             Entries.Sort((a, b) => StringComparer.OrdinalIgnoreCase.Compare(a.Definition.name, b.Definition.name));
         }
@@ -409,6 +431,98 @@ public sealed class TrackCatalog
         }
         Status = string.Join("\n", errors);
     }
+
+    private static string AttributeOverridePath(int id) =>
+        Path.Combine(Application.persistentDataPath, "TrackAttributes",
+            id.ToString(System.Globalization.CultureInfo.InvariantCulture) + ".json");
+
+    private static TrackWeights ReadAttributeOverride(int id)
+    {
+        try
+        {
+            string path = AttributeOverridePath(id);
+            if (!File.Exists(path)) return null;
+            var weights = JsonUtility.FromJson<TrackWeights>(File.ReadAllText(path, System.Text.Encoding.UTF8));
+            return TrackDefinition.ValidWeights(weights) ? weights : null;
+        }
+        catch (Exception ex) when (SeriesSettingsStore.IsSettingsError(ex))
+        {
+            Debug.LogWarning($"Could not read attributes for track #{id}. {ex.Message}");
+            return null;
+        }
+    }
+
+    private static string TrackSettingsPath(int id) =>
+        Path.Combine(Application.persistentDataPath, "TrackSettings",
+            id.ToString(System.Globalization.CultureInfo.InvariantCulture) + ".json");
+
+    private static TrackSettingsValues ReadTrackSettings(int id)
+    {
+        try
+        {
+            string path = TrackSettingsPath(id);
+            if (!File.Exists(path)) return null;
+            var saved = JsonUtility.FromJson<TrackSettingsValues>(File.ReadAllText(path, System.Text.Encoding.UTF8));
+            return saved != null && DisplayNameError(saved.name) == null &&
+                (!saved.hasWeightOverride || TrackDefinition.ValidWeights(saved.weights)) ? saved : null;
+        }
+        catch (Exception ex) when (SeriesSettingsStore.IsSettingsError(ex))
+        {
+            Debug.LogWarning($"Could not read settings for track #{id}. {ex.Message}");
+            return null;
+        }
+    }
+
+    internal void SaveSettings(int id, TrackSettingsValues draft)
+    {
+        var track = Entries.Find(entry => entry.Definition.id == id)?.Definition;
+        if (track == null)
+            throw new ArgumentException("The track is no longer available.");
+        string name = draft.name?.Trim();
+        if (DisplayNameError(name) is string error)
+            throw new ArgumentException(error);
+        if (!TrackDefinition.ValidWeights(draft.weights))
+            throw new ArgumentException("Enter attribute values from 0.00 to 1.00.");
+
+        bool weightsChanged = !TrackRatings.DisplayAttributes(track.weights)
+            .SequenceEqual(TrackRatings.DisplayAttributes(draft.weights));
+        var saved = new TrackSettingsValues
+        {
+            name = name,
+            logo = SeriesSettingsStore.SaveArtwork(draft.logo),
+            weights = draft.weights,
+            hasWeightOverride = weightsChanged || ReadTrackSettings(id)?.hasWeightOverride == true ||
+                ReadAttributeOverride(id) != null
+        };
+        SeriesSettingsStore.AtomicWrite(TrackSettingsPath(id), temporary =>
+            File.WriteAllText(temporary, JsonUtility.ToJson(saved, true), new System.Text.UTF8Encoding(false)));
+    }
+
+    private static string DisplayNamePath(int id) =>
+        Path.Combine(Application.persistentDataPath, "TrackNames", id.ToString(System.Globalization.CultureInfo.InvariantCulture) + ".txt");
+
+    private static string ReadDisplayName(int id)
+    {
+        try
+        {
+            string path = DisplayNamePath(id);
+            if (File.Exists(path))
+            {
+                string name = File.ReadAllText(path, System.Text.Encoding.UTF8).Trim();
+                if (DisplayNameError(name) == null)
+                    return name;
+            }
+        }
+        catch (Exception ex) when (SeriesSettingsStore.IsSettingsError(ex))
+        {
+            Debug.LogWarning($"Could not read the display name for track #{id}. {ex.Message}");
+        }
+        return null;
+    }
+
+    internal static string DisplayNameError(string name) =>
+        string.IsNullOrWhiteSpace(name) || name.Length > 80 || name.Any(char.IsControl)
+            ? "Enter a track name from 1 to 80 characters." : null;
 
     public void Save(TrackDefinition definition, Entry existing)
     {

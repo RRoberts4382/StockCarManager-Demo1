@@ -13,6 +13,12 @@ internal sealed class RacingSeries
     public int SeriesLevel = int.MaxValue;
     public string carModel;
     public float maximumTrackLengthMiles;
+    public bool useSelectedTracks;
+    public int[] scheduleTrackIds;
+    public string scheduleStartDate;
+    public string scheduleEndDate;
+    public SeriesCalendarRace[] calendarRaces;
+    public bool useCarsTourArtworkDefaults;
     public SeriesManufacturer[] manufacturers;
     public SeriesManufacturerModel[] manufacturerDefaultModels;
     public SeriesEngine[] sharedEngineSuppliers;
@@ -39,21 +45,28 @@ internal sealed class RacingSeries
 
     public static RacingSeries[] Catalog => catalog ??= Resources.LoadAll<TextAsset>("RacingSeries")
         .Select(Read).Where(series => series != null)
+        .Concat(SeriesSettingsStore.LoadCustomSeries())
         .GroupBy(series => series.id, StringComparer.Ordinal).Select(group => group.First())
         .OrderBy(series => series.SeriesLevel).ThenBy(series => series.name).ToArray();
 
+    internal static void AddCustomSeries(RacingSeries series) =>
+        catalog = Catalog.Append(series).ToArray();
+
     public static string CanonicalId(string id) =>
         id == "tour-modified-detailed" ? "tour-modified" : id;
+
+    internal static string DisplayName(string id, string savedName) =>
+        Catalog.FirstOrDefault(series => series.id == CanonicalId(id))?.name ?? savedName;
 
     public static RacingSeries ForId(string id) =>
         Catalog.FirstOrDefault(series => series.id == CanonicalId(id)) ??
         Catalog.FirstOrDefault(series => series.id == "nascar-cup") ?? Defaults;
 
-    public CarManufacturer[] ManufacturerChoices => manufacturers?.Length > 0
+    public int[] ManufacturerChoices => manufacturers?.Length > 0
         ? manufacturers.Select(make => make.manufacturer).Distinct().ToArray()
-        : (CarManufacturer[])Enum.GetValues(typeof(CarManufacturer));
+        : ManufacturerCatalog.ActiveIds;
 
-    public string ModelFor(CarManufacturer manufacturer)
+    public string ModelFor(int manufacturer)
     {
         string model = manufacturers?.FirstOrDefault(make => make.manufacturer == manufacturer)?.carModel;
         if (!string.IsNullOrWhiteSpace(model))
@@ -61,7 +74,7 @@ internal sealed class RacingSeries
         return DefaultModelFor(manufacturer);
     }
 
-    public string DefaultModelFor(CarManufacturer manufacturer)
+    public string DefaultModelFor(int manufacturer)
     {
         string model = manufacturerDefaultModels?.FirstOrDefault(make => make.manufacturer == manufacturer)?.carModel;
         if (!string.IsNullOrWhiteSpace(model))
@@ -77,7 +90,7 @@ internal sealed class RacingSeries
 
     public SeriesEmployeeRole SalaryRange(EmployeeRole role) => employeeRoles?.FirstOrDefault(item => item.role == role);
 
-    public EngineSupplier[] SuppliersFor(CarManufacturer manufacturer)
+    public EngineSupplier[] SuppliersFor(int manufacturer)
     {
         if (manufacturers?.Length > 0 && !manufacturers.Any(make => make.manufacturer == manufacturer))
             return Array.Empty<EngineSupplier>();
@@ -108,7 +121,7 @@ internal sealed class RacingSeries
         var cup = Catalog.FirstOrDefault(series => series.id == "nascar-cup");
         return cup?.teamBackgrounds?.FirstOrDefault(item => item != null && item.view == view)?.image;
     }
-    internal bool UsesCarsTourArtworkDefaults => id == "cars-tour";
+    internal bool UsesCarsTourArtworkDefaults => id == "cars-tour" || useCarsTourArtworkDefaults;
 
     internal string ArtworkLogo => UsesCarsTourArtworkDefaults && string.IsNullOrWhiteSpace(logo)
         ? "SeriesBranding/cars-tour/logo" : logo;
@@ -149,7 +162,7 @@ internal sealed class RacingSeries
 [Serializable]
 internal sealed class SeriesManufacturer
 {
-    public CarManufacturer manufacturer;
+    public int manufacturer;
     public string carModel;
     public SeriesEngine[] engineSuppliers;
 }
@@ -157,7 +170,7 @@ internal sealed class SeriesManufacturer
 [Serializable]
 internal sealed class SeriesManufacturerModel
 {
-    public CarManufacturer manufacturer;
+    public int manufacturer;
     public string carModel;
 }
 
@@ -202,6 +215,7 @@ internal sealed class Career
     public List<string> deletedSocialPostIds = new List<string>();
     public string socialStartDate;
     public string primaryTeamColor;
+    public string teamLogo;
     public string secondaryTeamColor;
     public EngineSupplier engineSupplier;
 
@@ -464,7 +478,7 @@ internal sealed class Career
     internal bool AssignRivalManufacturers(System.Random random, bool enteringSeries = false)
     {
         var choices = SeriesRules.ManufacturerChoices;
-        var remaining = new List<CarManufacturer>();
+        var remaining = new List<int>();
         var teams = (rivalCars ?? Enumerable.Empty<TeamCar>())
             .Where(car => car.number >= 1 && car.number < TrackPreview.CarCount)
             .GroupBy(car => (car.number - 1) / TrackPreview.RivalCarsPerTeam);
@@ -473,7 +487,7 @@ internal sealed class Career
         {
             var assigned = enteringSeries ? null : team.FirstOrDefault(car =>
                 car.rivalManufacturerAssigned && !car.rivalManufacturerEdited && choices.Contains(car.manufacturer));
-            CarManufacturer manufacturer;
+            int manufacturer;
             if (assigned != null)
             {
                 manufacturer = assigned.manufacturer;
@@ -698,7 +712,7 @@ internal sealed class ComponentRepair
     }
 }
 
-internal enum CarManufacturer { Chevrolet, Ford, Toyota, Dodge }
+
 
 internal enum ChassisType { IntermediateTrack, RoadCourse, ShortTrack, SuperSpeedway }
 
@@ -743,7 +757,7 @@ internal sealed class TeamCar
     public int number;
     public string chassisNumber;
     [NonSerialized] public string modelResource;
-    public CarManufacturer manufacturer = CarManufacturer.Chevrolet;
+    public int manufacturer = ManufacturerCatalog.Chevrolet;
     public ChassisType chassisType = ChassisType.IntermediateTrack;
     public Setup setup = new Setup();
     public List<TrackSetup> trackSetups = new List<TrackSetup>();
@@ -945,7 +959,7 @@ internal sealed class NewChassisConfiguration
     public bool selectionStateRecorded;
     public bool manufacturerSelected;
     public bool chassisTypeSelected;
-    public CarManufacturer manufacturer;
+    public int manufacturer;
     public ChassisType chassisType;
     public int[] componentLevels;
 }
@@ -1146,7 +1160,7 @@ internal sealed class Employee
 
 internal sealed class CareerSetup
 {
-    private readonly RacingSeries[] series;
+    private RacingSeries[] series;
     private Career transitionSource;
     private string transitionMailId;
     private int transitionYear;
@@ -1184,7 +1198,7 @@ internal sealed class CareerSetup
     private readonly VisualElement paintControls = new VisualElement();
     private readonly VisualElement inlinePaintControls = new VisualElement();
     private readonly Label paintStatus = SettingsFormStyle.Label("", "settings-validation-summary");
-    private CarManufacturer[] manufacturers = (CarManufacturer[])Enum.GetValues(typeof(CarManufacturer));
+    private int[] manufacturers = ManufacturerCatalog.ActiveIds;
     private readonly IReadOnlyList<CarPaintScheme> schemes = CarPaintStyle.Schemes;
     private EngineSupplier[] shownSuppliers;
     private readonly CarThumbnails previewThumbnails = CarThumbnails.CreateLargePreview(tighterOrbit: true);
@@ -1283,7 +1297,7 @@ internal sealed class CareerSetup
             RefreshPaintPreview();
         });
         inlineTemplatePicker.style.display = DisplayStyle.None;
-        manufacturer = new DropdownField("Manufacturer", manufacturers.Select(make => make.ToString()).ToList(), 0);
+        manufacturer = new DropdownField("Manufacturer", manufacturers.Select(make => ManufacturerCatalog.Name(make)).ToList(), 0);
         manufacturerSelector = AddSelectionControl("Manufacturer", () =>
             OpenChoicePicker("Choose a manufacturer", manufacturer.choices,
                 index => { manufacturer.index = index; RefreshSuppliers(); RefreshValidation(); UpdateCarPreview(); }));
@@ -1659,6 +1673,7 @@ internal sealed class CareerSetup
 
     public void Open()
     {
+        series = RacingSeries.Catalog;
         transitionSource = null; transitionMailId = null; transitionYear = 0;
         saveButton.text = "Start Career";
         validationAttempted = false;
@@ -1784,7 +1799,7 @@ internal sealed class CareerSetup
 
         configuredSeries = selectedSeries;
         manufacturers = series[selectedSeries].ManufacturerChoices;
-        manufacturer.choices = manufacturers.Select(make => make.ToString()).ToList();
+        manufacturer.choices = manufacturers.Select(make => ManufacturerCatalog.Name(make)).ToList();
         manufacturer.SetValueWithoutNotify(manufacturer.choices.FirstOrDefault() ?? "");
         shownSuppliers = Array.Empty<EngineSupplier>();
         supplier.choices = new List<string>();
@@ -2002,8 +2017,16 @@ internal sealed class CareerSetup
     public SeasonSchedule GenerateSeason(Career career, int year)
     {
         var definition = career.SeriesRules;
-        return SeasonSchedule.Generate(year, catalog.Entries.Select(entry => entry.Definition), scheduleRandom,
-            definition.maximumTrackLengthMiles, definition.usesStages, definition.stagePercentages);
+        if (definition.calendarRaces?.Length > 0)
+            return SeasonSchedule.GenerateCalendar(year, definition, id => catalog.Find(id)?.Definition, scheduleRandom);
+
+        var tracks = definition.useSelectedTracks
+            ? (definition.scheduleTrackIds ?? Array.Empty<int>()).Select(catalog.Find)
+                .Where(entry => entry != null).Select(entry => entry.Definition)
+            : catalog.Entries.Select(entry => entry.Definition);
+        return SeasonSchedule.Generate(year, tracks, scheduleRandom,
+            definition.maximumTrackLengthMiles, definition.usesStages, definition.stagePercentages,
+            definition.scheduleStartDate, definition.scheduleEndDate);
     }
 
     public void SaveProgress(Career career)
@@ -2169,11 +2192,8 @@ internal sealed class CareerSetup
                     string.IsNullOrWhiteSpace(entry.teamName) || string.IsNullOrWhiteSpace(entry.seriesId) ||
                     string.IsNullOrWhiteSpace(entry.seriesName))
                     continue;
-                if (entry.seriesId is "tour-modified-detailed" or "cars-tour")
-                {
-                    entry.seriesId = RacingSeries.CanonicalId(entry.seriesId);
-                    entry.seriesName = RacingSeries.ForId(entry.seriesId).name;
-                }
+                entry.seriesId = RacingSeries.CanonicalId(entry.seriesId);
+                entry.seriesName = RacingSeries.DisplayName(entry.seriesId, entry.seriesName);
                 entry.Path = file;
                 entry.LastSaved = File.GetLastWriteTimeUtc(file);
                 careers.Add(entry);
@@ -2239,11 +2259,8 @@ internal sealed class CareerSetup
                 }
             }
         }
-        if (career.seriesId is "tour-modified-detailed" or "cars-tour")
-        {
-            career.seriesId = RacingSeries.CanonicalId(career.seriesId);
-            career.seriesName = RacingSeries.ForId(career.seriesId).name;
-        }
+        career.seriesId = RacingSeries.CanonicalId(career.seriesId);
+        career.seriesName = RacingSeries.DisplayName(career.seriesId, career.seriesName);
         career.savePath = file;
         return career;
     }

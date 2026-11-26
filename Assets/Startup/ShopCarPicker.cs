@@ -59,7 +59,7 @@ internal sealed class ShopCarPicker
             content.Add(image);
             var specs = new VisualElement { pickingMode = PickingMode.Ignore };
             specs.AddToClassList("shop-strip-specs");
-            specs.Add(SettingsFormStyle.Label(car.manufacturer.ToString(), "shop-car-spec"));
+            specs.Add(SettingsFormStyle.Label(ManufacturerCatalog.Name(car.manufacturer), "shop-car-spec"));
             specs.Add(SettingsFormStyle.Label(car.ChassisTypeName, "shop-car-spec"));
             content.Add(specs);
             panel.Add(content);
