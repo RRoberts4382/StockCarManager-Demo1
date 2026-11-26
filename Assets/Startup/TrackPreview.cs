@@ -159,6 +159,13 @@ public sealed partial class TrackPreview : MonoBehaviour
     internal RaceSessionRun SessionRun { get; private set; }
     private RaceSessionRun previewTiming;
     internal RaceSessionRun TimingRun => SessionRun ?? previewTiming;
+    internal int TireWearRate => simulation?.TireWearRate ?? 1;
+
+    internal void SetTireWearRate(int rate)
+    {
+        if (simulation != null && rate is (1 or 2 or 4 or 8))
+            simulation.TireWearRate = rate;
+    }
     private CarPaintStyle?[] scoringPaint;
 
     internal void StyleScoringNumber(UnityEngine.UIElements.Label label, int index)
@@ -196,6 +203,9 @@ public sealed partial class TrackPreview : MonoBehaviour
     private float cautionPaceExitLane, cautionPaceMergeLength;
     private float cautionPaceAvoidanceLane;
     private float cautionPaceTrafficSpeed;
+    private TrackSnapshot.PaceCarSample cautionPaceSample;
+    private Vector3 previousPaceSnapshotPosition;
+    private double previousPaceSnapshotTime = double.NaN;
     private const float PaceClearanceMargin = .55f;
     private const float PaceLaneRate = 2.5f;
     private const float FormationSeamLength = 15f;
@@ -685,6 +695,8 @@ public sealed partial class TrackPreview : MonoBehaviour
         currentTrafficSpeeds = new float[count];
         trafficBrakingFactors = new float[count];
         stoppedCarTime = new float[count];
+        pitObstructionTime = new float[count];
+        pitObstruction = new bool[count];
         practiceStoppedCars = new PracticeStoppedCar[count];
         practiceCarAhead = new int[count];
         practiceGapAhead = new float[count];
@@ -1486,6 +1498,8 @@ public sealed partial class TrackPreview : MonoBehaviour
             backExitCollisions = new VehicleCollision001(cars.Length);
         System.Array.Clear(crashes, 0, crashes.Length);
         System.Array.Clear(stoppedCarTime, 0, stoppedCarTime.Length);
+        System.Array.Clear(pitObstructionTime, 0, pitObstructionTime.Length);
+        nextPitClearAt = 0d;
         System.Array.Clear(practiceStoppedCars, 0, practiceStoppedCars.Length);
         System.Array.Clear(practiceLeftStall, 0, practiceLeftStall.Length);
         PrepareCollisionFlashes();
@@ -1917,7 +1931,7 @@ public sealed partial class TrackPreview : MonoBehaviour
 
         if (raceReleased)
         {
-            stages.BeforeStep(trafficCars, SessionStep, restartReady: !IowaWreckResponseInProgress);
+            stages.BeforeStep(SessionRun, trafficCars, SessionStep, restartReady: !IowaWreckResponseInProgress);
             AdvanceSimulation(SessionStep);
             AdvanceIowaWreckResponse(SessionStep);
             stages.AfterStep(SessionRun, trafficCars, restartReady: !IowaWreckResponseInProgress,
@@ -1929,6 +1943,8 @@ public sealed partial class TrackPreview : MonoBehaviour
         raceReleased = true;
         stages = ((TrackState001)simulationModel).StartStages(pitTraffic, cars.Length, definition, simulationRandom);
         cautionPaceAvoidanceLane = 0f;
+        cautionPaceSample = default;
+        previousPaceSnapshotTime = double.NaN;
         stages.PaceTrafficSpeed = LimitCautionPaceTrafficSpeed;
         bool releaseFormation = UsesOvalTraffic007;
         float halfLane = releaseFormation ? FormationHalfLane : 0f;
@@ -2071,7 +2087,7 @@ public sealed partial class TrackPreview : MonoBehaviour
     }
 
     private float PitAdjustedSpeed(int index, float freeSpeed, float seconds, float braking,
-        float preferredLineSpeedFactor, float? paceSpeedCeiling = null)
+        float preferredLineSpeedFactor, float? paceSpeedCeiling = null, bool coastToTarget = false)
     {
         var car = trafficCars?[index];
         bool activeOnTrack = car?.InPit != true && car?.InGarage != true &&
@@ -2079,7 +2095,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         if (!activeOnTrack)
             preferredLineSpeedFactor = 1f;
         float cleanAirSpeed = float.NaN;
-        if (braking <= 0f && activeOnTrack && DraftSpeedActive && !BlendingStartLanes &&
+        if (!coastToTarget && braking <= 0f && activeOnTrack && DraftSpeedActive && !BlendingStartLanes &&
             stages?.ReleasingRestartLanes != true && draftEligible[index] &&
             SessionRun.CurrentSpeed(index) >= 75f * TrackDefinition.MetersPerMile / 3600f &&
             (definition.restrictorPlate || draft.SpeedBoost(index) > .1f))
@@ -2089,20 +2105,25 @@ public sealed partial class TrackPreview : MonoBehaviour
         }
         if (car == null || pitTraffic == null)
             return SessionRun.ConditionLimitedSpeedAndPace(index, freeSpeed, seconds, out trafficPaceSpeeds[index],
-                braking, activeOnTrack, paceSpeedCeiling, preferredLineSpeedFactor, cleanAirSpeed);
+                braking, activeOnTrack, paceSpeedCeiling, preferredLineSpeedFactor, cleanAirSpeed, coastToTarget);
         float stopAt = float.PositiveInfinity;
         if (practice?.State == SessionTrackState.ReturnToPits)
             stopAt = practice.ParkingTarget(index);
         else if (pitStops != null)
             stopAt = pitStops.StopTarget(index);
-        float target = pitTraffic.PlannedSpeed(car, LimitNorthWilkesboroApronSpeed(car, freeSpeed), stopAt, seconds);
+        float approachSpeed = LimitNorthWilkesboroApronSpeed(car, freeSpeed);
+        bool seekingPitLane = activeOnTrack && car.ApronEntryActive && pitStops?.IsRequested(index) == true &&
+            !SessionRun.Finished(index) &&
+            Mathf.Abs(drivingLanes[index] - PitApproachLane(index, car.TrackDistance, car.NextEntry)) > .25f;
+        // Brake for pit-road speed once the car has secured the entry lane.
+        float target = seekingPitLane ? freeSpeed : pitTraffic.PlannedSpeed(car, approachSpeed, stopAt, seconds);
         if (target < freeSpeed)
         {
             braking = Mathf.Max(braking, TrackPitTraffic.PitApproachDeceleration);
             preferredLineSpeedFactor = 1f;
         }
         float limited = SessionRun.ConditionLimitedSpeedAndPace(index, target, seconds, out trafficPaceSpeeds[index],
-            braking, activeOnTrack, paceSpeedCeiling, preferredLineSpeedFactor, cleanAirSpeed);
+            braking, activeOnTrack, paceSpeedCeiling, preferredLineSpeedFactor, cleanAirSpeed, coastToTarget);
         if (SessionRun.HasTerminalFailure(index))
             car.NextEntry = float.PositiveInfinity;
         return limited;
@@ -2122,13 +2143,14 @@ public sealed partial class TrackPreview : MonoBehaviour
         {
             trafficPaceSpeeds[i] = 0f;
             float preferredLineSpeedFactor = 1f;
-            float yellowSpeed = TrackState001Stages.PaceSpeed;
-            if (yellow && !trafficCars[i].InPit && !trafficCars[i].ApronEntryActive && !trafficCars[i].ApronExitActive)
+            bool shortTrackYellow = yellow && definition.lengthMiles <= .5f;
+            float yellowSpeed = shortTrackYellow ? TrackState001Stages.ShortTrackPaceSpeed : TrackState001Stages.PaceSpeed;
+            if (yellow && !shortTrackYellow && !trafficCars[i].InPit && !trafficCars[i].ApronEntryActive && !trafficCars[i].ApronExitActive)
                 yellowSpeed += TrackState001RaceStart.PaceSpeedVariation(i, SessionRun.Elapsed, amplitude: .35f);
             stepSpeeds[i] = SessionRun.Retired(i) ? 0f : crashes[i].Active ? crashes[i].ForwardSpeed :
                 PitAdjustedSpeed(i, yellow ? yellowSpeed : SpeedAt(i, trafficCars[i].TrackDistance, out preferredLineSpeedFactor),
-                    seconds, yellow ? LapSpeedProfile.MaximumBraking(definition) : trackOpen ? TrackBrakingLimit(i) : 0f,
-                    preferredLineSpeedFactor);
+                    seconds, shortTrackYellow && !trafficCars[i].InPit ? 0f : yellow ? LapSpeedProfile.MaximumBraking(definition) : trackOpen ? TrackBrakingLimit(i) : 0f,
+                    shortTrackYellow ? 1f : preferredLineSpeedFactor, coastToTarget: shortTrackYellow && !trafficCars[i].InPit);
             if (crashes[i].Cause != CrashCause.FrontTireWear)
                 stepSpeeds[i] = SessionRun.FlatTireSpeed(stepSpeeds[i], SessionRun.FlatTireMask(i));
         }
@@ -2245,6 +2267,7 @@ public sealed partial class TrackPreview : MonoBehaviour
     {
         public bool Active;
         public CrashCause Cause;
+        public HashSet<int> ContactParticipants;
         public float ForwardSpeed;
         public float SideSpeed;
         public float Lane;
@@ -2265,7 +2288,10 @@ public sealed partial class TrackPreview : MonoBehaviour
 
     private float[] currentTrafficSpeeds;
     private float[] trafficBrakingFactors;
-    private float[] stoppedCarTime;
+    private float[] stoppedCarTime, pitObstructionTime;
+    private bool[] pitObstruction;
+    private double nextPitClearAt;
+    private const float PitQueueReleaseSeconds = 2f;
     private PracticeStoppedCar[] practiceStoppedCars;
     private int[] practiceCarAhead;
     private float[] practiceGapAhead;
@@ -2282,6 +2308,14 @@ public sealed partial class TrackPreview : MonoBehaviour
             !SessionRun.Finished(0) && !SessionRun.Retired(0) && !crashes[0].Active)
             pitStops.ArmQueuedEntry(0, stages?.CanEnterPits(0, trafficCars[0]) ?? true,
                 allowEmergencyEntry: stages?.IsCaution != true);
+        if (stages != null && pitStops != null && SessionRun?.IsRace == true &&
+            TrackState is not (SessionTrackState.Checkered or SessionTrackState.FinishUnderCaution))
+        {
+            var pitWindow = stages.RivalPitWindow(SessionRun, trafficCars);
+            for (int i = 1; i < cars.Length; i++)
+                if (!crashes[i].Active)
+                    pitStops.PlanRivalRaceStop(SessionRun, i, pitWindow, stages.CanEnterPits(i, trafficCars[i]));
+        }
         pitTraffic?.BeginStep((SessionRun?.Elapsed ?? previousElapsed) + seconds);
         UpdateDraftSpeed(seconds);
         for (int i = 0; i < cars.Length; i++)
@@ -2289,7 +2323,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             trafficPaceSpeeds[i] = 0f;
             if (SessionRun?.Finished(i) == true)
             {
-                stepSpeeds[i] = stages != null && !SessionRun.Retired(i)
+                stepSpeeds[i] = stages != null && !SessionRun.Retired(i) && !trafficCars[i].InGarage
                     ? stages.FinishedCarSpeed(trafficCars[i], seconds, practiceStallDistances[i])
                     : 0f;
                 continue;
@@ -2312,7 +2346,11 @@ public sealed partial class TrackPreview : MonoBehaviour
                 speed = stages.CarSpeed(i, trafficCars, speed, seconds);
             }
             if (SessionRun != null)
-                speed = PitAdjustedSpeed(i, speed, seconds, TrackBrakingLimit(i), preferredLineSpeedFactor, paceSpeedCeiling);
+            {
+                bool coastUnderCaution = stages?.UsesShortTrackCautionPace == true && !trafficCars[i].InPit;
+                speed = PitAdjustedSpeed(i, speed, seconds, coastUnderCaution ? 0f : TrackBrakingLimit(i),
+                    coastUnderCaution ? 1f : preferredLineSpeedFactor, coastUnderCaution ? null : paceSpeedCeiling, coastUnderCaution);
+            }
             if (pitStops != null)
                 speed = SessionRun.FlatTireSpeed(speed, SessionRun.FlatTireMask(i));
 
@@ -2324,6 +2362,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             AvoidTrackTraffic(seconds);
         pitTraffic?.PlanTrafficSpeeds(stepSpeeds, seconds);
         LimitTrafficBehindCautionPaceCar(seconds);
+        stages?.HoldPitRejoinsBehindLine(trafficCars, stepSpeeds, seconds);
 
         for (int i = 0; i < cars.Length; i++)
         {
@@ -2331,7 +2370,7 @@ public sealed partial class TrackPreview : MonoBehaviour
                 continue;
             if (SessionRun?.Finished(i) == true)
             {
-                if (stages != null && !SessionRun.Retired(i))
+                if (stages != null && !SessionRun.Retired(i) && !trafficCars[i].InGarage)
                 {
                     var finishedCar = trafficCars[i];
                     double beforeParking = finishedCar.Odometer;
@@ -2395,7 +2434,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         AdvanceNorthWilkesboroGarageTravel(seconds);
         TimingRun?.AdvanceClock(seconds, raceLapUnderCaution: scoringCaution);
         if (stages != null)
-            HandleStoppedCars(seconds);
+            pitMembershipChanged |= HandleStoppedCars(seconds);
         if (pitMembershipChanged && stages?.ReducedFuelBurn == true && stages.ControlsField)
             stages.UpdatePitFormation(SessionRun, trafficCars);
     }
@@ -2425,6 +2464,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             return hazard;
         }
         int incident = -1;
+        HashSet<int> incidentParticipants = null;
         for (int i = 0; i < cars.Length; i++)
         {
             var car = trafficCars[i];
@@ -2436,17 +2476,73 @@ public sealed partial class TrackPreview : MonoBehaviour
             {
                 if (incident < 0)
                     incident = i;
+                incidentParticipants ??= new HashSet<int>();
+                incidentParticipants.Add(i);
+                if (crashes[i].ContactParticipants != null)
+                    incidentParticipants.UnionWith(crashes[i].ContactParticipants);
+                AddTrackImpactPartners(i, incidentParticipants);
                 if (crashes[i].Active)
                     QueueIowaWreckResponse(i);
             }
             stoppedCarTime[i] += seconds;
             if (stoppedCarTime[i] >= 10f && cars[i].gameObject.activeSelf && !IsIowaWreckAwaitingRecovery(i))
+            {
+                car.InGarage = true;
                 cars[i].gameObject.SetActive(false);
+            }
         }
 
         if (incident >= 0)
-            stages?.RequestCaution(SessionRun, trafficCars, incident, CautionReasonForCar(incident));
-        return false;
+            stages?.RequestCaution(SessionRun, trafficCars, reason: CautionReasonForCar(incident), incidentParticipants: incidentParticipants);
+        return ClearStalledPitTraffic(seconds);
+    }
+
+    private bool ClearStalledPitTraffic(float seconds)
+    {
+        // Measure a caution lap in simulation time so a stationary field cannot stop cleanup.
+        float timeout = lapLength / TrackState001Stages.PaceSpeed;
+        System.Array.Clear(pitObstruction, 0, pitObstruction.Length);
+        for (int i = 0; i < trafficCars.Length; i++)
+        {
+            var car = trafficCars[i];
+            if (car.InGarage) continue;
+            if (car.MovementBlockedThisStep && (uint)car.MovementBlockedByIndex < (uint)pitObstruction.Length)
+                pitObstruction[car.MovementBlockedByIndex] = true;
+        }
+
+        int clear = -1;
+        for (int i = 0; i < trafficCars.Length; i++)
+        {
+            var car = trafficCars[i];
+            bool atStall = Mathf.Abs(car.PitDistance - practiceStallDistances[i]) < .05f &&
+                Mathf.Abs(car.PitLane - stallLanes[i]) < .25f;
+            bool stranded = car.InPit && !car.InGarage && !atStall &&
+                SessionRun.CurrentSpeed(i) < .45f &&
+                (pitObstruction[i] || SessionRun.Retired(i) || SessionRun.HasTerminalFailure(i) || SessionRun.Fuel(i) <= 0d);
+            if (!stranded)
+            {
+                pitObstructionTime[i] = 0f;
+                continue;
+            }
+
+            pitObstructionTime[i] += seconds;
+            if (pitObstructionTime[i] >= timeout &&
+                (clear < 0 || car.PitDistance > trafficCars[clear].PitDistance))
+                clear = i;
+        }
+        if (clear < 0 || SessionRun.PreciseElapsed < nextPitClearAt) return false;
+
+        // Clear one blocker, then let the queue roll before clearing another.
+        var removed = trafficCars[clear];
+        if (!SessionRun.Finished(clear)) SessionRun.Retire(clear);
+        removed.Retired = true;
+        removed.InGarage = true;
+        removed.NextEntry = float.PositiveInfinity;
+        crashes[clear].Active = false;
+        pitStops?.ClearObstructedCar(clear);
+        cars[clear].gameObject.SetActive(false);
+        nextPitClearAt = SessionRun.PreciseElapsed + PitQueueReleaseSeconds;
+        return true;
     }
 
     private string CautionReasonForCar(int index)
@@ -2772,6 +2868,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             if (releaseComplete)
                 stages.FinishRestartLaneRelease();
         }
+        bool hasCooldownApproach = false;
         for (int i = 0; i < cars.Length; i++)
         {
             var exitCar = trafficCars?[i];
@@ -2781,17 +2878,33 @@ public sealed partial class TrackPreview : MonoBehaviour
                 float pitApproachLane = PitApproachLane(i, drivingDistances[i], exitCar.NextEntry);
                 float entryTarget = Mathf.MoveTowards(before, pitApproachLane, VehicleBehavior003.MaximumLateralSpeed * seconds);
                 bool returningAfterFinish = stages != null && SessionRun.Finished(i);
-                drivingLanes[i] = ApronLateralClear(i, before, entryTarget, returningAfterFinish, out int yieldTo)
-                    ? entryTarget : before;
-                if (yieldTo >= 0)
+                hasCooldownApproach |= returningAfterFinish;
+                bool queuedStop = !returningAfterFinish && pitStops?.IsRequested(i) == true;
+                bool entryClear = ApronLateralClear(i, before, entryTarget, returningAfterFinish, out int yieldTo);
+                drivingLanes[i] = entryClear ? entryTarget : before;
+                if (queuedStop && !entryClear && yieldTo >= 0)
+                    SeekQueuedPitGap(i, yieldTo, before, pitApproachLane, seconds);
+                if (returningAfterFinish && yieldTo >= 0)
                 {
                     // Open a longitudinal gap when cooling-down cars reach the apron side by side.
                     float yieldSpeed = Mathf.Max(8f, currentTrafficSpeeds[yieldTo] - 4f);
                     float brakingSpeed = currentTrafficSpeeds[i] - 4.5f * seconds;
                     stepSpeeds[i] = Mathf.Min(stepSpeeds[i], Mathf.Max(yieldSpeed, brakingSpeed));
                 }
-                if (!(UsesSettledPlayerPitApproach && i == 0) && exitCar.NextEntry - drivingDistances[i] < 25f &&
-                    Mathf.Abs(drivingLanes[i] - pitApproachLane) > .25f)
+                float laneRemaining = Mathf.Abs(drivingLanes[i] - pitApproachLane);
+                float entryRemaining = exitCar.NextEntry - drivingDistances[i];
+                if (returningAfterFinish)
+                {
+                    float approachSpeed = TrackState001Stages.ShortTrackPaceSpeed;
+                    if (laneRemaining > .25f)
+                    {
+                        float secondsToSettle = laneRemaining / VehicleBehavior003.MaximumLateralSpeed + 1.25f;
+                        approachSpeed = Mathf.Min(approachSpeed, Mathf.Max(5f, entryRemaining / secondsToSettle));
+                    }
+                    float brakingSpeed = currentTrafficSpeeds[i] - 4.5f * seconds;
+                    stepSpeeds[i] = Mathf.Min(stepSpeeds[i], Mathf.Max(approachSpeed, brakingSpeed));
+                }
+                else if (!queuedStop && !(UsesSettledPlayerPitApproach && i == 0) && entryRemaining < 25f && laneRemaining > .25f)
                     pitTraffic.DeferEntry(exitCar);
                 continue;
             }
@@ -2799,6 +2912,16 @@ public sealed partial class TrackPreview : MonoBehaviour
             float distance = drivingDistances[i];
             AdvanceApronExitLane(i, exitCar, distance, collisionStartLanes[i],
                 ApronExitTarget(i, distance, exitCar), seconds);
+        }
+        if (hasCooldownApproach)
+        {
+            // Form a line on the approach so side-by-side finishers have room
+            // to move down before the pit-entry lane check.
+            TrackState001Stages.PreserveOrder(lapLength, stepSpeeds, seconds, practiceCarAhead, practiceGapAhead,
+                index => drivingDistances[index],
+                index => onTrack[index] && stepSpeeds[index] > 0f && SessionRun.Finished(index) &&
+                    trafficCars[index].ApronEntryActive,
+                minimumGap: 6f, openGaps: true);
         }
         for (int i = 0; i < cars.Length; i++)
         {
@@ -3026,7 +3149,20 @@ public sealed partial class TrackPreview : MonoBehaviour
             float impulse = collisions.CrashImpulse(i);
             if (impulse != 0f && !SessionRun.Finished(i))
                 StartSpin(i, impulse);
+            if (crashes[i].Active && collisions.HadImpact(i))
+            {
+                crashes[i].ContactParticipants ??= new HashSet<int>();
+                AddTrackImpactPartners(i, crashes[i].ContactParticipants);
+            }
         }
+    }
+
+    private void AddTrackImpactPartners(int index, HashSet<int> participants)
+    {
+        if (!collisionsEnabled || collisions == null) return;
+        for (int other = 0; other < cars.Length; other++)
+            if (collisions.HadImpactWith(index, other))
+                participants.Add(other);
     }
 
     private void TryApronTurnWreck(int index)
@@ -3062,6 +3198,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             SessionRun.RecordWreck(index);
             crash.Active = true;
             crash.Cause = apron ? CrashCause.Apron : CrashCause.Contact;
+            crash.ContactParticipants = null;
             crash.Lane = drivingLanes[index];
             crash.ForwardSpeed = SessionRun.CurrentSpeed(index) * .8f;
         }
@@ -3115,6 +3252,33 @@ public sealed partial class TrackPreview : MonoBehaviour
         frame.ovalPassingStrictness = CanAdjustPassingCriteria ? ovalPassingStrictness : -1;
         frame.flag = TrackState?.ToString() ?? "Unspecified";
         frame.pitsOpen = PitRoadOpen ?? true;
+        frame.paceCar = default;
+        if (stages?.HasPaceCar == true && paceCar != null && stages.ReducedFuelBurn)
+        {
+            var pace = stages.PacePosition();
+            int leader = stages.PaceLeaderIndex;
+            frame.paceCar = cautionPaceSample;
+            frame.paceCar.active = paceCar.gameObject.activeInHierarchy;
+            frame.paceCar.position = paceCar.localPosition;
+            double elapsed = snapshotTime - previousPaceSnapshotTime;
+            frame.paceCar.mph = elapsed > 0d
+                ? (float)(Vector3.Distance(previousPaceSnapshotPosition, paceCar.localPosition) / elapsed
+                    * 3600d / TrackDefinition.MetersPerMile)
+                : frame.paceCar.allowedMph;
+            previousPaceSnapshotPosition = paceCar.localPosition;
+            previousPaceSnapshotTime = snapshotTime;
+            frame.paceCar.routeMeters = pace.Distance;
+            frame.paceCar.onPitRoad = pace.OnPitRoad;
+            frame.paceCar.returning = stages.PaceReturning;
+            frame.paceCar.doubleFile = stages.DoubleFile;
+            frame.paceCar.laneMeters = pace.OnPitRoad
+                ? pace.ParkingBlend * (definition.pitRoad.widthMeters * .5f + 1.5f)
+                : TrackLaneAtPoint(pace.Distance, paceCar.localPosition);
+            frame.paceCar.leaderCarNumber = simulation.Cars[leader].carNumber;
+            frame.paceCar.leaderGapMeters = pace.OnPitRoad ? 0f : pace.Distance - trafficCars[leader].TrackDistance;
+        }
+        else
+            previousPaceSnapshotTime = double.NaN;
         for (int i = 0; i < cars.Length; i++)
         {
             var traffic = isQualifying ? (i == 0 ? qualifying?.Car : null) : trafficCars?[i];
@@ -3552,19 +3716,18 @@ public sealed partial class TrackPreview : MonoBehaviour
 
     private bool PitEntryReady(TrackPitTraffic.Car car, float stepFraction)
     {
-        if (car.FieldIndex == 0 && (UsesEarlyLowLanePitApproach ||
-            (UsesAuthoredApronHandoffs || UsesEarlyApronPitApproach) && ApronExitAvailable(car.NextEntry)))
+        int index = car.FieldIndex;
+        if (index >= 0 && (car.ApronEntryActive || index == 0 && (UsesEarlyLowLanePitApproach ||
+            (UsesAuthoredApronHandoffs || UsesEarlyApronPitApproach) && ApronExitAvailable(car.NextEntry))))
         {
-            float laneAtEntry = Mathf.Lerp(collisionStartLanes[0], drivingLanes[0], stepFraction);
-            if (Mathf.Abs(laneAtEntry - PitApproachLane(0, car.NextEntry, car.NextEntry)) > .25f) return false;
+            float laneAtEntry = Mathf.Lerp(collisionStartLanes[index], drivingLanes[index], stepFraction);
+            if (Mathf.Abs(laneAtEntry - PitApproachLane(index, car.NextEntry, car.NextEntry)) > .25f) return false;
         }
 
-        // Leave room for the preceding Richmond car to clear the narrowing
-        // connector before the next cooldown car moves over from the apron.
-        return stages == null || car.FieldIndex < 0 || !SessionRun.Finished(car.FieldIndex) ||
-            (definition.id == RichmondTrackId
-                ? pitTraffic.CooldownEntranceClear(car, clearance: 12f)
-                : pitTraffic.CooldownEntranceClear(car));
+        // The shared admission check already reserves the mouth. Richmond's
+        // cooldown route needs extra room at its narrowing connector.
+        return definition.id != RichmondTrackId || stages == null || car.FieldIndex < 0 ||
+            !SessionRun.Finished(car.FieldIndex) || pitTraffic.EntranceClear(car, clearance: 12f);
     }
 
     private float LowestLane(float distance) => (customLayout?.InsideSign ?? -1f) *
@@ -3625,13 +3788,40 @@ public sealed partial class TrackPreview : MonoBehaviour
         car.ApronMergeStart = ApronExitPlan.NextStraight(start, lapLength, StraightForApronMerge, out car.ApronMergeEnd);
     }
 
-    private bool ApronLateralClear(int index, float from, float to, bool returningAfterFinish, out int yieldTo)
+    private void SeekQueuedPitGap(int index, int blocker, float lane, float pitLane, float seconds)
+    {
+        float distance = drivingDistances[index];
+        if (definition.majorStyle != "Oval" || (lapSpeedProfile?.TurnWeightAt(distance) ?? 0f) < .25f)
+            return;
+
+        float higherDirection = Mathf.Sign(lane - pitLane);
+        float higherLimit = Mathf.Max(0f, drivingWidths[index] * .5f - VehicleCollision001.TrackContactWidth(raceCarHalfWidths, index, index) * .5f);
+        float higherLane = higherDirection * higherLimit;
+        float nextLane = Mathf.MoveTowards(lane, higherLane, VehicleBehavior003.MaximumLateralSpeed * seconds);
+        if (higherDirection * (nextLane - lane) > 0f)
+        {
+            if (!ApronLateralClear(index, lane, nextLane, false, out _, allowSeparating: true))
+                return;
+            drivingLanes[index] = nextLane;
+        }
+        else if (higherDirection * lane < higherLimit - .25f)
+            return;
+
+        // Create a small speed differential in the high lane. Try the
+        // pitward move first each step so the car takes the first clear gap.
+        float pace = Mathf.Max(stepSpeeds[index], trafficPaceSpeeds[index]);
+        float gapSpeed = Mathf.Max(pace - 2f, currentTrafficSpeeds[blocker] - 1.25f);
+        float coastSpeed = currentTrafficSpeeds[index] - RaceSessionRun.CoastingDeceleration * seconds;
+        stepSpeeds[index] = Mathf.Min(stepSpeeds[index], Mathf.Max(gapSpeed, coastSpeed));
+    }
+
+    private bool ApronLateralClear(int index, float from, float to, bool returningAfterFinish, out int yieldTo,
+        bool allowSeparating = false)
     {
         yieldTo = -1;
         bool clear = true;
         float direction = Mathf.Sign(to - from);
-        bool priorityCooldown = returningAfterFinish && (definition.id is RichmondTrackId or NorthWilkesboroTrackId);
-        float laneTolerance = priorityCooldown ? .35f : .01f;
+        float laneTolerance = returningAfterFinish ? .35f : .01f;
         for (int j = 0; j < cars.Length; j++)
         {
             if (j == index || !onTrack[j]) continue;
@@ -3641,15 +3831,21 @@ public sealed partial class TrackPreview : MonoBehaviour
             float future = gap + (currentTrafficSpeeds[j] - currentTrafficSpeeds[index]) * .5f;
             if (Mathf.Min(Mathf.Abs(gap), Mathf.Abs(future)) >= 4f && gap * future > 0f) continue;
 
+            if (allowSeparating && Mathf.Abs(collisionStartLanes[j] - to) >
+                Mathf.Abs(collisionStartLanes[j] - from) &&
+                (collisionStartLanes[j] - from) * (collisionStartLanes[j] - to) >= 0f)
+                continue;
+
             clear = false;
             if (!returningAfterFinish || to == from)
+            {
+                yieldTo = j;
                 return false;
+            }
             float relativeLane = direction * (collisionStartLanes[j] - from);
             // A following car opens the cooldown gap. Use the index only to
             // break a tie when the cars are actually abreast.
-            bool sameLanePriority = priorityCooldown
-                ? gap > .05f || Mathf.Abs(gap) <= .05f && j < index
-                : j < index;
+            bool sameLanePriority = gap > .05f || Mathf.Abs(gap) <= .05f && j < index;
             if (relativeLane > laneTolerance || (Mathf.Abs(relativeLane) <= laneTolerance && sameLanePriority))
             {
                 yieldTo = j;
@@ -3696,8 +3892,8 @@ public sealed partial class TrackPreview : MonoBehaviour
             float speed = SessionRun?.CurrentSpeed(i) ?? 40f;
             float approach = Mathf.Max(260f, speed * 6f);
             bool settledPitApproachPlayer = UsesSettledPlayerPitApproach && i == 0;
-            bool wideApronCooldown = (definition.id is PhoenixTrackId or RichmondTrackId or NorthWilkesboroTrackId) &&
-                stages != null && SessionRun.Finished(i);
+            bool cooldown = stages != null && SessionRun?.Finished(i) == true;
+            bool wideApronCooldown = cooldown && (definition.id is PhoenixTrackId or RichmondTrackId or NorthWilkesboroTrackId);
             if (settledPitApproachPlayer && !float.IsInfinity(traffic.NextEntry))
             {
                 // Reserve time to cross the actual width and settle in the attachment lane.
@@ -3709,8 +3905,20 @@ public sealed partial class TrackPreview : MonoBehaviour
             // time to open gaps across the wide apron before it reaches pit entry.
             if (wideApronCooldown)
                 approach = Mathf.Max(approach, speed * 16f);
+            if (cooldown && definition.id == SouthBostonTrackId && !float.IsInfinity(traffic.NextEntry))
+            {
+                // The authored lap reaches Turn 2 at 38% and the backstretch at about 52%.
+                const float turn2Fraction = .38f;
+                approach = Mathf.Repeat(traffic.NextEntry - lapLength * turn2Fraction, lapLength);
+            }
+            else if (cooldown)
+                approach = Mathf.Max(approach, speed * 12f);
+            bool queuedStop = pitStops?.IsRequested(i) == true;
+            if (queuedStop)
+                approach = Mathf.Max(approach, speed * 12f);
+
             // Continue the committed approach when braking shortens the lookahead.
-            bool continueApproach = (settledPitApproachPlayer || wideApronCooldown) && traffic.ApronEntryActive;
+            bool continueApproach = (queuedStop || settledPitApproachPlayer || cooldown) && traffic.ApronEntryActive;
             traffic.ApronEntryActive = !traffic.InPit && !float.IsInfinity(traffic.NextEntry) &&
                 traffic.NextEntry >= distance && (continueApproach || traffic.NextEntry - distance <= approach) &&
                 (UsesEarlyLowLanePitApproach || ApronExitAvailable(traffic.NextEntry));
@@ -4305,6 +4513,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         if (richmondPaceReturn != null && (onPitRoad || richmondPacePhase != RichmondPacePhase.Pacing))
             return speed;
 
+        float requested = speed;
         bool fixedPath = onPitRoad || TryCautionPaceExitPose(distance, out _, out _) ||
             TryPacePitApproachPose(distance, out _, out _) ||
             richmondPaceReturn != null && stages.PacePitEntry - distance < 78f;
@@ -4347,16 +4556,28 @@ public sealed partial class TrackPreview : MonoBehaviour
         float stoppingRoom = Mathf.Max(6f, speed * speed / (2f * TrackPitTraffic.PitApproachDeceleration) + 2f);
         float room = PacePathClearance(distance, stoppingRoom, speed,
             (station, time) => SampleCautionPacePose(onPitRoad, station,
-                Mathf.MoveTowards(currentLane, targetLane, PaceLaneRate * time)));
+                Mathf.MoveTowards(currentLane, targetLane, PaceLaneRate * time)), out int blocker);
+        string blockReason = blocker >= 0 ? "Predicted path clearance" : speed < requested ? "Pit-road speed limit" : "";
         float allowed = room < stoppingRoom ? Mathf.Min(speed, TrackPitTraffic.ApproachLimit(0f, room, seconds)) : speed;
         float nextLane = Mathf.MoveTowards(currentLane, targetLane, PaceLaneRate * seconds);
         Pose next = SampleCautionPacePose(onPitRoad, distance + allowed * seconds, nextLane);
-        if (!PacePoseClear(next, seconds))
+        if (!PacePoseClear(next, seconds, out int laneBlocker))
         {
             nextLane = currentLane;
-            if (!PacePoseClear(SampleCautionPacePose(onPitRoad, distance + allowed * seconds, nextLane), seconds))
+            if (!PacePoseClear(SampleCautionPacePose(onPitRoad, distance + allowed * seconds, nextLane), seconds,
+                out int stopBlocker))
+            {
                 allowed = 0f;
+                blocker = stopBlocker;
+                blockReason = "Next pose blocked";
+            }
+            else if (blocker < 0)
+            {
+                blocker = laneBlocker;
+                blockReason = "Lane change blocked";
+            }
         }
+        RecordPaceTrafficSample(requested, allowed, targetLane, room, stoppingRoom, blocker, blockReason);
         cautionPaceAvoidanceLane = nextLane;
         cautionPaceTrafficSpeed = allowed;
         return allowed;
@@ -4435,21 +4656,27 @@ public sealed partial class TrackPreview : MonoBehaviour
     }
 
     private float PacePathClearance(float start, float distance, float speed,
-        System.Func<float, float, Pose> poseAt)
+        System.Func<float, float, Pose> poseAt) =>
+        PacePathClearance(start, distance, speed, poseAt, out _);
+
+    private float PacePathClearance(float start, float distance, float speed,
+        System.Func<float, float, Pose> poseAt, out int blocker)
     {
+        blocker = -1;
         int samples = Mathf.Max(1, Mathf.CeilToInt(distance / 2f));
         for (int sample = 1; sample <= samples; sample++)
         {
             float travel = distance * sample / samples;
             float time = travel / Mathf.Max(4f, speed);
-            if (!PacePoseClear(poseAt(start + travel, time), time))
+            if (!PacePoseClear(poseAt(start + travel, time), time, out blocker))
                 return distance * (sample - 1) / samples;
         }
         return distance;
     }
 
-    private bool PacePoseClear(Pose pose, float time)
+    private bool PacePoseClear(Pose pose, float time, out int blocker)
     {
+        blocker = -1;
         Vector3 forward = pose.rotation * Vector3.forward;
         float heading = Mathf.Atan2(forward.x, forward.z) * Mathf.Rad2Deg;
         for (int i = 0; i < trafficCars.Length; i++)
@@ -4469,9 +4696,28 @@ public sealed partial class TrackPreview : MonoBehaviour
             if (Mathf.Abs(delta.x) > 5f || Mathf.Abs(delta.z) > 5f || Mathf.Abs(delta.y) > 2f) continue;
             float otherHeading = Mathf.Atan2(direction.x, direction.z) * Mathf.Rad2Deg;
             if (PitFootprint.Overlaps(delta.z, delta.x, heading, otherHeading, PaceClearanceMargin))
+            {
+                blocker = i;
                 return false;
+            }
         }
         return true;
+    }
+
+    private void RecordPaceTrafficSample(float requested, float allowed, float targetLane,
+        float clearDistance, float checkedDistance, int blocker, string reason)
+    {
+        const float metersPerSecondToMph = 3600f / TrackDefinition.MetersPerMile;
+        cautionPaceSample = new TrackSnapshot.PaceCarSample
+        {
+            allowedMph = allowed * metersPerSecondToMph,
+            requestedMph = requested * metersPerSecondToMph,
+            targetLaneMeters = targetLane,
+            blockedByCarNumber = blocker < 0 ? -1 : simulation.Cars[blocker].carNumber,
+            clearDistanceMeters = clearDistance,
+            checkedDistanceMeters = checkedDistance,
+            blockReason = reason
+        };
     }
 
     private Vector3 PaceTrafficCarPosition(int index)

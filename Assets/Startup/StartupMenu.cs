@@ -173,6 +173,8 @@ public sealed class StartupMenu : MonoBehaviour
     private VisualElement trackCockpit, cockpitMirrorImage;
     private CockpitDashboard cockpitDashboard;
     private CockpitSteeringWheel cockpitSteeringWheel;
+    private int cockpitSteeringCar = -1;
+    private float cockpitSteeringAngle, cockpitSteeringVelocity;
     private CarTypeDefinition cockpitCarType;
     private TrackSessionMap trackSessionMap;
     private Button returnToGarageButton;
@@ -6051,7 +6053,21 @@ public sealed class StartupMenu : MonoBehaviour
             UpdateTrackCameraLabel();
         }
         if (trackPreview.ViewAngle == TrackPreview.CameraAngle.InCar)
-            cockpitSteeringWheel.SetAngle(trackPreview.SteeringWheelAngle);
+        {
+            int selected = trackPreview.SelectedCarIndex;
+            float target = trackPreview.SteeringWheelAngle;
+            if (cockpitSteeringCar != selected)
+            {
+                cockpitSteeringCar = selected;
+                cockpitSteeringAngle = target;
+                cockpitSteeringVelocity = 0f;
+            }
+            cockpitSteeringAngle = Mathf.SmoothDamp(cockpitSteeringAngle, target, ref cockpitSteeringVelocity,
+                .18f, 360f, Time.unscaledDeltaTime);
+            cockpitSteeringWheel.SetAngle(cockpitSteeringAngle);
+        }
+        else
+            cockpitSteeringCar = -1;
     }
 
     private void UpdateDrivingReadouts()

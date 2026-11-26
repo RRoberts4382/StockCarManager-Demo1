@@ -31,7 +31,19 @@ internal sealed class TrackSnapshot
         public int ovalPassingStrictness;
         public string flag;
         public bool pitsOpen;
+        public PaceCarSample paceCar;
         public CarSample[] cars;
+    }
+
+    [Serializable]
+    internal struct PaceCarSample
+    {
+        public bool active, onPitRoad, returning, doubleFile;
+        public Vector3 position;
+        public float routeMeters, laneMeters, targetLaneMeters, mph, requestedMph, allowedMph;
+        public int leaderCarNumber, blockedByCarNumber;
+        public float leaderGapMeters, clearDistanceMeters, checkedDistanceMeters;
+        public string blockReason;
     }
 
     [Serializable]
@@ -102,7 +114,7 @@ internal sealed class TrackSnapshot
     [Serializable]
     private sealed class FileData
     {
-        public int formatVersion = 30;
+        public int formatVersion = 31;
         public string poseSpace = "TrackPreview local space (meters)";
         public float centerToRearAxleMeters = RearAxleHeading.CenterToRearAxle;
         public string savedUtc;

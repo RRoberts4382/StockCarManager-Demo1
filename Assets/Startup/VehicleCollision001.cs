@@ -10,7 +10,7 @@ internal sealed class VehicleCollision001
     internal const float DraftBumpMaximumClosingSpeed = 1f;
     private const float DraftBumpTransferFraction = .6f;
     private const float ChasingDraftBumpTransferFraction = .84f;
-    private readonly bool[,] touching;
+    private readonly bool[,] touching, impactPartners;
     private readonly bool[,] gentleBumpContacts;
     private readonly float[] impactDamage;
     private readonly float[] crashImpulse;
@@ -24,6 +24,7 @@ internal sealed class VehicleCollision001
     {
         this.trackHalfWidths = trackHalfWidths;
         touching = new bool[count, count];
+        impactPartners = new bool[count, count];
         gentleBumpContacts = new bool[count, count];
         impactDamage = new float[count];
         crashImpulse = new float[count];
@@ -31,6 +32,8 @@ internal sealed class VehicleCollision001
         gaveDraftBump = new bool[count];
         receivedDraftBump = new bool[count];
     }
+
+    internal bool HadImpactWith(int first, int second) => impactPartners[first, second];
 
     internal static float TrackContactWidth(float[] halfWidths, int first, int second) => halfWidths == null
         ? ContactWidth : TrackContactHalfWidth(halfWidths, first) + TrackContactHalfWidth(halfWidths, second);
@@ -68,6 +71,7 @@ internal sealed class VehicleCollision001
 
         Array.Clear(impactDamage, 0, impactDamage.Length);
         Array.Clear(crashImpulse, 0, crashImpulse.Length);
+        Array.Clear(impactPartners, 0, impactPartners.Length);
         for (int first = 0; first < onTrack.Length; first++)
         {
             for (int second = first + 1; second < onTrack.Length; second++)
@@ -144,6 +148,7 @@ internal sealed class VehicleCollision001
                         float relativeSpeed = Mathf.Sqrt(longitudinal * longitudinal + lateral * lateral) / seconds;
                         float damage = Mathf.Clamp(relativeSpeed * 1.2f, 0.5f, 100f);
                         run.RecordContact(first, second, damage);
+                        impactPartners[first, second] = impactPartners[second, first] = true;
                         // Hard contact breaks traction. Opposite impulses send the cars apart.
                         if (relativeSpeed >= 8f)
                         {
