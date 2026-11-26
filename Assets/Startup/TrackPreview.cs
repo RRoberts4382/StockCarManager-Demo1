@@ -546,6 +546,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         float direction = drivingLanes[0] > 0f ? -1f : 1f;
         StartSpin(0, 14f * direction);
         crashes[0].SideSpeed = 2f * direction;
+        playerFireRemaining = PlayerFireSeconds;
         if (stages != null)
             stages.RequestCaution(SessionRun, trafficCars, reason, incidentParticipants: new HashSet<int> { 0 });
         else
@@ -1756,7 +1757,12 @@ public sealed partial class TrackPreview : MonoBehaviour
     {
         raceCamera.enabled = visible;
         if (!visible)
+        {
             engineAudio?.Stop();
+            tireSmoke?.Clear();
+            engineSmoke?.Clear();
+            playerFire?.Clear();
+        }
         UpdateRearViewRendering();
         if (visible)
             EnableBristolLighting();
@@ -1807,6 +1813,9 @@ public sealed partial class TrackPreview : MonoBehaviour
         UpdateCollisionFlashes();
         if (sessionSpeed == 0)
             return;
+        tireSmoke?.Simulate(Time.deltaTime, false, false, false);
+        engineSmoke?.Simulate(Time.deltaTime, false, false, false);
+        AdvancePlayerFire(Time.deltaTime);
         AnimateIowaFans(Time.deltaTime);
 
         if (SessionRun == null)
@@ -6926,6 +6935,7 @@ public sealed partial class TrackPreview : MonoBehaviour
 
     private void ResetSessionSkids()
     {
+        ResetTrackSmoke();
         skidVertices.Clear();
         skidColors.Clear();
         skidTriangles.Clear();
@@ -6939,6 +6949,10 @@ public sealed partial class TrackPreview : MonoBehaviour
         if (previousSkidContacts == null)
             return;
 
+        bool emitSmoke = ++smokeStep >= 3 * Mathf.Max(1, sessionSpeed);
+        if (emitSmoke)
+            smokeStep = 0;
+        emitSmoke &= raceCamera != null && raceCamera.enabled;
         for (int i = 0; i < cars.Length; i++)
         {
             var traffic = isQualifying ? (i == 0 ? qualifying?.Car : null) : trafficCars?[i];
@@ -6948,6 +6962,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             bool spinning = onPavement && crashes[i].Active;
             bool lockup = onPavement && !SessionRun.Finished(i) && !SessionRun.Retired(i) &&
                 SessionRun.EmergencyBrakeLockup(i);
+            SampleTrackSmoke(i, traffic, spinning, lockup, emitSmoke);
             // Full strength at 20 degrees of handling yaw, proportional below that.
             float yawStrength = onPavement ? .61f * Mathf.Clamp01(Mathf.Abs(tireYawAngles[i]) / 20f) : 0f;
             float station = traffic?.TrackDistance ?? sessionDistances[i];
