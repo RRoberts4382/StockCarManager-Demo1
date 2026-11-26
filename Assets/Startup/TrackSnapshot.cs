@@ -6,7 +6,7 @@ using UnityEngine;
 internal sealed class TrackSnapshot
 {
     private const int SamplesPerSecond = 10;
-    private const int WindowSeconds = 180;
+    private const int WindowSeconds = 60;
     private const int Capacity = WindowSeconds * SamplesPerSecond + 1;
     private const double CaptureTolerance = 0.00001;
     private readonly Frame[] frames = new Frame[Capacity];

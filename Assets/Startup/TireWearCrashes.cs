@@ -44,7 +44,6 @@ public sealed partial class TrackPreview
         crash.Cause = CrashCause.RearTireWear;
         crash.Lane = lane;
         crash.Yaw = tireYaw;
-        crash.Spin = Mathf.Abs(crash.Spin) * towardTurn;
     }
 
     private void BeginStraightTireCrash(int index, float distance, float lane, float speed)

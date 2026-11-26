@@ -164,6 +164,7 @@ internal sealed class RaceSessionRun
     private readonly DynamicTireLoads[] dynamicLoads;
     private readonly float[] thermalSpeeds;
     private readonly float[] throttleInputs, pedalInputs, brakeInputs;
+    private readonly bool[] emergencyBrakeLockups;
     private readonly DraftDrive[] draftDrive;
     private readonly LapSpeedProfile inputSpeedProfile;
     internal const float CoastingDeceleration = 1.0f; // About 2.2 mph per second.
@@ -180,10 +181,13 @@ internal sealed class RaceSessionRun
 
     internal float ThrottleInput(int index) => pedalInputs[index];
     internal float BrakeInput(int index) => brakeInputs[index];
+    internal bool EmergencyBrakeLockup(int index) => emergencyBrakeLockups[index];
     internal void TrafficBrakeInput(int index, float speed, float seconds, float brakingLimit, bool drafting = false)
     {
         float current = CurrentSpeed(index);
         float deceleration = (current - speed) / Math.Max(.0001f, seconds);
+        // A traffic correction beyond the available braking grip represents a lockup.
+        emergencyBrakeLockups[index] = brakingLimit > 0f && current > 8f && deceleration > brakingLimit * 1.2f;
         throttleInputs[index] = 0f;
         if (deceleration > CoastingDeceleration + .01f)
         {
@@ -375,6 +379,7 @@ internal sealed class RaceSessionRun
         throttleInputs = new float[entries.Count];
         pedalInputs = new float[entries.Count];
         brakeInputs = new float[entries.Count];
+        emergencyBrakeLockups = new bool[entries.Count];
         draftDrive = new DraftDrive[entries.Count];
         inputSpeedProfile = new LapSpeedProfile(simulation.Track, usesSpringPerformance);
         double rearGearRatio = ReferenceRearGearRatio(simulation.Track, session, speedModel, inputSpeedProfile);
@@ -802,6 +807,7 @@ internal sealed class RaceSessionRun
         var car = cars[index];
         throttleInputs[index]=brakeInputs[index]=0f;
         draftDrive[index] = default;
+        emergencyBrakeLockups[index] = false;
         float damage = (car.Result.car?.Damage ?? 0f) + car.SimulatedContactDamage;
         bool canRun = car.Result.Fuel > 0 && damage < 100f;
         if (allowMechanicalFailure && canRun && car.Result.car != null && !car.Finished &&

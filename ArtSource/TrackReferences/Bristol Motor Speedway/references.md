@@ -4,6 +4,8 @@ Bristol, Tennessee. Stock Car Manager track 27.
 
 ## Generation instructions
 
+- The banked racing surface is concrete. Keep it a light, warm gray so it reads distinctly from the darker apron and pit pavement. Preserve the concrete surface setting in the track catalog when rebuilding the layout.
+
 - Keep pit exit pavement before Turn 1 free of abrupt vertical ramps. Check both split pit roads, both entrance and exit pairs, the racing surface, apron, and garage access after changing connector elevation.
 
 ## Connector elevation audit

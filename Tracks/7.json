@@ -11,6 +11,7 @@
   "majorStyle": "Oval",
   "minorStyle": "Quad Oval",
   "surface": "Asphalt",
+  "dashedLaneMarkings": 2,
   "restrictorPlate": true,
   "banking": {
     "turns12": 28,

@@ -6,6 +6,15 @@ using UnityEngine;
 
 internal enum TrackValidationSection { Details, Layout, Race, Pit, Ratings }
 public enum TrackFuelFillSide { Automatic, Left, Right }
+public enum TrackLaneMarkingCoverage
+{
+    None = 0,
+    StraightsOnly = 1,
+    FullLap = 2,
+    StraightsAndOuterRow = 3,
+    BottomRow = 4,
+    OuterRowInZone = 5
+}
 
 [Serializable]
 public sealed class TrackDefinition
@@ -27,6 +36,10 @@ public sealed class TrackDefinition
     public string majorStyle = "Oval";
     public string minorStyle = "Oval";
     public string surface = "Asphalt";
+    public TrackLaneMarkingCoverage dashedLaneMarkings = TrackLaneMarkingCoverage.StraightsOnly;
+    // Lap fractions measured from layout station zero. The zone can cross station zero.
+    public float dashedLaneZoneStart;
+    public float dashedLaneZoneEnd;
     public bool restrictorPlate;
     internal ChassisType TrackCategory => majorStyle == "Road" ? ChassisType.RoadCourse
         : restrictorPlate ? ChassisType.SuperSpeedway

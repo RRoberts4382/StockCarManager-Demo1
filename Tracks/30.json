@@ -11,6 +11,9 @@
   "majorStyle": "Oval",
   "minorStyle": "Tri-Oval",
   "surface": "Asphalt",
+  "dashedLaneMarkings": 5,
+  "dashedLaneZoneStart": 0.132,
+  "dashedLaneZoneEnd": 0.214,
   "restrictorPlate": true,
   "banking": {
     "turns12": 31,
