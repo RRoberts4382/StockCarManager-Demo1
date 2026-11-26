@@ -104,7 +104,7 @@ public sealed class StartupMenu : MonoBehaviour
     private static readonly int[] SessionPlaybackSpeeds = { 1, 2, 4, 8, 16, 200 };
     private int sessionPlaybackSpeed = 1;
     private bool sessionPaused;
-    private System.Action closeTrackMsaaPicker;
+    private System.Action closeTrackOptionPicker;
     private Button playSessionButton;
     private Button playbackSpeedButton;
     private Button pauseSessionButton;
@@ -113,6 +113,12 @@ public sealed class StartupMenu : MonoBehaviour
     private Label cautionReasonLabel;
     private VisualElement throttleDisplay, brakeDisplay, fuelDisplay;
     private VisualElement throttleFill, brakeFill, fuelFill;
+    private static readonly string[] FooterTireCorners = { "LeftFront", "RightFront", "LeftRear", "RightRear" };
+    private static readonly string[] FooterTireLabels = { "Left front", "Right front", "Left rear", "Right rear" };
+    private static readonly int[] TrackTireWearRates = { 1, 2, 4, 8 };
+    private readonly VisualElement[] footerTires = new VisualElement[4];
+    private readonly VisualElement[] footerTireFills = new VisualElement[4];
+    private readonly float[] footerTireWear = new float[4];
     private Label drivingInputMph, drivingInputRpm, drivingInputGear;
     private VisualElement practiceFlags;
     private VisualElement primaryPracticeFlag;
@@ -426,6 +432,14 @@ public sealed class StartupMenu : MonoBehaviour
         throttleFill = trackScreen.Q("footerThrottleFill");
         brakeFill = trackScreen.Q("footerBrakeFill");
         fuelFill = trackScreen.Q("footerFuelFill");
+        for (int i = 0; i < footerTires.Length; i++)
+        {
+            int corner = i;
+            string name = "footerTire" + FooterTireCorners[i];
+            footerTires[i] = trackScreen.Q(name);
+            footerTireFills[i] = trackScreen.Q(name + "Fill");
+            ComponentWearGradient.Apply(footerTireFills[i], () => footerTireWear[corner], vertical: true);
+        }
         drivingInputMph = trackScreen.Q<Label>("footerMph");
         drivingInputRpm = trackScreen.Q<Label>("footerRpm");
         drivingInputGear = trackScreen.Q<Label>("footerGear");
@@ -6084,6 +6098,20 @@ public sealed class StartupMenu : MonoBehaviour
         float fuelPercent = Mathf.Clamp01((float)(fuel / SessionFuel.TankCapacity)) * 100f;
         fuelFill.style.height = Length.Percent(fuelPercent);
         fuelDisplay.tooltip = $"Fuel {fuel:0.0} / {SessionFuel.TankCapacity:0.0} gal";
+        var vehicle = run.Vehicle(selected);
+        for (int corner = 0; corner < footerTires.Length; corner++)
+        {
+            var tire = vehicle?.GetTire(corner);
+            float wear = Mathf.Clamp01(tire?.wear ?? 0f);
+            if (footerTireWear[corner] != wear)
+            {
+                footerTireWear[corner] = wear;
+                footerTireFills[corner].style.height = Length.Percent(wear * 100f);
+                footerTireFills[corner].MarkDirtyRepaint();
+            }
+            footerTires[corner].tooltip = tire == null ? $"{FooterTireLabels[corner]} tire wear unavailable" :
+                $"{FooterTireLabels[corner]} tire wear {wear:P0}";
+        }
         float mph = run.CurrentSpeed(selected) * 3600f / TrackDefinition.MetersPerMile;
         mph = float.IsNaN(mph) || float.IsInfinity(mph) ? 0f : Mathf.Max(0f, mph);
         double rpm = run.EngineRpm(selected);
@@ -6593,6 +6621,7 @@ public sealed class StartupMenu : MonoBehaviour
                 false, OpenTrackMsaaPicker);
         if (preview?.SessionRun != null)
         {
+            menu.AddItem($"Tire Wear Rate - {preview.TireWearRate}x", false, OpenTrackTireWearPicker);
             if (CanCallCaution)
                 menu.AddItem("Call Caution", false, CallCaution);
             else
@@ -6601,18 +6630,38 @@ public sealed class StartupMenu : MonoBehaviour
         menu.DropDown(trackSettingsButton.worldBound, trackSettingsButton, DropdownMenuSizeMode.Content);
     }
 
-    private void OpenTrackMsaaPicker()
+    private void OpenTrackTireWearPicker()
     {
-        if (trackPreview == null || trackPreview.Image == null || trackScreen.parent == null || closeTrackMsaaPicker != null)
+        var preview = trackPreview;
+        if (preview?.SessionRun == null || trackScreen.parent == null || closeTrackOptionPicker != null)
             return;
 
         bool wasPaused = sessionPaused;
         sessionPaused = true;
         ApplySessionPlayback();
-        closeTrackMsaaPicker = GameSettings.OpenTrackMsaaPicker(trackScreen.parent, trackScreen, trackSettingsButton,
+        closeTrackOptionPicker = GameSettings.OpenTrackOptionPicker(trackScreen.parent, trackScreen, trackSettingsButton,
+            "trackTireWear", "Tire Wear Rate", TrackTireWearRates, preview.TireWearRate, rate => $"{rate}x",
+            rate => $"Wear all tires at {rate}x the normal rate in this session.",
+            "Keep the current tire wear rate.", preview.SetTireWearRate, () =>
+            {
+                closeTrackOptionPicker = null;
+                sessionPaused = wasPaused;
+                ApplySessionPlayback();
+            });
+    }
+
+    private void OpenTrackMsaaPicker()
+    {
+        if (trackPreview == null || trackPreview.Image == null || trackScreen.parent == null || closeTrackOptionPicker != null)
+            return;
+
+        bool wasPaused = sessionPaused;
+        sessionPaused = true;
+        ApplySessionPlayback();
+        closeTrackOptionPicker = GameSettings.OpenTrackMsaaPicker(trackScreen.parent, trackScreen, trackSettingsButton,
             settings.TrackMsaaSamples, settings.SaveTrackMsaaSamples, () =>
             {
-                closeTrackMsaaPicker = null;
+                closeTrackOptionPicker = null;
                 sessionPaused = wasPaused;
                 ApplySessionPlayback();
             });
@@ -7629,7 +7678,7 @@ public sealed class StartupMenu : MonoBehaviour
             !(trackPreview.PlayerParkedForGarage || allowStoppedOnTrack && trackPreview.PlayerStoppedOnTrack) ||
             trackPreview.SessionComplete)
             return;
-        closeTrackMsaaPicker?.Invoke();
+        closeTrackOptionPicker?.Invoke();
         garageVisitPending = false;
         ReleaseTrackPointer();
         sessionInGarage = true;
@@ -7671,7 +7720,7 @@ public sealed class StartupMenu : MonoBehaviour
 
     private void CloseTrackSession(bool showTestPracticeGarage = false, string testPracticeMessage = null)
     {
-        closeTrackMsaaPicker?.Invoke();
+        closeTrackOptionPicker?.Invoke();
         ReleaseTrackPointer();
         SetPitSettingsOpen(false);
         trackPreview.FinishPracticeSetups();

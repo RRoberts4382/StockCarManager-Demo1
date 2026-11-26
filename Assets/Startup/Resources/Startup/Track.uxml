@@ -134,6 +134,24 @@
                 <ui:VisualElement name="footerFuel" class="driving-meter track-icon-tooltip-target" tooltip="Fuel">
                     <ui:VisualElement class="driving-meter-bar"><ui:VisualElement name="footerFuelFill" class="driving-meter-fill fuel-fill" /></ui:VisualElement>
                 </ui:VisualElement>
+                <ui:VisualElement style="flex-shrink: 0; margin-right: 3px;">
+                    <ui:VisualElement style="flex-direction: row; margin-bottom: 2px;">
+                        <ui:VisualElement name="footerTireLeftFront" class="driving-meter-bar track-icon-tooltip-target" style="height: 14px; margin-right: 2px;">
+                            <ui:VisualElement name="footerTireLeftFrontFill" class="driving-meter-fill" picking-mode="Ignore" />
+                        </ui:VisualElement>
+                        <ui:VisualElement name="footerTireRightFront" class="driving-meter-bar track-icon-tooltip-target" style="height: 14px;">
+                            <ui:VisualElement name="footerTireRightFrontFill" class="driving-meter-fill" picking-mode="Ignore" />
+                        </ui:VisualElement>
+                    </ui:VisualElement>
+                    <ui:VisualElement style="flex-direction: row;">
+                        <ui:VisualElement name="footerTireLeftRear" class="driving-meter-bar track-icon-tooltip-target" style="height: 14px; margin-right: 2px;">
+                            <ui:VisualElement name="footerTireLeftRearFill" class="driving-meter-fill" picking-mode="Ignore" />
+                        </ui:VisualElement>
+                        <ui:VisualElement name="footerTireRightRear" class="driving-meter-bar track-icon-tooltip-target" style="height: 14px;">
+                            <ui:VisualElement name="footerTireRightRearFill" class="driving-meter-fill" picking-mode="Ignore" />
+                        </ui:VisualElement>
+                    </ui:VisualElement>
+                </ui:VisualElement>
                 <ui:Label name="footerMph" text="0.0 MPH" class="track-footer-mph" />
                 <ui:Label name="footerRpm" text="RPM 900" class="track-footer-engine" />
                 <ui:Label name="footerGear" text="Gear 1" class="track-footer-engine" />
