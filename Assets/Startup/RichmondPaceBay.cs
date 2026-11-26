@@ -162,10 +162,14 @@ public sealed partial class TrackPreview
         {
             float remaining = route.Length - richmondPaceTravel;
             float lookAhead = Mathf.Min(remaining, speed * speed / (2f * TrackPitTraffic.PitApproachDeceleration) + 2f);
+            float requested = speed;
             float room = PacePathClearance(richmondPaceTravel, lookAhead, speed, (station, _) =>
-                new Pose(route.At(station), Quaternion.LookRotation(route.At(station + .4f) - route.At(station - .4f))));
+                new Pose(route.At(station), Quaternion.LookRotation(route.At(station + .4f) - route.At(station - .4f))),
+                out int blocker);
             if (room < lookAhead)
                 speed = Mathf.Min(speed, TrackPitTraffic.ApproachLimit(0f, room, SessionStep));
+            RecordPaceTrafficSample(requested, speed, 0f, room, lookAhead, blocker,
+                blocker >= 0 ? "Pace bay route clearance" : "");
             cautionPaceTrafficSpeed = speed;
         }
         richmondPaceTravel = Mathf.Min(richmondPaceTravel + speed * SessionStep, route.Length);

@@ -22,7 +22,7 @@ internal sealed class PlayerSessionReport
     {
         position = result.position;
         this.fieldSize = fieldSize;
-        laps = result.lapTimes.Count;
+        laps = result.CompletedLaps;
         chassisNumber = result.car.chassisNumber;
         carNumber = result.car.number;
         bestLap = laps > 0 ? result.FastestLap : 0f;

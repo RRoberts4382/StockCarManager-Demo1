@@ -1494,8 +1494,7 @@
     text-overflow: ellipsis;
 }
 .scoring-header-line > .scoring-remaining {
-    width: 112px;
-    -unity-text-align: middle-left;
+    -unity-text-align: middle-right;
     flex-shrink: 0;
     margin-left: 6px;
 }

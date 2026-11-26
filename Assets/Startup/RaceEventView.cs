@@ -965,7 +965,7 @@ internal sealed class RaceEventView
             var cells = new List<string>
             {
                 result.position.ToString(), "", result.carNumber > 0 ? result.DisplayCarNumber : "—",
-                result.driverName ?? result.carName, result.teamName ?? "—", (times?.Count ?? 0).ToString()
+                result.driverName ?? result.carName, result.teamName ?? "—", result.CompletedLaps.ToString()
             };
             if (!isRace)
             {

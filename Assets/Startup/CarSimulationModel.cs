@@ -18,6 +18,7 @@ internal sealed class CarSimulationContext
     public bool PreservePlayerCondition { get; }
     public Setup PlayerSetup { get; set; }
     public bool EqualConditionTesting { get; set; }
+    internal int TireWearRate { get; set; } = 1;
     private Setup[] rivalSetups;
 
     internal void ResetLiveTrackConditions()

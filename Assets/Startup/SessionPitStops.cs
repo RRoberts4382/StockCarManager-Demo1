@@ -7,6 +7,7 @@ internal sealed class SessionPitStops
     private readonly TrackPitTraffic.Car[] cars;
     private readonly float[] stalls;
     private readonly Stop[] stops;
+    private readonly double[] nextRivalReview;
     private bool holdPlayerInGarage;
     private float garageVisitTarget;
 
@@ -14,7 +15,9 @@ internal sealed class SessionPitStops
     {
         public bool Requested;
         public bool PlayerEditable;
-        public bool Refuel;
+        public bool RivalStrategy;
+        public bool StrategicEmergency;
+        public double RivalFuelTarget;
         public float FuelGallons;
         public int TireMask;
         public float[] Pressures;
@@ -33,6 +36,7 @@ internal sealed class SessionPitStops
         this.cars = cars;
         this.stalls = stalls;
         stops = new Stop[cars.Length];
+        nextRivalReview = new double[cars.Length];
     }
 
     public bool CanRequest(RaceSessionRun run) =>
@@ -65,6 +69,12 @@ internal sealed class SessionPitStops
     public bool IsRequested(int index) => stops[index].Requested;
 
     public bool IsServicing(int index) => stops[index].Servicing;
+
+    internal void ClearObstructedCar(int index)
+    {
+        stops[index] = default;
+        if (index == 0) PlayerStatus = "Car cleared from pit lane";
+    }
 
     public bool CanEditPlayerRequest(RaceSessionRun run) =>
         !holdPlayerInGarage && !run.Finished(0) && !run.Retired(0) &&
@@ -107,6 +117,9 @@ internal sealed class SessionPitStops
         return true;
     }
 
+    internal static float FuelServiceSeconds(float gallons) =>
+        gallons > 0f ? 7f + 2f * (float)(gallons / SessionFuel.TankCapacity) : 0f;
+
     internal static float ServiceDuration(int tireCount, float gallons, float repairPoints)
     {
         float tireSeconds = tireCount switch
@@ -117,8 +130,7 @@ internal sealed class SessionPitStops
             4 => 12f,
             _ => 0f
         };
-        float fuelSeconds = gallons > 0f ? 7f + 2f * (float)(gallons / SessionFuel.TankCapacity) : 0f;
-        return Math.Max(tireSeconds, fuelSeconds) + repairPoints * RepairSecondsPerPoint;
+        return Math.Max(tireSeconds, FuelServiceSeconds(gallons)) + repairPoints * RepairSecondsPerPoint;
     }
 
     internal bool ArmQueuedEntry(int index, bool pitOpen, bool allowEmergencyEntry)
@@ -128,11 +140,74 @@ internal sealed class SessionPitStops
         if (car.InPit || (!stop.Requested && (index != 0 || !holdPlayerInGarage)))
             return false;
 
-        if (pitOpen || (stop.FlatTireStop && allowEmergencyEntry))
+        if (pitOpen || stop.StrategicEmergency || (stop.FlatTireStop && allowEmergencyEntry))
             pit.CallToStall(car, StopTarget(index));
         else
             car.NextEntry = float.PositiveInfinity;
         return true;
+    }
+
+    internal void PlanRivalRaceStop(RaceSessionRun run, int index, RivalPitWindow window, bool pitOpen)
+    {
+        var car = cars[index];
+        ref var stop = ref stops[index];
+        if (car.InPit || run.Finished(index) || run.HasTerminalFailure(index) || stop.Servicing ||
+            stop.Requested && !stop.RivalStrategy) return;
+
+        // A new caution can invalidate a queued stop before the driver commits to pit road.
+        bool reconsider = stop.Requested && ((!pitOpen && !stop.StrategicEmergency) ||
+            window.EndsUnderCaution && !stop.StrategicEmergency && !stop.FlatTireStop);
+        float damage = run.PitRepairableDamage(index);
+        if (!reconsider && stop.Requested && damage <= Math.Max(stop.RepairPoints, RivalPitStrategy.DamageThreshold))
+        {
+            ArmQueuedEntry(index, pitOpen, allowEmergencyEntry: false);
+            return;
+        }
+        if (!reconsider && !stop.Requested && damage <= RivalPitStrategy.DamageThreshold &&
+            run.PreciseElapsed < nextRivalReview[index]) return;
+
+        nextRivalReview[index] = run.PreciseElapsed + .5d;
+        if (stop.FlatTireStop) return;
+        float toEntry = pit.DistanceToEntry(car);
+        float greenTransitLoss = Math.Max(0f, pit.RouteLength / Math.Max(1f, pit.SpeedLimit) -
+            UnityEngine.Mathf.Repeat(pit.ExitDistance - pit.EntryDistance, run.LapLength) / run.PitStrategyGreenSpeed(index));
+        var plan = run.PlanRivalPitStop(index, window, toEntry, stalls[index], greenTransitLoss, pitOpen);
+        if (!plan.Requested)
+        {
+            if (reconsider)
+            {
+                stop = default;
+                car.NextEntry = float.PositiveInfinity;
+            }
+            return;
+        }
+
+        stop.Requested = stop.RivalStrategy = true;
+        stop.StrategicEmergency = plan.Emergency;
+        stop.RivalFuelTarget = plan.FuelTarget;
+        stop.TireMask = plan.TireMask;
+        stop.RepairPoints = plan.RepairPoints;
+        ArmQueuedEntry(index, pitOpen, allowEmergencyEntry: false);
+    }
+
+    internal static void CompleteService(RaceSessionRun run, int index, float gallons, int tireMask,
+        float repairPoints, float[] pressures = null)
+    {
+        run.AddFuel(index, gallons);
+        var vehicle = run.Vehicle(index);
+        if (vehicle != null)
+        {
+            for (int tire = 0; tire < 4; tire++)
+            {
+                if ((tireMask & (1 << tire)) == 0 || vehicle.GetTire(tire) is not CarTire current) continue;
+                current.wear = 0f;
+                current.temperature = 0f;
+                current.coldPressurePsi = pressures?.Length == 4
+                    ? UnityEngine.Mathf.Clamp(pressures[tire], 10f, 60f)
+                    : VehicleSpeed003.ColdPressure(run.SetupForCar(index), tire);
+            }
+        }
+        run.RepairPitDamage(index, repairPoints);
     }
 
     public void Advance(int index, RaceSessionRun run, float seconds, float speed, bool pitOpen, bool allowEmergencyEntry = true)
@@ -150,16 +225,6 @@ internal sealed class SessionPitStops
         speed = run.FlatTireSpeed(speed, flatTires);
         car.FlatTireLaneBlend = UnityEngine.Mathf.MoveTowards(car.FlatTireLaneBlend,
             flatTires != 0 ? 1f : 0f, seconds);
-
-        float distanceToEntry = pit.DistanceToEntry(car);
-        double remaining = run.RemainingRaceMeters;
-        if (run.IsRace && index != 0 && !stop.Requested && !stop.Servicing && !car.InPit &&
-            remaining > distanceToEntry && run.Fuel(index) < run.FuelForDistance(remaining) &&
-            run.Fuel(index) <= run.FuelForDistance(distanceToEntry + run.LapLength) + 0.5)
-        {
-            stop.Requested = true;
-            stop.Refuel = true;
-        }
 
         if (ArmQueuedEntry(index, pitOpen, allowEmergencyEntry) && index == 0)
             PlayerStatus = stop.FlatTireStop && (pitOpen || allowEmergencyEntry) ? "Flat tire · pitting" :
@@ -179,12 +244,16 @@ internal sealed class SessionPitStops
                 if (!stop.Duration.HasValue)
                 {
                     var vehicle = run.Vehicle(index);
+                    if (stop.RivalStrategy && run.PitRepairableDamage(index) > RivalPitStrategy.DamageThreshold)
+                    {
+                        stop.RepairPoints = run.PitRepairableDamage(index);
+                        stop.RivalFuelTarget = SessionFuel.TankCapacity;
+                        stop.TireMask = RivalPitStrategy.AllTires;
+                    }
                     double fuel = run.Fuel(index);
-                    double requestedFuel = stop.Refuel
-                        ? run.FuelForDistance(run.RemainingRaceMeters) + 1.0 - fuel
-                        : stop.FuelGallons;
+                    double requestedFuel = stop.RivalStrategy ? stop.RivalFuelTarget - fuel : stop.FuelGallons;
                     stop.FuelGallons = (float)Math.Max(0, Math.Min(requestedFuel, SessionFuel.TankCapacity - fuel));
-                    stop.RepairPoints = Math.Max(0f, Math.Min(stop.RepairPoints, vehicle?.Damage ?? 0f));
+                    stop.RepairPoints = Math.Max(0f, Math.Min(stop.RepairPoints, run.PitRepairableDamage(index)));
 
                     int tireCount = 0;
                     for (int tire = 0; tire < 4; tire++)
@@ -205,23 +274,7 @@ internal sealed class SessionPitStops
                     // Apply setup before fitting the new tires so their cold pressures match.
                     stop.CompleteSetup?.Invoke();
                     car.InGarage = false;
-                    run.AddFuel(index, stop.FuelGallons);
-                    var vehicle = run.Vehicle(index);
-                    if (vehicle != null)
-                    {
-                        for (int tire = 0; tire < 4; tire++)
-                        {
-                            if ((stop.TireMask & (1 << tire)) != 0 && vehicle.GetTire(tire) is CarTire current)
-                            {
-                                current.wear = 0f;
-                                current.temperature = 0f;
-                                current.coldPressurePsi = stop.Pressures?.Length == 4
-                                    ? UnityEngine.Mathf.Clamp(stop.Pressures[tire], 10f, 60f)
-                                    : VehicleSpeed003.ColdPressure(run.SetupForCar(index), tire);
-                            }
-                        }
-                        vehicle.Damage -= stop.RepairPoints;
-                    }
+                    CompleteService(run, index, stop.FuelGallons, stop.TireMask, stop.RepairPoints, stop.Pressures);
                     stop = default;
                     if (index == 0)
                         PlayerStatus = "Pit stop complete";
@@ -232,6 +285,111 @@ internal sealed class SessionPitStops
                 }
             }
         }
+    }
+}
+
+internal readonly struct RivalPitWindow
+{
+    internal readonly double Meters, YellowMeters;
+    internal readonly bool FinalStage, EndsUnderCaution, ClosesBeforeTarget;
+
+    internal RivalPitWindow(double meters, double yellowMeters, bool finalStage, bool endsUnderCaution, bool closesBeforeTarget)
+    {
+        Meters = meters;
+        YellowMeters = Math.Clamp(yellowMeters, 0d, meters);
+        FinalStage = finalStage;
+        EndsUnderCaution = endsUnderCaution;
+        ClosesBeforeTarget = closesBeforeTarget;
+    }
+
+    internal double FuelDistance(double meters)
+    {
+        double yellow = Math.Min(meters, YellowMeters);
+        return meters - yellow + yellow * SessionFuel.ReducedBurnFactor;
+    }
+}
+
+internal readonly struct RivalPitPlan
+{
+    internal readonly bool Requested, Emergency;
+    internal readonly double FuelTarget;
+    internal readonly int TireMask;
+    internal readonly float RepairPoints;
+
+    internal RivalPitPlan(double fuelTarget, int tireMask, float repairPoints, bool emergency)
+    {
+        Requested = true;
+        FuelTarget = fuelTarget;
+        TireMask = tireMask;
+        RepairPoints = repairPoints;
+        Emergency = emergency;
+    }
+}
+
+internal static class RivalPitStrategy
+{
+    internal const float DamageThreshold = 25f;
+    internal const int AllTires = 15;
+    private const int RightTires = 10;
+
+    internal static RivalPitPlan Decide(RivalPitWindow window, double fuel, double fuelPerMeter,
+        double lapLength, double toEntry, double toStall, bool pitOpen, float damage, int flats,
+        (float Current, float Finish, float NextEntry) left, (float Current, float Finish, float NextEntry) right,
+        float lapSeconds, float greenTransitLoss)
+    {
+        if (window.Meters <= 0d) return default;
+        if (damage > DamageThreshold)
+            return new RivalPitPlan(SessionFuel.TankCapacity, AllTires, damage, emergency: true);
+
+        double toNextEntry = toEntry + lapLength;
+        double serviceBurn = toStall * SessionFuel.ReducedBurnFactor * fuelPerMeter;
+        double reserve = Math.Max(.75d, 1.25d * lapLength * fuelPerMeter);
+        double finishFuel = window.FuelDistance(window.Meters) * fuelPerMeter;
+        // Reaching a closed stage window can mean waiting for the stages' caution laps to open pit road.
+        bool lastBeforeClosure = window.ClosesBeforeTarget && toNextEntry >= window.Meters - 2d * lapLength;
+        double nextLegalDistance = pitOpen ? toNextEntry :
+            Math.Min(window.Meters, Math.Max(toNextEntry, window.YellowMeters));
+        double fuelToNextStall = window.FuelDistance(nextLegalDistance) * fuelPerMeter + serviceBurn;
+        bool emergencyFuel = !pitOpen && fuel < Math.Min(finishFuel, fuelToNextStall);
+        if (window.EndsUnderCaution && fuel >= finishFuel && flats == 0) return default;
+
+        bool underYellowAtEntry = toEntry < window.YellowMeters;
+        bool needsFuel = finishFuel + reserve > fuel &&
+            (underYellowAtEntry || lastBeforeClosure || fuel <= fuelToNextStall + reserve);
+        bool canReachStop = toEntry < window.Meters && (pitOpen || emergencyFuel);
+        if (!canReachStop) return default;
+
+        if (window.EndsUnderCaution) needsFuel = fuel < finishFuel;
+        double entryFuel = window.FuelDistance(toEntry) * fuelPerMeter;
+        double fuelTarget = needsFuel ? Math.Min(SessionFuel.TankCapacity, finishFuel - entryFuel + reserve) : 0d;
+        double predictedFuelAtStall = Math.Max(0d, fuel - serviceBurn - entryFuel);
+        float gallons = needsFuel ? (float)Math.Max(0d, fuelTarget - predictedFuelAtStall) : 0f;
+        float maxWear = window.FinalStage ? .70f : .50f;
+        int tires = DecideTires(left.Finish, right.Finish, maxWear, gallons) | flats;
+
+        if (!needsFuel && flats == 0)
+        {
+            if (tires == 0) return default;
+            bool atRiskOfFlat = Math.Max(left.NextEntry, right.NextEntry) >= .98f;
+            double greenLaps = Math.Max(0d, window.Meters - Math.Max(toEntry, window.YellowMeters)) / lapLength;
+            float gain = tires == AllTires ? (left.Current + right.Current) * .5f : right.Current * .6f;
+            float service = SessionPitStops.ServiceDuration(RaceSessionRun.TireCount(tires), 0f, 0f);
+            // Worn tires cost pace, but the gain must cover the lost track position.
+            double benefitSeconds = greenLaps * lapSeconds * gain * .08d;
+            double costSeconds = underYellowAtEntry ? service * .2d : service + greenTransitLoss;
+            if (!atRiskOfFlat && (greenLaps < (underYellowAtEntry ? 1d : 3d) || benefitSeconds < costSeconds))
+                return default;
+        }
+
+        return new RivalPitPlan(fuelTarget, tires, 0f, emergencyFuel);
+    }
+
+    private static int DecideTires(float leftWear, float rightWear, float threshold, float gallons)
+    {
+        if (gallons > 0f && SessionPitStops.FuelServiceSeconds(gallons) >= SessionPitStops.ServiceDuration(4, 0f, 0f))
+            return AllTires;
+        if (leftWear > threshold) return AllTires;
+        return rightWear > threshold ? RightTires : 0;
     }
 }
 
