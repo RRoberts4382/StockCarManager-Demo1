@@ -11,6 +11,7 @@
   "majorStyle": "Oval",
   "minorStyle": "Oval",
   "surface": "Asphalt",
+  "dashedLaneMarkings": 2,
   "banking": {
     "turns12": 19,
     "turns34": 19,

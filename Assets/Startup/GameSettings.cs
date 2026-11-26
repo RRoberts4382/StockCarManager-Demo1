@@ -441,31 +441,38 @@ internal sealed class GameSettings
     }
 
     internal static Action OpenTrackMsaaPicker(VisualElement host, VisualElement underlying, Button source,
-        int currentSamples, Action<int> select, Action closed = null)
+        int currentSamples, Action<int> select, Action closed = null) =>
+        OpenTrackOptionPicker(host, underlying, source, "trackMsaa", "Track Anti-Aliasing", TrackMsaaChoices,
+            currentSamples, TrackMsaaLabel, samples => samples == 1
+                ? "Render without multisampling for the lowest GPU cost."
+                : $"Use up to {samples} samples per pixel to smooth thin lines and edges.",
+            "Close the selector and keep the current anti-aliasing setting.", select, closed);
+
+    internal static Action OpenTrackOptionPicker(VisualElement host, VisualElement underlying, Button source,
+        string name, string title, IEnumerable<int> choices, int currentValue, Func<int, string> label,
+        Func<int, string> tooltip, string cancelTooltip, Action<int> select, Action closed)
     {
-        var overlay = new VisualElement { name = "trackMsaaDialog" };
+        var overlay = new VisualElement { name = name + "Dialog" };
         if (!host.ClassListContains("settings-form"))
             SettingsFormStyle.Apply(overlay);
         overlay.AddToClassList("settings-confirmation-overlay");
         var dialog = new VisualElement();
         dialog.AddToClassList("settings-confirmation-dialog");
         dialog.AddToClassList("settings-msaa-dialog");
-        dialog.Add(SettingsFormStyle.Label("Track Anti-Aliasing", "settings-group-heading"));
+        dialog.Add(SettingsFormStyle.Label(title, "settings-group-heading"));
 
         Button current = null;
-        foreach (int samples in TrackMsaaChoices)
+        foreach (int value in choices)
         {
-            bool selected = samples == currentSamples;
-            var choice = SettingsFormStyle.Button(TrackMsaaLabel(samples) + (selected ? " (Selected)" : ""), () =>
+            bool selected = value == currentValue;
+            var choice = SettingsFormStyle.Button(label(value) + (selected ? " (Selected)" : ""), () =>
             {
-                select(samples);
+                select(value);
                 Close();
             });
-            choice.name = "trackMsaa" + samples;
+            choice.name = name + value;
             choice.AddToClassList("settings-msaa-choice");
-            choice.tooltip = samples == 1
-                ? "Render without multisampling for the lowest GPU cost."
-                : $"Use up to {samples} samples per pixel to smooth thin lines and edges.";
+            choice.tooltip = tooltip(value);
             dialog.Add(choice);
             if (selected)
                 current = choice;
@@ -474,7 +481,7 @@ internal sealed class GameSettings
         var footer = new VisualElement();
         footer.AddToClassList("settings-footer");
         var cancel = SettingsFormStyle.Button("Cancel", Close);
-        cancel.tooltip = "Close the selector and keep the current anti-aliasing setting.";
+        cancel.tooltip = cancelTooltip;
         footer.Add(cancel);
         dialog.Add(footer);
         overlay.Add(dialog);

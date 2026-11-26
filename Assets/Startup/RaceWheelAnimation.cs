@@ -26,6 +26,17 @@ internal sealed class RaceWheelAnimation
 
     internal Vector3 FrontAxleCenter { get; }
 
+    internal Vector3? TireContact(bool front, float side)
+    {
+        foreach (var wheel in wheels)
+        {
+            if (wheel.Front == front && wheel.Center.x * side > 0f)
+                return wheel.Center - Vector3.up * wheel.Radius;
+        }
+
+        return null;
+    }
+
     internal static void ApplyFrontAxleYaw(Transform car, Vector3 frontAxle, float yawDegrees)
     {
         Quaternion rotation = car.localRotation;

@@ -24,51 +24,6 @@ public sealed partial class TrackPreview
         _ => source.color
     };
 
-    private void AddIowaDefaultRubber()
-    {
-        var road = System.Array.Find(GetComponentsInChildren<MeshRenderer>(), item => item.name == "Iowa racing surface");
-        if (road == null)
-            return;
-
-        const int along = 1536, across = 96;
-        var pixels = new Color32[along * across];
-        var noise = new System.Random(351215);
-        for (int x = 0; x < along; x++)
-        {
-            float fraction = (x + .5f) / along;
-            float station = fraction * lapLength;
-            float nominalWidth = RoadWidths(station).x;
-            float lane = behaviorModel.LaneOffset(0, nominalWidth, float.PositiveInfinity, racingLine(station));
-            float groove = .5f + lane / nominalWidth;
-            customLayout.Sample(station - 16f, out var before, out _);
-            customLayout.Sample(station + 16f, out var after, out _);
-            float bend = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(1.8f, 16f, Vector3.Angle(before, after)));
-            float phase = fraction * Mathf.PI * 2f;
-            float nx = Mathf.Cos(phase) * 15f, ny = Mathf.Sin(phase) * 15f;
-            for (int y = 0; y < across; y++)
-            {
-                float surface = Mathf.PerlinNoise(nx + y * .13f + 28f, ny + y * .17f + 29f);
-                float distance = Mathf.Abs((y + .5f) / across - groove - (surface - .5f) * .023f);
-                float trackRubber = 1f - Mathf.SmoothStep(0f, 1f, distance / .145f);
-                float shade = 226f + surface * 18f + noise.Next(-6, 7) - (7f + 18f * bend) * trackRubber;
-                byte channel = (byte)Mathf.Clamp(Mathf.RoundToInt(shade), 0, 255);
-                pixels[y * along + x] = new Color32(channel, channel, channel, 255);
-            }
-        }
-        var texture = new Texture2D(along, across, TextureFormat.RGBA32, true)
-        {
-            name = "Iowa light rubber in the racing groove", wrapModeU = TextureWrapMode.Repeat,
-            wrapModeV = TextureWrapMode.Clamp, filterMode = FilterMode.Trilinear, anisoLevel = 8
-        };
-        texture.SetPixels32(pixels);
-        texture.Apply(true, true);
-        carPaintTextures.Add(texture);
-        Material surfaceMaterial = MakeMaterial(road.sharedMaterial.color);
-        surfaceMaterial.SetFloat("_Smoothness", .14f);
-        surfaceMaterial.SetTexture("_BaseMap", texture);
-        road.sharedMaterial = surfaceMaterial;
-    }
-
     private void AddIowaScenery()
     {
         AddLargeTrackGrandstands(null);

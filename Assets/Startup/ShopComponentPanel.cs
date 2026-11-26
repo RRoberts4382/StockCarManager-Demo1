@@ -285,12 +285,15 @@ internal static class ComponentWearGradient
         ? Color.Lerp(new Color32(73, 200, 115, 255), new Color32(255, 211, 73, 255), Mathf.Clamp01(wear * 2f))
         : Color.Lerp(new Color32(255, 211, 73, 255), new Color32(239, 79, 79, 255), Mathf.Clamp01((wear - 0.5f) * 2f));
 
-    public static void Apply(VisualElement fill, float wear, bool vertical = false, bool reverse = false)
+    public static void Apply(VisualElement fill, float wear, bool vertical = false, bool reverse = false) =>
+        Apply(fill, () => wear, vertical, reverse);
+
+    public static void Apply(VisualElement fill, System.Func<float> wear, bool vertical = false, bool reverse = false)
     {
-        float amount = Mathf.Clamp01(wear);
         fill.style.backgroundColor = Color.clear;
         fill.generateVisualContent += context =>
         {
+            float amount = Mathf.Clamp01(wear());
             var rect = fill.contentRect;
             if (rect.width <= 0 || rect.height <= 0 || amount <= 0) return;
             const int segments = 24;
