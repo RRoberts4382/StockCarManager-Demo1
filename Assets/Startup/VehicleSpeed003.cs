@@ -356,19 +356,33 @@ internal sealed class VehicleSpeed003 : IVehicleSpeedModel
         return 1f + heat + 2f * heat * heat;
     }
 
-    internal static float TireCornerSpeedFactor(Setup setup, TeamCar car)
+    internal static float TireCornerSpeedFactor(Setup setup, TeamCar car, out float worstWear)
     {
         float totalGrip = 0f;
         float worstGrip = 1f;
+        worstWear = 0f;
         for (int corner = 0; corner < 4; corner++)
         {
             var tire = car?.GetTire(corner);
             float temperature = TireTemperatureModel.Fahrenheit(tire?.temperature ?? 0f);
-            float grip = TireGripFactor(tire?.wear ?? 0f, temperature) * PressureGrip(setup, corner, tire);
+            float wear = tire?.wear ?? 0f;
+            float grip = TireGripFactor(wear, temperature) * PressureGrip(setup, corner, tire);
+            worstWear = Mathf.Max(worstWear, wear);
             totalGrip += grip;
             worstGrip = Mathf.Min(worstGrip, grip);
         }
         return Mathf.Sqrt((totalGrip / 4f + worstGrip) * 0.5f);
+    }
+
+    internal static float NonPlateOvalTirePaceFactor(float worstWear)
+    {
+        // Calibrated to a 100-lap Bristol run. Scrub in quickly, lose pace
+        // gradually through the middle, then fall off more sharply on older tires.
+        float run = worstWear / .38f;
+        float initial = .04f * (1f - Mathf.Exp(-run / .08f));
+        float middle = .10f * run;
+        float late = .85f * run * run * run * run;
+        return 1f / (1f + Mathf.Min(initial + middle + late, .85f));
     }
 
     internal static bool UsesNonPlateOvalSetupTuning(TrackDefinition track) =>

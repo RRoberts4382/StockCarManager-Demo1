@@ -1186,8 +1186,9 @@ internal sealed class RaceSessionRun
         var car = cars[index].Result.car;
         double fuel = Fuel(index);
         float turnWeight = inputSpeedProfile.TireTurnWeightAt(distance);
+        float worstWear = 0f;
         float tireFactor = turnWeight > 0f
-            ? UnityEngine.Mathf.Lerp(1f, VehicleSpeed003.TireCornerSpeedFactor(setup, car), turnWeight)
+            ? UnityEngine.Mathf.Lerp(1f, VehicleSpeed003.TireCornerSpeedFactor(setup, car, out worstWear), turnWeight)
             : 1f;
         if (track.restrictorPlate)
             return speed * VehicleSpeed003.RestrictorPlatePaceFactor(track, setup, fuel, Weather.GripFactor) * tireFactor;
@@ -1205,7 +1206,11 @@ internal sealed class RaceSessionRun
         factor *= VehicleSpeed003.WeightCornerSpeedFactor(fuel) * UnityEngine.Mathf.Sqrt(Weather.GripFactor);
         // Unwind the cornering demand as the driver applies power in the final third.
         cornerLoad *= 1f-inputSpeedProfile.CornerExitAt(distance);
-        return speed * UnityEngine.Mathf.Lerp(straightFactor, factor, cornerLoad);
+        float pace = speed * UnityEngine.Mathf.Lerp(straightFactor, factor, cornerLoad);
+        // Carry the worn-tire pace loss through corner exit as cornering load unwinds.
+        if (ovalSetupReference > 0f && turnWeight > 0f)
+            pace *= UnityEngine.Mathf.Lerp(1f, VehicleSpeed003.NonPlateOvalTirePaceFactor(worstWear), turnWeight);
+        return pace;
     }
 
     public void AdvanceClock(float seconds, bool? raceLapUnderCaution = null)
