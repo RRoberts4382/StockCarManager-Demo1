@@ -6488,13 +6488,14 @@ public sealed class StartupMenu : MonoBehaviour
             return;
         }
 
+        bool showLapMinutes = scoringColumn == ScoringColumn.LastLap && timing.HasLapOfAtLeastOneMinute;
         int position = 0;
         if (timing.IsRace)
         {
             foreach (var standing in timing.RunningOrder(compareToLeader: true))
             {
                 string gap = standing.LapsBehind > 0 ? $"-{standing.LapsBehind}L" : FormatScoringGap(standing.SecondsBehind);
-                SetTimingRow(position++, timing.IndexOfCar(standing.Car), standing.Car, gap);
+                SetTimingRow(position++, timing.IndexOfCar(standing.Car), standing.Car, gap, showLapMinutes);
             }
             return;
         }
@@ -6505,7 +6506,7 @@ public sealed class StartupMenu : MonoBehaviour
             if (position == 0)
                 leadingLap = result.FastestLap;
             float gap = position == 0 ? float.NaN : result.FastestLap - leadingLap;
-            SetTimingRow(position++, timing.IndexOfCar(result), result, FormatScoringGap(gap));
+            SetTimingRow(position++, timing.IndexOfCar(result), result, FormatScoringGap(gap), showLapMinutes);
         }
     }
 
@@ -6516,10 +6517,14 @@ public sealed class StartupMenu : MonoBehaviour
         double.IsNaN(metersPerSecond) || double.IsInfinity(metersPerSecond) || metersPerSecond < 0d
             ? "\u2014" : $"{metersPerSecond * 3600d / TrackDefinition.MetersPerMile:0} MPH";
 
-    private static string FormatScoringLastLap(SessionCarResult result)
+    private static string FormatScoringLastLap(SessionCarResult result, bool showMinutes)
     {
         float seconds = result.lapTimes is { Count: > 0 } laps ? laps[^1] : 0f;
-        return seconds > 0f && !float.IsInfinity(seconds) ? RaceEventView.LapTime(seconds) : "\u2014";
+        if (!(seconds > 0f) || float.IsInfinity(seconds))
+            return "\u2014";
+
+        string lapTime = RaceEventView.LapTime(seconds);
+        return showMinutes ? lapTime : lapTime[(lapTime.IndexOf(':') + 1)..];
     }
 
     private void UpdateScoringHeader(RaceSessionRun timing)
@@ -6622,7 +6627,7 @@ public sealed class StartupMenu : MonoBehaviour
         }
     }
 
-    private void SetTimingRow(int position, int carIndex, SessionCarResult result, string interval)
+    private void SetTimingRow(int position, int carIndex, SessionCarResult result, string interval, bool showLapMinutes)
     {
         if (position >= timingCells.Count)
         {
@@ -6663,7 +6668,7 @@ public sealed class StartupMenu : MonoBehaviour
         cell.Value.text = scoringColumn switch
         {
             ScoringColumn.Mph => FormatScoringSpeed(result.InstantSpeed),
-            ScoringColumn.LastLap => FormatScoringLastLap(result),
+            ScoringColumn.LastLap => FormatScoringLastLap(result, showLapMinutes),
             _ => interval
         };
         cell.Value.tooltip = scoringColumn switch
