@@ -33,6 +33,7 @@ public sealed partial class TrackPreview
         public Vector3 FallbackRearTiresCenter;
         public bool SupportsBodyTravel;
         public RaceWheelAnimation Wheels;
+        public TrackBodyDamageSurface DamageSurface;
     }
 
     private sealed class CarVisualLods
@@ -41,6 +42,7 @@ public sealed partial class TrackPreview
         public Action<Transform, string, bool> Build;
         public CarVisual Current;
         public Vector3 BodyYawPivot;
+        public Material BodyPaint, HoodPaint;
         // Keep one previous visual so returning to the last level is cheap.
         public CarVisual Previous;
         public int Level, CoverageLevel;
@@ -58,6 +60,8 @@ public sealed partial class TrackPreview
         var state = new CarVisualLods
         {
             Resources = resources,
+            BodyPaint = bodyPaint,
+            HoodPaint = hoodPaint,
             CoverageLevel = CarDetailIndex + 1,
             Build = (root, resource, first) =>
                 BuildCar(root, number, hoodPaint, bodyPaint, glass, rubber, sponsors, paint, texture =>
@@ -138,6 +142,7 @@ public sealed partial class TrackPreview
             state.BodyYawPivot = next.Wheels?.FrontAxleCenter ?? Vector3.forward * RearAxleHeading.CenterToRearAxle;
         next.Wheels?.CopyMotionFrom(old?.Wheels);
         PresentBodySuspension(index, next);
+        ApplyTrackBodyDamage(index, next);
         next.Root.gameObject.SetActive(true);
         state.Previous = old;
         state.Current = next;

@@ -1565,10 +1565,11 @@ public sealed partial class TrackPreview : MonoBehaviour
         mergeExitGeometry.Clear();
         apronConnectors.Clear();
         snapshotTime = 0;
-        collisions = new VehicleCollision001(cars.Length, UsesOvalTraffic007 ? raceCarHalfWidths : null);
-        pitCollisions = new VehicleCollision001(cars.Length);
+        collisions = new VehicleCollision001(cars.Length, UsesOvalTraffic007 ? raceCarHalfWidths : null) { ReportBodyImpact = OnVehicleBodyImpact };
+        pitCollisions = new VehicleCollision001(cars.Length) { ReportBodyImpact = OnVehicleBodyImpact };
         if (bristolBackExit != null)
-            backExitCollisions = new VehicleCollision001(cars.Length);
+            backExitCollisions = new VehicleCollision001(cars.Length) { ReportBodyImpact = OnVehicleBodyImpact };
+        ResetTrackBodyDamage();
         System.Array.Clear(crashes, 0, crashes.Length);
         System.Array.Clear(stoppedCarTime, 0, stoppedCarTime.Length);
         System.Array.Clear(pitObstructionTime, 0, pitObstructionTime.Length);
@@ -1874,6 +1875,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         UpdateAdaptiveCarLods();
         PresentLooseSetupYaw();
         PresentBodySuspension();
+        PresentTrackBodyDamage();
         UpdateScoringPylon();
         RenderIowaFlagStand();
         UpdateIowaSafetyLights();
@@ -1899,6 +1901,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             return;
         tireSmoke?.Simulate(Time.deltaTime, false, false, false);
         engineSmoke?.Simulate(Time.deltaTime, false, false, false);
+        AdvanceBodyContactEffects(Time.deltaTime);
         AdvancePlayerFire(Time.deltaTime);
         AnimateIowaFans(Time.deltaTime);
         if (UpdateWinnerBurnout(Time.deltaTime))
@@ -3318,7 +3321,14 @@ public sealed partial class TrackPreview : MonoBehaviour
             {
                 nextLane = wallLimit * outerSide;
                 if (crash.SideSpeed * outerSide > 0f)
+                {
+                    var outward = Quaternion.Euler(0f, -crash.Yaw, 0f) * (Vector3.right * outerSide);
+                    bool side = Mathf.Abs(outward.x) >= Mathf.Abs(outward.z);
+                    float severity = Mathf.Clamp(Mathf.Abs(crash.SideSpeed) * 1.2f, .5f, 100f);
+                    OnWallBodyImpact(index, new Vector2(outward.x, outward.z) * VehicleCollision001.ContactLength,
+                        side, severity, crash.ForwardSpeed);
                     crash.SideSpeed = 0f;
+                }
             }
         }
         crash.Lane = Mathf.Clamp(nextLane, -edge, edge);
@@ -7910,21 +7920,29 @@ public sealed partial class TrackPreview : MonoBehaviour
 
     private static readonly Dictionary<(Font Font, int Size), float> carNumberAscents = new();
 
-    private static Bounds CarNumberInkBounds(TextMesh text, Bounds lineBounds)
+    internal static bool TryGetCarNumberAscent(TextMesh text, out float ascent)
     {
         Font font = text.font;
         var key = (font, text.fontSize);
-        if (!carNumberAscents.TryGetValue(key, out float ascent))
+        if (!carNumberAscents.TryGetValue(key, out ascent))
         {
             if (FontEngine.InitializeFontEngine() != FontEngineError.Success ||
                 FontEngine.LoadFontFace(font, text.fontSize) != FontEngineError.Success)
-                return lineBounds;
+                return false;
             ascent = FontEngine.GetFaceInfo().ascentLine;
             if (!(ascent > 0f))
-                return lineBounds;
+                return false;
             carNumberAscents.Add(key, ascent);
         }
+        return true;
+    }
 
+    private static Bounds CarNumberInkBounds(TextMesh text, Bounds lineBounds)
+    {
+        if (!TryGetCarNumberAscent(text, out float ascent))
+            return lineBounds;
+
+        Font font = text.font;
         font.RequestCharactersInTexture(text.text, text.fontSize, text.fontStyle);
         Vector2 min = Vector2.one * float.PositiveInfinity;
         Vector2 max = Vector2.one * float.NegativeInfinity;

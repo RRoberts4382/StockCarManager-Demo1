@@ -122,7 +122,10 @@ public sealed partial class TrackPreview
         bool hitWall = straight.WallDistanceRemaining <= 0f;
         if (hitWall)
         {
-            SessionRun.ApplyDamage(index, Mathf.Max(35f, nextSpeed * 1.75f));
+            float damage = Mathf.Max(35f, nextSpeed * 1.75f);
+            SessionRun.ApplyDamage(index, damage);
+            OnWallBodyImpact(index, Vector2.up * VehicleCollision001.ContactLength, side: false,
+                damage: damage, speed: nextSpeed);
             collisionFlashRemaining[index] = CollisionFlashSeconds;
         }
         if (hitWall || nextSpeed == 0f)

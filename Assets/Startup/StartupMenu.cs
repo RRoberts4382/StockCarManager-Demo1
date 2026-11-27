@@ -829,16 +829,20 @@ public sealed class StartupMenu : MonoBehaviour
         PlayerPrefs.SetString(DevelopmentCarPreference, modelResource);
         PlayerPrefs.Save();
         developmentTrackPicker.style.display = DisplayStyle.None;
+        const string pettyBlue = "#009BDD";
+        bool useCamaroTestPaint = modelResource == "ChevroletCupCamaro";
         var career = new Career
         {
             teamName = activeCareer?.teamName ?? "Player Team",
-            primaryTeamColor = activeCareer?.primaryTeamColor,
-            secondaryTeamColor = activeCareer?.secondaryTeamColor,
+            primaryTeamColor = useCamaroTestPaint ? pettyBlue : activeCareer?.primaryTeamColor,
+            secondaryTeamColor = useCamaroTestPaint ? pettyBlue : activeCareer?.secondaryTeamColor,
             teamBalance = RaceFinances.StartingBalance,
             drivers = new List<Driver> { CreateTestDriver(developmentTrackId) }
         };
         career.InitializeCars(new System.Random(developmentTrackId), randomizeRivals: true);
         var car = career.cars[0];
+        if (useCamaroTestPaint)
+            car.primaryPaint = car.secondaryPaint = pettyBlue;
         if (testRace)
             car.setup = RivalSetup001.Create(definition, car.chassisNumber ?? car.number.ToString());
         foreach (var entry in career.AllCars)
@@ -6929,6 +6933,15 @@ public sealed class StartupMenu : MonoBehaviour
                 menu.AddItem("Trigger Player Mechanical Failure", false, preview.TriggerPlayerMechanicalFailure);
             else
                 menu.AddDisabledItem("Trigger Player Mechanical Failure", false);
+            if (developmentPractice && !sessionInGarage && !PitSettingsOpen)
+            {
+                if (preview.CanPreviewWallScrape)
+                    menu.AddItem("Preview Wall Scrape", false, preview.PreviewWallScrape);
+                if (preview.CanPreviewBodyDamage)
+                    menu.AddItem("Preview Car-to-Car Side Impact", false, preview.PreviewSideImpact);
+                if (preview.CanPreviewTireRub)
+                    menu.AddItem("Preview Tire Doughnut", false, preview.PreviewTireDoughnut);
+            }
         }
         menu.DropDown(trackSettingsButton.worldBound, trackSettingsButton, DropdownMenuSizeMode.Content);
     }

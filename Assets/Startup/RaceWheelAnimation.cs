@@ -41,6 +41,21 @@ internal sealed class RaceWheelAnimation
         return null;
     }
 
+    internal bool TryGetTireSidewall(bool front, float side, out Vector3 center, out float radius, out float rotation)
+    {
+        foreach (var wheel in wheels)
+        {
+            if (wheel.Front != front || wheel.Center.x * side <= 0f) continue;
+            center = wheel.Center + wheel.Steer.localRotation * (Vector3.right * (side * wheel.HalfWidth));
+            radius = wheel.Radius;
+            rotation = wheel.Angle * Mathf.Deg2Rad * side;
+            return true;
+        }
+        center = default;
+        radius = rotation = 0f;
+        return false;
+    }
+
     internal static void ApplyFrontAxleYaw(Transform car, Vector3 frontAxle, float yawDegrees)
     {
         Quaternion rotation = car.localRotation;
@@ -78,7 +93,7 @@ internal sealed class RaceWheelAnimation
                     brake.transform.SetParent(steer, true);
             }
 
-            wheels.Add(new Wheel(renderer.name, steer, spin, bounds.extents.y, front));
+            wheels.Add(new Wheel(renderer.name, steer, spin, bounds.extents.y, bounds.extents.x, front));
         }
 
         return wheels.Count == 0 ? null : new RaceWheelAnimation(wheels.ToArray());
@@ -258,7 +273,7 @@ internal sealed class RaceWheelAnimation
         public readonly Transform Steer;
         public readonly Transform Spin;
         public readonly Vector3 Center;
-        public readonly float Radius;
+        public readonly float Radius, HalfWidth;
         public readonly bool Front;
         public float Angle;
         public float SteeringAngle;
@@ -266,13 +281,14 @@ internal sealed class RaceWheelAnimation
         public float PresentedAngle;
         public float PresentedSteering;
 
-        public Wheel(string name, Transform steer, Transform spin, float radius, bool front)
+        public Wheel(string name, Transform steer, Transform spin, float radius, float halfWidth, bool front)
         {
             Name = name;
             Steer = steer;
             Spin = spin;
             Center = steer.localPosition;
             Radius = radius;
+            HalfWidth = halfWidth;
             Front = front;
         }
     }

@@ -18,6 +18,29 @@ internal sealed class VehicleCollision001
     private readonly bool[] gaveDraftBump, receivedDraftBump;
     private readonly float[] trackHalfWidths;
 
+    internal readonly struct BodyImpact
+    {
+        internal readonly int First, Second;
+        internal readonly Vector2 FirstOffset, SecondOffset;
+        internal readonly bool FirstSide, SecondSide;
+        internal readonly float Damage;
+        internal bool SideToSide => FirstSide && SecondSide;
+
+        internal BodyImpact(int first, int second, Vector2 firstOffset, Vector2 secondOffset,
+            bool firstSide, bool secondSide, float damage)
+        {
+            First = first;
+            Second = second;
+            FirstOffset = firstOffset;
+            SecondOffset = secondOffset;
+            FirstSide = firstSide;
+            SecondSide = secondSide;
+            Damage = damage;
+        }
+    }
+
+    internal Action<BodyImpact> ReportBodyImpact { get; set; }
+
     public VehicleCollision001(int count) : this(count, null) { }
 
     internal VehicleCollision001(int count, float[] trackHalfWidths)
@@ -106,6 +129,7 @@ internal sealed class VehicleCollision001
                         float t = sample / (float)samples;
                         contact = PitFootprint.Overlaps(gap + longitudinal * t, side + lateral * t,
                             Mathf.LerpAngle(startYaw[first], endYaw[first], t), Mathf.LerpAngle(startYaw[second], endYaw[second], t));
+                        if (contact) enter = t;
                     }
                 }
                 else contact = OverlapsDuringStep(gap, longitudinal, ContactLength, ref enter, ref exit) &&
@@ -143,10 +167,23 @@ internal sealed class VehicleCollision001
                         }
                     }
 
+                    float relativeSpeed = gentleBump ? 0f : Mathf.Sqrt(longitudinal * longitudinal + lateral * lateral) / seconds;
+                    float damage = Mathf.Clamp(relativeSpeed * 1.2f, .5f, 100f);
+                    // A gentle draft bump leaves a scuff on first contact without adding race damage.
+                    if (ReportBodyImpact != null && (!gentleBump || !continuingBump))
+                    {
+                        var offset = new Vector2(side + lateral * enter, gap + longitudinal * enter);
+                        Vector2 firstOffset = offset, secondOffset = -offset;
+                        if (oriented)
+                        {
+                            firstOffset = LocalOffset(offset, Mathf.LerpAngle(startYaw[first], endYaw[first], enter));
+                            secondOffset = LocalOffset(-offset, Mathf.LerpAngle(startYaw[second], endYaw[second], enter));
+                        }
+                        ReportBodyImpact(new BodyImpact(first, second, firstOffset, secondOffset,
+                            IsSideContact(firstOffset, contactWidth), IsSideContact(secondOffset, contactWidth), damage));
+                    }
                     if (!gentleBump)
                     {
-                        float relativeSpeed = Mathf.Sqrt(longitudinal * longitudinal + lateral * lateral) / seconds;
-                        float damage = Mathf.Clamp(relativeSpeed * 1.2f, 0.5f, 100f);
                         run.RecordContact(first, second, damage);
                         impactPartners[first, second] = impactPartners[second, first] = true;
                         // Hard contact breaks traction. Opposite impulses send the cars apart.
@@ -190,11 +227,21 @@ internal sealed class VehicleCollision001
         {
             if (!active[i] || !active[j] || !(pitInvolved[i] || pitInvolved[j]))
             { touching[i, j] = false; continue; }
-            bool contact = SpatialContact(start[i], end[i], yawStart[i], yawEnd[i], start[j], end[j], yawStart[j], yawEnd[j]);
+            bool contact = SpatialContact(start[i], end[i], yawStart[i], yawEnd[i], start[j], end[j], yawStart[j], yawEnd[j],
+                out float impactTime);
             if (contact && !touching[i, j])
             {
                 Vector3 relative = (end[j] - start[j]) - (end[i] - start[i]);
                 float damage = Mathf.Clamp(relative.magnitude / seconds * 1.2f, .5f, 100f);
+                if (ReportBodyImpact != null)
+                {
+                    Vector3 gapAtContact = start[j] - start[i] + relative * impactTime;
+                    var offset = new Vector2(gapAtContact.x, gapAtContact.z);
+                    var firstOffset = LocalOffset(offset, Mathf.LerpAngle(yawStart[i], yawEnd[i], impactTime));
+                    var secondOffset = LocalOffset(-offset, Mathf.LerpAngle(yawStart[j], yawEnd[j], impactTime));
+                    ReportBodyImpact(new BodyImpact(i, j, firstOffset, secondOffset,
+                        IsSideContact(firstOffset, ContactWidth), IsSideContact(secondOffset, ContactWidth), damage));
+                }
                 run.RecordContact(i, j, damage);
                 impactDamage[i] += damage; impactDamage[j] += damage;
             }
@@ -207,7 +254,12 @@ internal sealed class VehicleCollision001
 
     internal static bool SpatialContact(Vector3 a0, Vector3 a1, float yawA0, float yawA1,
         Vector3 b0, Vector3 b1, float yawB0, float yawB1)
+        => SpatialContact(a0, a1, yawA0, yawA1, b0, b1, yawB0, yawB1, out _);
+
+    private static bool SpatialContact(Vector3 a0, Vector3 a1, float yawA0, float yawA1,
+        Vector3 b0, Vector3 b1, float yawB0, float yawB1, out float impactTime)
     {
+        impactTime = 0f;
         Vector3 delta0 = b0 - a0, change = (b1 - a1) - delta0;
         // Broad phase on the swept relative position; avoids sampling distant
         // cars with identical progress values on Bristol's opposite pit roads.
@@ -221,10 +273,23 @@ internal sealed class VehicleCollision001
             float t = i / (float)samples;
             Vector3 delta = delta0 + change * t;
             if (Mathf.Abs(delta.y) < 1.5f && PitFootprint.Overlaps(delta.z, delta.x,
-                Mathf.LerpAngle(yawA0, yawA1, t), Mathf.LerpAngle(yawB0, yawB1, t))) return true;
+                Mathf.LerpAngle(yawA0, yawA1, t), Mathf.LerpAngle(yawB0, yawB1, t)))
+            {
+                impactTime = t;
+                return true;
+            }
         }
         return false;
     }
+
+    private static Vector2 LocalOffset(Vector2 offset, float yaw)
+    {
+        Vector3 local = Quaternion.Euler(0f, -yaw, 0f) * new Vector3(offset.x, 0f, offset.y);
+        return new Vector2(local.x, local.z);
+    }
+
+    internal static bool IsSideContact(Vector2 offset, float width) =>
+        Mathf.Abs(offset.x) >= width * .42f && Mathf.Abs(offset.y) < ContactLength * .82f;
 
     // Position projection resolves penetration without changing commanded velocities.
     // Trailing cars move backward, never forward through another car or across a finish line.
