@@ -7113,7 +7113,8 @@ public sealed partial class TrackPreview : MonoBehaviour
     private MeshRenderer rubberOverlayRenderer;
     private Material rubberOverlayMaterial;
     private static readonly int RubberBuildupProperty = Shader.PropertyToID("_Buildup");
-    private static readonly float[] RubberStripeWeights = { 0f, .72f, 1f, .72f, 0f };
+    // Sample a smooth lateral fade with its peak on the preferred line.
+    private static readonly float[] RubberStripeWeights = { 0f, .15625f, .5f, .84375f, 1f, .84375f, .5f, .15625f, 0f };
 
     internal static float RubberBuildup(RaceSessionKind kind, float practiceFraction, int leaderLaps)
     {
@@ -7175,7 +7176,9 @@ public sealed partial class TrackPreview : MonoBehaviour
             float bend = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(1.5f, 16f, Vector3.Angle(before, after)));
             float halfWidth = RoadWidths(station).x * .5f;
             float preferred = PreferredLaneOffset(0, halfWidth * 2f, float.PositiveInfinity, racingLine(station));
-            float stripeHalfWidth = Mathf.Min(1.7f, halfWidth * .4f);
+            float straightHalfWidth = Mathf.Min(1.7f, halfWidth * .4f);
+            float cornerHalfWidth = Mathf.Min(3.2f, halfWidth * .7f);
+            float stripeHalfWidth = Mathf.Lerp(straightHalfWidth, cornerHalfWidth, bend);
             // Fade to zero at both painted edges, including where the apron starts.
             const float edgeInset = .04f;
             float trackEdge = halfWidth - edgeInset;
@@ -7185,13 +7188,13 @@ public sealed partial class TrackPreview : MonoBehaviour
             int row = vertices.Count;
             for (int side = 0; side < RubberStripeWeights.Length; side++)
             {
-                float offset = (side - 2) * .5f;
+                float offset = 2f * side / (RubberStripeWeights.Length - 1) - 1f;
                 float lane = offset < 0f ? Mathf.Lerp(center, left, -offset) : Mathf.Lerp(center, right, offset);
                 Vector3 surface = TrackPoint(station, lane, out _, out var up);
                 vertices.Add(surface + up * .055f);
                 colors.Add(RubberVertex(.72f * bend * RubberStripeWeights[side]));
             }
-            if (i > 0) JoinRubberRows(triangles, row, RubberStripeWeights.Length);
+            if (i > 0) JoinRubberRows(triangles, row, RubberStripeWeights.Length, RubberStripeWeights.Length);
         }
 
         AddPitDepartureRubber(vertices, colors, triangles);
@@ -7409,7 +7412,7 @@ public sealed partial class TrackPreview : MonoBehaviour
     private static Color32 RubberVertex(float strength) =>
         new Color32(255, 255, 255, (byte)Mathf.RoundToInt(Mathf.Clamp01(strength) * 255f));
 
-    private static void JoinRubberRows(List<int> triangles, int row, int width, int stride = 5)
+    private static void JoinRubberRows(List<int> triangles, int row, int width, int stride)
     {
         for (int i = 0; i < width - 1; i++)
         {
