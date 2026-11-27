@@ -2664,12 +2664,17 @@ public sealed class StartupMenu : MonoBehaviour
                 race.EnsureStages(career.SeriesRules.stagePercentages);
                 careerChanged = true;
             }
-            foreach (var race in career.schedule.races.Where(race => race.purse <= 0))
+            foreach (var race in career.schedule.races.Where(race => !race.completed || race.purse <= 0))
             {
                 var track = catalog.Find(race.trackId);
                 if (track == null)
                     continue;
-                race.purse = RaceFinances.PurseForTrack(track.Definition.lengthMiles);
+                var rules = race.completed ? null : career.SeriesRules;
+                long purse = RaceFinances.PurseForTrack(track.Definition.lengthMiles,
+                    track.Definition.SessionFieldSize(TrackPreview.CarCount), rules);
+                if (race.purse == purse)
+                    continue;
+                race.purse = purse;
                 careerChanged = true;
             }
         }
@@ -3337,7 +3342,7 @@ public sealed class StartupMenu : MonoBehaviour
     {
         if (career.financesInitialized)
             return false;
-        career.teamBalance = RaceFinances.StartingBalance;
+        career.teamBalance = career.SeriesRules.startingTeamBalance;
         career.financesInitialized = true;
         return true;
     }
@@ -4138,7 +4143,9 @@ public sealed class StartupMenu : MonoBehaviour
             start.SetEnabled(maintenanceEmployee != null && validDate && activeCareer.teamBalance >= cost &&
                 date <= System.DateTime.MaxValue.Date.AddDays(-ComponentRepair.CareerDaysForMinutes(minutes)));
             content.Add(start);
-            if (employees.Count == 0) content.Add(SettingsFormStyle.ErrorSlot("No employees are available for this repair."));
+            if (!activeCareer.HasAvailableComponentJobSlot)
+                content.Add(SettingsFormStyle.ErrorSlot("The team is at its limit for active repairs and upgrades."));
+            else if (employees.Count == 0) content.Add(SettingsFormStyle.ErrorSlot("No employees are available for this repair."));
             else if (activeCareer.teamBalance < cost) content.Add(SettingsFormStyle.ErrorSlot("The repair exceeds the team budget."));
         }
         else content.Add(SettingsFormStyle.Label("No repair is needed.", "settings-note"));
@@ -4192,7 +4199,7 @@ public sealed class StartupMenu : MonoBehaviour
     }
 
     private bool CanAssignRepair(Employee employee) =>
-        employee.arrest?.IsActiveOn(activeCareer.currentDate) != true &&
+        activeCareer.HasAvailableComponentJobSlot && employee.arrest?.IsActiveOn(activeCareer.currentDate) != true &&
         (employee.role == EmployeeRole.GeneralMechanic ||
             employee.RoleName.Contains("Specialist", System.StringComparison.Ordinal)) &&
         !activeCareer.cars.Any(car => car.repairs?.Any(repair => repair.IsAssignedTo(employee)) == true);
@@ -4415,6 +4422,7 @@ public sealed class StartupMenu : MonoBehaviour
 
             var cars = team.Select(entry => entry.car).ToArray();
             var currentRepairs = cars.Where(car => car.repairs != null).SelectMany(car => car.repairs).ToArray();
+            int openJobs = activeCareer.SeriesRules.maximumConcurrentComponentJobs - currentRepairs.Length;
             var available = staff.Where(employee => !currentRepairs.Any(repair => repair.IsAssignedTo(employee))).ToList();
             var jobs = cars.SelectMany(car => TeamCar.Components.Select(component =>
                     (Car: car, Component: component, Wear: (float)car.ComponentWear(component))))
@@ -4423,6 +4431,8 @@ public sealed class StartupMenu : MonoBehaviour
 
             foreach (var (car, component, wear) in jobs)
             {
+                if (openJobs <= 0)
+                    break;
                 var specialist = component switch
                 {
                     CarComponent.Engine => EmployeeRole.EngineSpecialist,
@@ -4459,6 +4469,7 @@ public sealed class StartupMenu : MonoBehaviour
                 car.repairs.Add(repair);
                 added.Add((car, repair, employee, previousId));
                 available.Remove(employee);
+                openJobs--;
             }
         }
 
@@ -7369,6 +7380,7 @@ public sealed class StartupMenu : MonoBehaviour
         var track = catalog.Find(race.trackId)?.Definition;
         var wearRandom = new System.Random();
         long previousBalance = activeCareer.teamBalance;
+        long previousRacePurse = race.purse;
         long previousPayroll = season.payrollPaid;
         long previousSponsorIncome = season.sponsorIncome;
         long previousRaceSponsorIncome = race.sponsorIncome;
@@ -7445,7 +7457,9 @@ public sealed class StartupMenu : MonoBehaviour
                 }
 
                 session.results = item.Results;
-                var payouts = RaceFinances.Payouts(race.purse, session.results.Count);
+                var payouts = RaceFinances.Payouts(race.purse, session.results.Count, activeCareer.SeriesRules);
+                if (activeCareer.SeriesRules.racePayoutsByPosition?.Length > 0)
+                    race.purse = payouts.Sum();
                 for (int i = 0; i < session.results.Count; i++)
                     session.results[i].winnings = payouts[i];
                 if (!race.playerSkipped)
@@ -7554,6 +7568,7 @@ public sealed class StartupMenu : MonoBehaviour
             undoRolloverMerchandising?.Invoke();
             undoMerchandising?.Invoke();
             activeCareer.teamBalance = previousBalance;
+            race.purse = previousRacePurse;
             season.payrollPaid = previousPayroll;
             season.sponsorIncome = previousSponsorIncome;
             race.sponsorIncome = previousRaceSponsorIncome;

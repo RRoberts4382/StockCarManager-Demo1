@@ -26,7 +26,10 @@ internal static class SeriesSettingsStore
                 return defaults;
 
             var saved = Clone(defaults);
+            saved.economyVersion = 0;
             JsonUtility.FromJsonOverwrite(File.ReadAllText(path, Encoding.UTF8), saved);
+            if (saved.economyVersion < defaults.economyVersion)
+                UpdateLegacyEconomyDefaults(saved, defaults);
             // Catalog defaults still apply to manufacturers with no saved override.
             saved.manufacturerDefaultModels = defaults.manufacturerDefaultModels;
             saved.carModel = defaults.id == "craftsman-truck" && string.IsNullOrWhiteSpace(saved.carModel)
@@ -48,6 +51,73 @@ internal static class SeriesSettingsStore
         }
     }
 
+    private static void UpdateLegacyEconomyDefaults(RacingSeries saved, RacingSeries defaults)
+    {
+        var legacy = new RacingSeries();
+        if (saved.maximumEmployees == legacy.maximumEmployees) saved.maximumEmployees = defaults.maximumEmployees;
+        if (saved.newChassisCost == legacy.newChassisCost) saved.newChassisCost = defaults.newChassisCost;
+        if (saved.componentUpgradeCost == legacy.componentUpgradeCost) saved.componentUpgradeCost = defaults.componentUpgradeCost;
+        if (saved.maximumComponentRepairCost == legacy.maximumComponentRepairCost)
+            saved.maximumComponentRepairCost = defaults.maximumComponentRepairCost;
+
+        if (saved.minimumSponsorshipSigning == legacy.minimumSponsorshipSigning &&
+            saved.maximumSponsorshipSigning == legacy.maximumSponsorshipSigning)
+        {
+            saved.minimumSponsorshipSigning = defaults.minimumSponsorshipSigning;
+            saved.maximumSponsorshipSigning = defaults.maximumSponsorshipSigning;
+        }
+        if (saved.minimumSponsorshipPerRace == legacy.minimumSponsorshipPerRace &&
+            saved.maximumSponsorshipPerRace == legacy.maximumSponsorshipPerRace)
+        {
+            saved.minimumSponsorshipPerRace = defaults.minimumSponsorshipPerRace;
+            saved.maximumSponsorshipPerRace = defaults.maximumSponsorshipPerRace;
+        }
+
+        foreach (var role in saved.employeeRoles ?? Array.Empty<SeriesEmployeeRole>())
+        {
+            if (role == null || !Enum.IsDefined(typeof(EmployeeRole), role.role)) continue;
+            var oldRange = Employee.DefaultSalaryRange(role.role);
+            var newRange = defaults.SalaryRange(role.role);
+            if (newRange == null || role.minimumSalary != oldRange.Minimum || role.maximumSalary != oldRange.Maximum) continue;
+            role.minimumSalary = newRange.minimumSalary;
+            role.maximumSalary = newRange.maximumSalary;
+        }
+
+        foreach (var cost in saved.eventCosts ?? Array.Empty<SeriesEventCost>())
+        {
+            if (cost == null) continue;
+            var oldCost = RaceExpenses.DefaultCosts.FirstOrDefault(item => item.id == cost.id);
+            var newCost = defaults.eventCosts?.FirstOrDefault(item => item.id == cost.id);
+            if (oldCost != null && newCost != null && cost.amount == oldCost.amount) cost.amount = newCost.amount;
+        }
+
+        UpdateLegacySupplierFees(saved.sharedEngineSuppliers, defaults.sharedEngineSuppliers,
+            defaults.eventCosts?.FirstOrDefault(item => item.id == "engine")?.amount);
+        foreach (var make in saved.manufacturers ?? Array.Empty<SeriesManufacturer>())
+        {
+            if (make == null) continue;
+            var defaultMake = defaults.manufacturers?.FirstOrDefault(item => item.manufacturer == make.manufacturer);
+            UpdateLegacySupplierFees(make.engineSuppliers, defaultMake?.engineSuppliers,
+                defaults.eventCosts?.FirstOrDefault(item => item.id == "engine")?.amount);
+        }
+        saved.economyVersion = defaults.economyVersion;
+    }
+
+    private static void UpdateLegacySupplierFees(SeriesEngine[] saved, SeriesEngine[] defaults, int? updatedEngineFee)
+    {
+        if (saved == null || defaults == null || !updatedEngineFee.HasValue) return;
+        foreach (var supplier in saved)
+        {
+            if (supplier == null || Array.IndexOf(LegacySupplierFees, supplier.maintenancePerRace) < 0) continue;
+            var updated = defaults.FirstOrDefault(item => item.name == supplier.name);
+            if (updated == null) continue;
+            int expected = (int)Math.Round(supplier.maintenancePerRace * (updatedEngineFee.Value / 60_000d));
+            if (expected == updated.maintenancePerRace) supplier.maintenancePerRace = updated.maintenancePerRace;
+        }
+    }
+
+    private static readonly int[] LegacySupplierFees = { 44_500, 50_000, 53_500, 60_000 };
+
     internal static IEnumerable<RacingSeries> LoadCustomSeries()
     {
         if (!Directory.Exists(Folder))
@@ -68,8 +138,9 @@ internal static class SeriesSettingsStore
                 string id = Path.GetFileNameWithoutExtension(path);
                 if (!Guid.TryParseExact(id.Substring("custom-".Length), "N", out _))
                     continue;
-                series = JsonUtility.FromJson<RacingSeries>(File.ReadAllText(path, Encoding.UTF8));
-                if (series == null || series.id != id || Validate(series) != null)
+                series = new RacingSeries();
+                JsonUtility.FromJsonOverwrite(File.ReadAllText(path, Encoding.UTF8), series);
+                if (series.id != id || Validate(series) != null)
                     continue;
                 series.carModel = CarTypeDefinition.CanonicalModel(series.carModel);
                 NormalizeManufacturerModels(series);
@@ -222,6 +293,11 @@ internal static class SeriesSettingsStore
             return "Include the Driver role and give each selected role a valid salary range.";
         if (series.maximumEmployees < 1)
             return "The staff limit must allow at least one driver.";
+
+        if (series.maximumConcurrentComponentJobs < 1 || series.startingTeamBalance < 0 ||
+            series.standardRacePurse <= 0 || series.standardRacePurse > 1_000_000_000_000L ||
+            series.racePayoutsByPosition?.Any(amount => amount <= 0) == true)
+            return "Set valid starting funds, race payouts, and repair capacity.";
 
         if (series.newChassisCost < 0 || series.componentUpgradeCost < 0 || series.maximumComponentRepairCost < 0)
             return "Chassis, upgrade, and repair costs must be zero or more.";

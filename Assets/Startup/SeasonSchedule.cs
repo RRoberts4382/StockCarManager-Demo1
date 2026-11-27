@@ -129,7 +129,7 @@ internal sealed class SeasonSchedule
 
     public static SeasonSchedule Generate(int year, IEnumerable<TrackDefinition> tracks, Random random,
         float maximumTrackLengthMiles = 0f, bool usesStages = true, int[] defaultStagePercentages = null,
-        string startDate = null, string endDate = null)
+        string startDate = null, string endDate = null, RacingSeries series = null)
     {
         const int minimumEvents = 36;
         var schedule = new SeasonSchedule { season = year };
@@ -155,7 +155,7 @@ internal sealed class SeasonSchedule
             }
             foreach (var track in rotation.Take(eventsPerSeason - schedule.races.Count))
             {
-                schedule.races.Add(CreateRace(date, track, random, usesStages, defaultStagePercentages));
+                schedule.races.Add(CreateRace(date, track, random, usesStages, defaultStagePercentages, series));
                 if (schedule.races.Count < eventsPerSeason)
                     date = date.AddDays(7);
             }
@@ -171,13 +171,13 @@ internal sealed class SeasonSchedule
             var track = findTrack(entry.trackId);
             if (track == null || !TryScheduleDate(entry.date, year, out var date))
                 continue;
-            schedule.races.Add(CreateRace(date, track, random, series.usesStages, series.stagePercentages, entry.laps, entry.startTime));
+            schedule.races.Add(CreateRace(date, track, random, series.usesStages, series.stagePercentages, series, entry.laps, entry.startTime));
         }
         return schedule;
     }
 
     private static ScheduledRace CreateRace(DateTime date, TrackDefinition track, Random random,
-        bool usesStages, int[] stagePercentages, int? calendarLaps = null, string startTime = null)
+        bool usesStages, int[] stagePercentages, RacingSeries series, int? calendarLaps = null, string startTime = null)
     {
         var race = new ScheduledRace
         {
@@ -190,7 +190,7 @@ internal sealed class SeasonSchedule
             noStages = !usesStages,
             stageCount = calendarLaps.HasValue ? 0 : track.raceStageLaps?.Length ?? 0,
             stageLaps = calendarLaps.HasValue ? null : (int[])track.raceStageLaps?.Clone(),
-            purse = RaceFinances.PurseForTrack(track.lengthMiles),
+            purse = RaceFinances.PurseForTrack(track.lengthMiles, track.SessionFieldSize(TrackPreview.CarCount), series),
             sessions = RaceSession.Create(random.Next(1, 3), track.NumberOfQualifyingLaps)
         };
         if (calendarLaps.HasValue)
@@ -339,11 +339,12 @@ internal static class SeasonPrizes
         910000, 804000, 707000, 606000, 505000, 404000, 303000, 193000,
         96000, 72000, 67000, 63000, 58000, 55000, 53000, 52000, 51000, 50000, 49000, 48000
     };
-    internal static long Payout(int rank, double multiplier)
+    internal static long Payout(int rank, double multiplier, RacingSeries series)
     {
         if (rank < 1) return 0;
         double baseline = rank <= Baseline.Length ? Baseline[rank - 1] : 48000d * Math.Pow(0.95d, rank - Baseline.Length);
-        return (long)Math.Round(baseline * multiplier, MidpointRounding.AwayFromZero);
+        return (long)Math.Round(baseline * multiplier * series.standardRacePurse / RaceFinances.StandardPurse,
+            MidpointRounding.AwayFromZero);
     }
     internal static double ValidMultiplier(double value) => double.IsNaN(value) || double.IsInfinity(value) || value < 1d ? 1d : value;
 
@@ -357,7 +358,8 @@ internal static class SeasonPrizes
         int rank = standings.FindIndex(row => row.points == standings[index].points) + 1;
         double multiplier = ValidMultiplier(career.pointsFundMultiplier);
         career.seasonPrizeAwards = (career.seasonPrizeAwards ?? new List<SeasonPrizeAward>()).Concat(new[] {
-            new SeasonPrizeAward { season = season.season, rank = rank, fieldSize = standings.Count, amount = Payout(rank, multiplier) }
+            new SeasonPrizeAward { season = season.season, rank = rank, fieldSize = standings.Count,
+                amount = Payout(rank, multiplier, career.SeriesRules) }
         }).ToList();
         // The completed season keeps its existing prize; only the upcoming season receives this increase.
         career.pointsFundMultiplier = multiplier * 1.035d;
@@ -378,7 +380,7 @@ internal static class SeasonPrizes
         if (recover) awards.Add(new SeasonPrizeAward {
             season = career.previousSeasonRankingYear, rank = career.previousSeasonRank,
             fieldSize = career.previousSeasonFieldSize,
-            amount = Payout(career.previousSeasonRank, ValidMultiplier(previousMultiplier))
+            amount = Payout(career.previousSeasonRank, ValidMultiplier(previousMultiplier), career.SeriesRules)
         });
         var pending = awards.Where(award => !award.paid).ToArray();
         if (pending.Length == 0) return false;

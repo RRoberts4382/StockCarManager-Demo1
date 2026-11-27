@@ -25,7 +25,7 @@ internal sealed class RaceExpenses
         Cost("tires", "Tires", tires)
     };
 
-    private static readonly SeriesEventCost[] DefaultCosts =
+    internal static readonly SeriesEventCost[] DefaultCosts =
     {
         Cost("parts", "Parts and Maintenance", WearAndMaterialsBase),
         Cost("engine", "Engine Lease and Maintenance", EngineLeaseBase),
@@ -50,7 +50,7 @@ internal sealed class RaceExpenses
 internal static class RaceFinances
 {
     public const long StartingBalance = 100_000;
-    private const long StandardPurse = 11_233_037;
+    internal const long StandardPurse = 11_233_037;
 
     // Cup charter payout weights, in thousandths of a percentage point.
     private static readonly int[] PayoutWeights =
@@ -61,12 +61,17 @@ internal static class RaceFinances
         1597, 1521, 1445, 1370, 1294, 1218, 1143, 1057, 971, 886
     };
 
-    public static long PurseForTrack(float miles)
+    public static long PurseForTrack(float miles, int fieldSize, RacingSeries series = null)
     {
+        if (series?.racePayoutsByPosition?.Length > 0)
+            return Enumerable.Range(0, fieldSize).Sum(index => FixedPayout(series.racePayoutsByPosition, index));
+
         // The benchmark is a 1.5-mile race. Each additional mile adds 10% of that benchmark.
         decimal multiplier = 1m + ((decimal)miles - 1.5m) * 0.10m;
-        return (long)Math.Round(StandardPurse * multiplier, MidpointRounding.AwayFromZero);
+        return (long)Math.Round((series?.standardRacePurse ?? StandardPurse) * multiplier, MidpointRounding.AwayFromZero);
     }
+
+    private static long FixedPayout(int[] amounts, int index) => amounts[Math.Min(index, amounts.Length - 1)];
 
     public static long PayrollInstallment(long annualPayroll, int raceCount, int completedRaces)
     {
@@ -75,8 +80,11 @@ internal static class RaceFinances
             Math.Round(perRace * (completedRaces - 1), MidpointRounding.AwayFromZero));
     }
 
-    public static long[] Payouts(long purse, int fieldSize)
+    public static long[] Payouts(long purse, int fieldSize, RacingSeries series = null)
     {
+        if (series?.racePayoutsByPosition?.Length > 0)
+            return Enumerable.Range(0, fieldSize).Select(index => FixedPayout(series.racePayoutsByPosition, index)).ToArray();
+
         var payouts = new long[fieldSize];
         if (fieldSize == 0 || purse <= 0)
             return payouts;

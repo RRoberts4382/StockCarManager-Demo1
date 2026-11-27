@@ -25,6 +25,12 @@ internal sealed class RacingSeries
     public long newChassisCost = UsedCarListing.NewChassisPrice;
     public SeriesEmployeeRole[] employeeRoles;
     public int maximumEmployees = 30;
+    public int economyVersion;
+    public EmployeeRole[] startingStaffRoles;
+    public int maximumConcurrentComponentJobs = int.MaxValue;
+    public long startingTeamBalance = RaceFinances.StartingBalance;
+    public long standardRacePurse = RaceFinances.StandardPurse;
+    public int[] racePayoutsByPosition;
     public long componentUpgradeCost = TeamCar.ComponentUpgradeCost;
     public int maximumComponentRepairCost = ComponentRepair.MaximumCost;
     public long minimumSponsorshipSigning = 300_000;
@@ -233,6 +239,8 @@ internal sealed class Career
     }
     public bool CanHireEmployee => (employees?.Count ?? 0) + Math.Max(1, drivers?.Count ?? 0) < SeriesRules.maximumEmployees;
     public bool CanHireDriver => (employees?.Count ?? 0) + (drivers?.Count ?? 0) < SeriesRules.maximumEmployees;
+    public bool HasAvailableComponentJobSlot => (cars?.Sum(car => car.repairs?.Count ?? 0) ?? 0) <
+        SeriesRules.maximumConcurrentComponentJobs;
     public string seriesId;
     public string seriesName;
     public SeasonSchedule schedule;
@@ -335,7 +343,7 @@ internal sealed class Career
         bool changed = false;
         if (!playerRosterInitialized && (employees == null || employees.Count == 0))
         {
-            employees = Employee.CreateStaff(random, SeriesRules);
+            employees = Employee.CreateStaff(random, SeriesRules, useStartingRoster: true);
             changed = true;
         }
 
@@ -378,7 +386,8 @@ internal sealed class Career
                 {
                     teamName = teamName,
                     drivers = new List<Driver>(),
-                    employees = Employee.CreateStaff(random, SeriesRules)
+                    employees = Employee.CreateStaff(random, SeriesRules,
+                        driverCount: Math.Min(TrackPreview.RivalCarsPerTeam, TrackPreview.CarCount - slot))
                 };
                 rivalEmployees.Add(team);
                 changed = true;
@@ -660,7 +669,7 @@ internal sealed class ComponentRepair
     public static int HoursForWear(float wear)
     {
         float proportion = Mathf.InverseLerp(0.05f, 0.90f, wear);
-        return Mathf.RoundToInt(Mathf.Lerp(24, 168, proportion));
+        return Mathf.RoundToInt(Mathf.Lerp(24, 168, proportion * proportion));
     }
 
     public static int EstimateHours(float wear, float skill)
@@ -1123,19 +1132,33 @@ internal sealed class Employee
 
     public static string NameOf(EmployeeRole role) => Roles[(int)role].Name;
 
-    public static List<Employee> CreateStaff(System.Random random, RacingSeries series) => series.StaffRoles
-        .Take(Math.Max(0, series.maximumEmployees - 1)).Select(role => Create(role, random, series: series)).ToList();
+    public static (int Minimum, int Maximum) DefaultSalaryRange(EmployeeRole role)
+    {
+        int salary = Roles[(int)role].Salary;
+        int spread = salary * 15 / 100;
+        return (salary - spread, salary + spread);
+    }
+
+    public static List<Employee> CreateStaff(System.Random random, RacingSeries series,
+        bool useStartingRoster = false, int driverCount = 1)
+    {
+        var allowedRoles = series.StaffRoles;
+        var startingRoles = series.startingStaffRoles?.Length > 0
+            ? series.startingStaffRoles.Where(allowedRoles.Contains) : allowedRoles;
+        var roles = useStartingRoster ? startingRoles : startingRoles.Union(allowedRoles);
+        return roles.Take(Math.Max(0, series.maximumEmployees - driverCount))
+            .Select(role => Create(role, random, series: series)).ToList();
+    }
 
     public static Employee Create(EmployeeRole role, System.Random random, string name = null,
         string city = null, string state = null, RacingSeries series = null)
     {
         var hometown = Hometowns[random.Next(Hometowns.Length)];
         var parts = name?.Trim().Split(new[] { ' ' }, 2, StringSplitOptions.RemoveEmptyEntries);
-        int baseSalary = Roles[(int)role].Salary;
-        int salarySpread = baseSalary * 15 / 100;
+        var defaultSalary = DefaultSalaryRange(role);
         var range = series?.SalaryRange(role);
-        int minimum = range?.minimumSalary ?? baseSalary - salarySpread;
-        int maximum = Math.Max(minimum, range?.maximumSalary ?? baseSalary + salarySpread);
+        int minimum = range?.minimumSalary ?? defaultSalary.Minimum;
+        int maximum = Math.Max(minimum, range?.maximumSalary ?? defaultSalary.Maximum);
         var employee = new Employee
         {
             role = role,
@@ -1847,7 +1870,7 @@ internal sealed class CareerSetup
         {
             teamName = teamName,
             seriesId = series[selected].id, seriesName = series[selected].name,
-            teamBalance = RaceFinances.StartingBalance, financesInitialized = true
+            teamBalance = series[selected].startingTeamBalance, financesInitialized = true
         };
     }
 
@@ -2026,7 +2049,7 @@ internal sealed class CareerSetup
             : catalog.Entries.Select(entry => entry.Definition);
         return SeasonSchedule.Generate(year, tracks, scheduleRandom,
             definition.maximumTrackLengthMiles, definition.usesStages, definition.stagePercentages,
-            definition.scheduleStartDate, definition.scheduleEndDate);
+            definition.scheduleStartDate, definition.scheduleEndDate, definition);
     }
 
     public void SaveProgress(Career career)

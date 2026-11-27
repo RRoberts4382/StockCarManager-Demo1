@@ -15,25 +15,25 @@
           "name": "Hendrick Racing Engines",
           "power": 0.99,
           "reliability": 0.93,
-          "maintenancePerRace": 60000
+          "maintenancePerRace": 59000
         },
         {
           "name": "RCR Engines",
           "power": 0.94,
           "reliability": 0.96,
-          "maintenancePerRace": 60000
+          "maintenancePerRace": 59000
         },
         {
           "name": "Blue Ridge Race Engines",
           "power": 0.81,
           "reliability": 0.81,
-          "maintenancePerRace": 44500
+          "maintenancePerRace": 43758
         },
         {
           "name": "Build Your Own",
           "power": 0.83,
           "reliability": 0.84,
-          "maintenancePerRace": 50000
+          "maintenancePerRace": 49167
         }
       ]
     },
@@ -44,25 +44,25 @@
           "name": "Roush-Yates Racing Engines",
           "power": 0.97,
           "reliability": 0.94,
-          "maintenancePerRace": 60000
+          "maintenancePerRace": 59000
         },
         {
           "name": "Piedmont Competition Engines",
           "power": 0.81,
           "reliability": 0.81,
-          "maintenancePerRace": 44500
+          "maintenancePerRace": 43758
         },
         {
           "name": "Red Oak Motor Works",
           "power": 0.81,
           "reliability": 0.81,
-          "maintenancePerRace": 53500
+          "maintenancePerRace": 52608
         },
         {
           "name": "Build Your Own",
           "power": 0.83,
           "reliability": 0.84,
-          "maintenancePerRace": 50000
+          "maintenancePerRace": 49167
         }
       ]
     },
@@ -73,25 +73,25 @@
           "name": "TRD Racing Engines",
           "power": 0.96,
           "reliability": 0.98,
-          "maintenancePerRace": 60000
+          "maintenancePerRace": 59000
         },
         {
           "name": "Oakline Power Systems",
           "power": 0.81,
           "reliability": 0.81,
-          "maintenancePerRace": 44500
+          "maintenancePerRace": 43758
         },
         {
           "name": "Summit Creek Engine Works",
           "power": 0.81,
           "reliability": 0.81,
-          "maintenancePerRace": 53500
+          "maintenancePerRace": 52608
         },
         {
           "name": "Build Your Own",
           "power": 0.83,
           "reliability": 0.84,
-          "maintenancePerRace": 50000
+          "maintenancePerRace": 49167
         }
       ]
     },
@@ -102,25 +102,25 @@
           "name": "RCR Engines",
           "power": 0.94,
           "reliability": 0.95,
-          "maintenancePerRace": 60000
+          "maintenancePerRace": 59000
         },
         {
           "name": "Iron Bend Racing Engines",
           "power": 0.81,
           "reliability": 0.81,
-          "maintenancePerRace": 44500
+          "maintenancePerRace": 43758
         },
         {
           "name": "Catawba Performance",
           "power": 0.81,
           "reliability": 0.81,
-          "maintenancePerRace": 53500
+          "maintenancePerRace": 52608
         },
         {
           "name": "Build Your Own",
           "power": 0.83,
           "reliability": 0.84,
-          "maintenancePerRace": 50000
+          "maintenancePerRace": 49167
         }
       ]
     }
@@ -183,34 +183,39 @@
       "maximumSalary": 115000
     }
   ],
-  "maximumEmployees": 30,
+  "maximumEmployees": 11,
+  "economyVersion": 1,
+  "startingStaffRoles": [1, 2, 3, 5, 6, 10],
+  "maximumConcurrentComponentJobs": 4,
+  "startingTeamBalance": 500000,
+  "standardRacePurse": 12700000,
   "componentUpgradeCost": 25000,
   "maximumComponentRepairCost": 20000,
-  "minimumSponsorshipSigning": 300000,
-  "maximumSponsorshipSigning": 2000000,
-  "minimumSponsorshipPerRace": 12500,
-  "maximumSponsorshipPerRace": 60000,
+  "minimumSponsorshipSigning": 400000,
+  "maximumSponsorshipSigning": 900000,
+  "minimumSponsorshipPerRace": 10000,
+  "maximumSponsorshipPerRace": 45000,
   "usesStages": true,
   "eventCosts": [
     {
       "id": "parts",
       "name": "Parts and Maintenance",
-      "amount": 50000
+      "amount": 51000
     },
     {
       "id": "engine",
       "name": "Engine Lease and Maintenance",
-      "amount": 50000
+      "amount": 59000
     },
     {
       "id": "travel",
       "name": "Travel and Logistics",
-      "amount": 25000
+      "amount": 27000
     },
     {
       "id": "tires",
       "name": "Tires",
-      "amount": 15000
+      "amount": 21000
     }
   ],
   "logo": "SeriesBranding/nascar-cup/logo",
