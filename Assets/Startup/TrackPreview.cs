@@ -6135,7 +6135,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             var surface = TrackPoint(distance, 0f, out _, out _);
             var rim = surface + outside * 54f;
             rim.y = 37f;
-            AddFixture("Grandstand floodlight", rim, surface - outside * 32f, 6f, 2.8f, 240f, 8280f, 106f);
+            AddFixture("Grandstand floodlight", rim, surface - outside * 32f, 6f, 2.8f, 240f, 5800f, 106f);
         }
 
         foreach (int turnStart in new[] { 13, 45 })
@@ -6148,7 +6148,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             var surface = TrackPoint(distance, 0f, out _, out _);
             var basePosition = surface + inside * (turnStart == 13 ? 17f : 21f);
             basePosition.y = 0f;
-            AddFixture("Inside turn floodlight", basePosition, surface, 2.4f, 0.65f, 39f, 470f, 92f);
+            AddFixture("Inside turn floodlight", basePosition, surface, 2.4f, 0.65f, 39f, 330f, 92f);
         }
 
         void AddFixture(string name, Vector3 basePosition, Vector3 aim, float height, float width,
