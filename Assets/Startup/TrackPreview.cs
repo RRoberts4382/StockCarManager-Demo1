@@ -1622,6 +1622,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         ResetCarLodBudget();
         SessionRun = new RaceSessionRun(session, lapLength, startLine, simulation, speedModel, simulationRandom, initialDistances: sessionDistances);
         PrepareRaceStartFireworks(session);
+        PrepareGrandstandCameraFlashes(session.kind == RaceSessionKind.Race);
         if (trackSkyMaterial != null)
         {
             float cloudSeed = Mathf.Repeat(session.weather.variationPhase, Mathf.PI * 2f) * 10000f;
@@ -1911,6 +1912,7 @@ public sealed partial class TrackPreview : MonoBehaviour
 
         UpdateTrackSky();
         PresentRaceStartFireworks();
+        PresentGrandstandCameraFlashes(Time.deltaTime);
         UpdateRubberOverlay();
         PresentSessionSkids();
         PositionCars();

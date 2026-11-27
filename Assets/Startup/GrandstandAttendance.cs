@@ -39,6 +39,31 @@ internal sealed class GrandstandAttendance : MonoBehaviour
         SeatCount += strip.Count;
     }
 
+    internal Vector3 CameraFlashPosition(int seatIndex)
+    {
+        foreach (var section in sections.Values)
+        foreach (var seating in section)
+        {
+            if (seatIndex < seating.Strip.Count)
+            {
+                Vector3 position = SeatPosition(seating, seatIndex, out Vector3 rear);
+                return transform.TransformPoint(position + Vector3.up * .65f - rear * .15f);
+            }
+            seatIndex -= seating.Strip.Count;
+        }
+
+        throw new ArgumentOutOfRangeException(nameof(seatIndex));
+    }
+
+    private static Vector3 SeatPosition(Seating seating, int index, out Vector3 rear)
+    {
+        Vector3 seat = seating.Strip.First;
+        seat.x += index * GrandstandMeshBuilder.SeatSpacing;
+        float t = seat.x / seating.Frontage + .5f;
+        rear = Vector3.LerpUnclamped(seating.OutwardA, seating.OutwardB, t).normalized;
+        return Vector3.LerpUnclamped(seating.A, seating.B, t) + rear * seat.z + Vector3.up * seat.y;
+    }
+
     internal void SetSession(RaceSessionKind session, Func<Color, Material> makeMaterial,
         ICollection<Mesh> meshes, ICollection<Texture2D> textures)
     {
@@ -96,11 +121,7 @@ internal sealed class GrandstandAttendance : MonoBehaviour
                     if ((tier == 0) != qualifying)
                         continue;
 
-                    Vector3 seat = seating.Strip.First;
-                    seat.x += i * GrandstandMeshBuilder.SeatSpacing;
-                    float t = seat.x / seating.Frontage + .5f;
-                    Vector3 rear = Vector3.LerpUnclamped(seating.OutwardA, seating.OutwardB, t).normalized;
-                    Vector3 position = Vector3.LerpUnclamped(seating.A, seating.B, t) + rear * seat.z + Vector3.up * seat.y;
+                    Vector3 position = SeatPosition(seating, i, out Vector3 rear);
                     crowd.Add(position, rear, Scramble((uint)seatIndex + 13579u));
                 }
             }
