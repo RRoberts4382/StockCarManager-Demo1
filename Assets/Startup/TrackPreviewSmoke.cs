@@ -166,7 +166,7 @@ public sealed partial class TrackPreview
     }
 
     private void EmitTrackSmoke(ref ParticleSystem system, string name, Vector3 position,
-        Vector3 velocity, Color color, bool engine)
+        Vector3 velocity, Color color, bool engine, float startSize = 0f)
     {
         if (system == null)
         {
@@ -214,12 +214,15 @@ public sealed partial class TrackPreview
             emitter.SetActive(true);
         }
 
-        system.Emit(new ParticleSystem.EmitParams
+        var particle = new ParticleSystem.EmitParams
         {
             position = position,
             velocity = velocity,
             startColor = color,
             randomSeed = ++smokeSeed
-        }, 1);
+        };
+        if (startSize > 0f)
+            particle.startSize = startSize;
+        system.Emit(particle, 1);
     }
 }

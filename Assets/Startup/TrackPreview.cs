@@ -617,7 +617,8 @@ public sealed partial class TrackPreview : MonoBehaviour
         (!raceReleased && raceStart?.OneToGo == true);
     internal int RaceStartCountdown => raceStart?.SecondsUntilRelease ?? 0;
     internal SessionTrackState? TrackState => stages?.State ?? raceStart?.State ?? qualifying?.State ?? practice?.State;
-    internal bool SessionComplete => stages != null ? RaceFieldParked() :
+    internal bool SessionComplete => DrivingComplete && (SessionRun?.IsRace != true || winnerBurnoutFinished);
+    private bool DrivingComplete => stages != null ? RaceFieldParked() :
         raceStart != null || !TrackState.HasValue ? SessionRun.Complete : TrackState == SessionTrackState.Complete;
     internal bool HasSessionPitRoad => pitTraffic != null;
     private Vector3 cameraFocus;
@@ -1330,6 +1331,11 @@ public sealed partial class TrackPreview : MonoBehaviour
     private void ApplyCameraPose()
     {
         var cameraTransform = raceCamera.transform;
+        if (winnerBurnoutActive && ViewAngle == CameraAngle.TV)
+        {
+            PresentWinnerBurnoutCamera(cameraTransform);
+            return;
+        }
         int leaderIndex = ViewAngle == CameraAngle.Leader ? SelectedCarIndex : 0;
         var subject = ViewAngle == CameraAngle.Leader ? cars[leaderIndex] : CameraSubject;
         if (subject != null && ViewAngle is CameraAngle.Hood or CameraAngle.InCar)
@@ -1590,6 +1596,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         haulerGaragePhase = HaulerGaragePhase.OnPitRoute;
         lastHandlingSampleTime = 0d;
         raceReleased = false;
+        ResetWinnerBurnout();
         greenFlagFormation = null;
         greenFlagMergeEnd = 0f;
         if (paceCar != null)
@@ -1886,6 +1893,8 @@ public sealed partial class TrackPreview : MonoBehaviour
         engineSmoke?.Simulate(Time.deltaTime, false, false, false);
         AdvancePlayerFire(Time.deltaTime);
         AnimateIowaFans(Time.deltaTime);
+        if (UpdateWinnerBurnout(Time.deltaTime))
+            return;
 
         if (SessionRun == null)
         {
@@ -1940,7 +1949,7 @@ public sealed partial class TrackPreview : MonoBehaviour
 
         pendingSessionTime = System.Math.Min(pendingSessionTime + (double)Time.deltaTime * sessionSpeed, 5d);
         var stepBudget = System.Diagnostics.Stopwatch.StartNew();
-        while (pendingSessionTime >= SessionStep && !SessionComplete && stepBudget.Elapsed.TotalMilliseconds < 12d)
+        while (pendingSessionTime >= SessionStep && !DrivingComplete && stepBudget.Elapsed.TotalMilliseconds < 12d)
         {
             if (raceStart != null)
                 AdvanceRaceStartStep();
@@ -2105,7 +2114,7 @@ public sealed partial class TrackPreview : MonoBehaviour
 
         for (int i = 0; i < trafficCars.Length; i++)
         {
-            if (i == 0 && NorthWilkesboroParkedForGarage)
+            if (i == winnerBurnoutCar || i == 0 && NorthWilkesboroParkedForGarage)
                 continue;
             if (!SessionRun.Retired(i) && (!trafficCars[i].InPit || trafficCars[i].PitDistance != practiceStallDistances[i]))
                 return false;
@@ -2422,6 +2431,7 @@ public sealed partial class TrackPreview : MonoBehaviour
                     pitStops.PlanRivalRaceStop(SessionRun, i, pitWindow, stages.CanEnterPits(i, trafficCars[i]));
         }
         pitTraffic?.BeginStep((SessionRun?.Elapsed ?? previousElapsed) + seconds);
+        SelectWinnerBurnoutCar();
         UpdateDraftSpeed(seconds);
         for (int i = 0; i < cars.Length; i++)
         {
@@ -2429,7 +2439,9 @@ public sealed partial class TrackPreview : MonoBehaviour
             if (SessionRun?.Finished(i) == true)
             {
                 stepSpeeds[i] = stages != null && !SessionRun.Retired(i) && !trafficCars[i].InGarage
-                    ? stages.FinishedCarSpeed(trafficCars[i], seconds, practiceStallDistances[i])
+                    ? i == winnerBurnoutCar
+                        ? pitTraffic.PlannedSpeed(trafficCars[i], 18f, float.PositiveInfinity, seconds)
+                        : stages.FinishedCarSpeed(trafficCars[i], seconds, practiceStallDistances[i])
                     : 0f;
                 continue;
             }
@@ -2479,7 +2491,10 @@ public sealed partial class TrackPreview : MonoBehaviour
                 {
                     var finishedCar = trafficCars[i];
                     double beforeParking = finishedCar.Odometer;
-                    stages.AdvanceFinishedCar(finishedCar, seconds, stepSpeeds[i], practiceStallDistances[i]);
+                    if (i == winnerBurnoutCar)
+                        pitTraffic.Advance(finishedCar, seconds, stepSpeeds[i]);
+                    else
+                        stages.AdvanceFinishedCar(finishedCar, seconds, stepSpeeds[i], practiceStallDistances[i]);
                     SessionRun.RecordTravel(i, finishedCar.Odometer - beforeParking,
                         (finishedCar.Odometer - beforeParking) / seconds, finishedCar.PreciseTrackDistance, reducedBurn: true, onTrack: !finishedCar.InPit);
                 }
@@ -3646,6 +3661,12 @@ public sealed partial class TrackPreview : MonoBehaviour
         if (!CanApplyTireHandling(index, traffic))
             return lane;
 
+        return TireHandlingLaneAt(index, distance, lane, out yawDegrees);
+    }
+
+    private float TireHandlingLaneAt(int index, float distance, float lane, out float yawDegrees)
+    {
+        yawDegrees = 0f;
         float turningLoad = TireCorneringLoad(index, distance);
         if (turningLoad == 0f)
             return lane;

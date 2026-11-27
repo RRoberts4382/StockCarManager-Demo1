@@ -1332,10 +1332,30 @@ internal sealed class RaceSessionRun
     public IEnumerable<SessionCarResult> FastestLaps() =>
         cars.Select(car => car.Result).OrderBy(result => result.FastestLap).ThenBy(result => result.carNumber);
 
+    private (bool Retired, int Laps, float FinishTime) RaceResultKey(CarTiming car) =>
+        (car.Retired, finishOnCheckered || car.Retired ? -car.Result.CompletedLaps : 0, car.FinishTime);
+
+    internal int FinishedWinnerIndex()
+    {
+        if (!IsRace || (float.IsPositiveInfinity(checkeredTime) && !Complete))
+            return -1;
+
+        int winner = -1;
+        if (frozenOrder != null)
+            winner = Array.IndexOf(frozenOrder, 0);
+        else
+            for (int i = 0; i < cars.Length; i++)
+                if (cars[i].Finished && !cars[i].Retired &&
+                    (winner < 0 || RaceResultKey(cars[i]).CompareTo(RaceResultKey(cars[winner])) < 0))
+                    winner = i;
+
+        return winner >= 0 && cars[winner].Finished && !cars[winner].Retired ? winner : -1;
+    }
+
     public List<SessionCarResult> Results()
     {
         var ordered = session.kind == RaceSessionKind.Race
-            ? cars.OrderBy(car => car.Retired).ThenByDescending(car => finishOnCheckered || car.Retired ? car.Result.CompletedLaps : 0).ThenBy(car => car.FinishTime)
+            ? cars.OrderBy(RaceResultKey)
             : cars.OrderBy(car => car.Result.FastestLap);
         var results = frozenOrder == null ? ordered.Select(car => car.Result).ToList() :
             Enumerable.Range(0, cars.Length).OrderBy(index => frozenOrder[index]).Select(index => cars[index].Result).ToList();

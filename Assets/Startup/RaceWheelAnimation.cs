@@ -197,6 +197,13 @@ internal sealed class RaceWheelAnimation
         }
     }
 
+    internal void SpinBurnoutTires(float seconds)
+    {
+        foreach (var wheel in wheels)
+            if (!wheel.Front)
+                wheel.Angle = Mathf.Repeat(wheel.Angle + 2200f * seconds, 360f);
+    }
+
     public void Present(float visualBodyYaw = 0f)
     {
         foreach (var wheel in wheels)

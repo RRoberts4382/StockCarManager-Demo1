@@ -172,6 +172,11 @@ public sealed partial class TrackPreview
         // Choose the final complete pass along this backstretch before the initial green.
         float lapOffset = lapLength * Mathf.Floor((raceStart.GreenDistance - last) / lapLength);
         var obstacles = new OutsideBillboardObstacles(transform, cars);
+        fireworkSites = FindFireworkSites(first, last, lapOffset, obstacles);
+    }
+
+    private FireworkSite[] FindFireworkSites(float first, float last, float lapOffset, OutsideBillboardObstacles obstacles)
+    {
         var sites = new List<FireworkSite>(FireworkSiteCount);
         for (int i = 0; i < FireworkSiteCount; i++)
         {
@@ -192,8 +197,7 @@ public sealed partial class TrackPreview
                 break;
             }
         }
-        if (sites.Count > 0)
-            fireworkSites = sites.ToArray();
+        return sites.Count > 0 ? sites.ToArray() : null;
     }
 
     private (float First, float Last) LocateFireworksBackstretch()
@@ -291,6 +295,17 @@ public sealed partial class TrackPreview
         if (fireworkSites == null || fireworkClock <= fireworkVisualClock)
             return;
 
+        PresentFireworkCues();
+        if ((nextFireworkSite >= fireworkSites.Length || raceReleased) &&
+            fireworkClock - lastFireworkCueTime > FireworkBurstLifetime + .15f)
+            fireworkSites = null;
+    }
+
+    private void PresentFireworkCues()
+    {
+        if (fireworkClock <= fireworkVisualClock)
+            return;
+
         int consumed = 0;
         while (consumed < fireworkCues.Count && fireworkCues[consumed].Time <= fireworkClock)
         {
@@ -307,9 +322,6 @@ public sealed partial class TrackPreview
         if (fireworkSparks != null && (consumed > 0 || fireworkSparks.particleCount > 0))
             fireworkSparks.Simulate(fireworkClock - fireworkVisualClock, false, false, false);
         fireworkVisualClock = fireworkClock;
-        if ((nextFireworkSite >= fireworkSites.Length || raceReleased) &&
-            fireworkClock - lastFireworkCueTime > FireworkBurstLifetime + .15f)
-            fireworkSites = null;
     }
 
     private void CreateFireworkSparks()
