@@ -43,7 +43,9 @@ public sealed partial class TrackPreview
                     innerWalls.Add(UseSurface(filter));
                 else if (IsSharedFanPitWall(name))
                     authoredPitWalls.Add(UseSurface(filter));
-                else if (IsSharedFanVehiclePavement(name))
+                else if (IsSharedFanVehiclePavement(name) || definition.id == DoverTrackId &&
+                    (name.StartsWith("Pit entrance", StringComparison.OrdinalIgnoreCase) ||
+                     name.StartsWith("Pit exit", StringComparison.OrdinalIgnoreCase)))
                     vehiclePavement.Add(UseSurface(filter));
                 else if (filter.transform == grassGround || IsSharedFanGround(name))
                     ground.Add(UseSurface(filter));

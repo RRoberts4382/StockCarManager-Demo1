@@ -194,6 +194,8 @@ public sealed class StartupMenu : MonoBehaviour
     private Button resetCameraButton;
     private Button snapshotButton;
     private Label snapshotStatus;
+    private VisualElement trackSnapshotDialog;
+    private System.Threading.CancellationTokenSource snapshotSaveCancellation;
     private int dragPointerId = -1;
     private int trackDragButton;
     private bool rotateTrackDrag;
@@ -476,7 +478,7 @@ public sealed class StartupMenu : MonoBehaviour
         DrawButtonIcon(resetCameraButton, DrawResetCameraIcon);
         snapshotButton = trackScreen.Q<Button>("snapshotButton");
         snapshotStatus = trackScreen.Q<Label>("snapshotStatus");
-        snapshotButton.clicked += SaveTrackSnapshot;
+        snapshotButton.clicked += OpenTrackSnapshotDialog;
         DrawSnapshotButtonIcon(snapshotButton);
         returnToGarageButton = trackScreen.Q<Button>("returnToGarageButton");
         returnToGarageButton.clicked += ReturnToGarage;
@@ -1051,6 +1053,7 @@ public sealed class StartupMenu : MonoBehaviour
 
     private void OnDestroy()
     {
+        CloseTrackSnapshotDialog(resume: false);
         raceEventView?.Dispose();
         employeePortraits.Dispose();
         carThumbnails.Dispose();
@@ -1128,7 +1131,7 @@ public sealed class StartupMenu : MonoBehaviour
         if (resetCameraButton != null)
             resetCameraButton.clicked -= ResetTrackCamera;
         if (snapshotButton != null)
-            snapshotButton.clicked -= SaveTrackSnapshot;
+            snapshotButton.clicked -= OpenTrackSnapshotDialog;
         if (raceViewport != null)
         {
             ReleaseTrackPointer();
@@ -6189,6 +6192,9 @@ public sealed class StartupMenu : MonoBehaviour
 
     private void Update()
     {
+        if (trackSnapshotDialog != null)
+            return;
+
         if (!sessionInGarage && trackPreview != null && trackPreview.gameObject.activeSelf)
         {
             UpdateTrackFps();
@@ -6253,7 +6259,7 @@ public sealed class StartupMenu : MonoBehaviour
 
     private void LateUpdate()
     {
-        if (trackScreen?.style.display != DisplayStyle.Flex)
+        if (trackSnapshotDialog != null || trackScreen?.style.display != DisplayStyle.Flex)
             return;
 
         trackSessionMap.UpdateCars();
@@ -7044,25 +7050,166 @@ public sealed class StartupMenu : MonoBehaviour
         }
     }
 
-    private void SaveTrackSnapshot()
+    private void OpenTrackSnapshotDialog()
     {
-        if (trackPreview?.CanSaveSnapshot != true)
+        var preview = trackPreview;
+        if (preview?.CanSaveSnapshot != true || trackSnapshotDialog != null || snapshotSaveCancellation != null ||
+            trackScreen.parent == null || !trackScreen.enabledInHierarchy)
             return;
 
-        try
+        var overlay = new VisualElement { name = "trackSnapshotDialog" };
+        SettingsFormStyle.Apply(overlay);
+        overlay.AddToClassList("settings-confirmation-overlay");
+        var dialog = CareerSetup.CreateDialog(overlay, "Save Track Snapshot");
+        dialog.style.width = 420;
+
+        var comment = SettingsFormStyle.StyleField(new TextField("Comment (optional)")
         {
-            string path = trackPreview.SaveSnapshot();
-            snapshotStatus.text = "Snapshot saved";
-            snapshotStatus.tooltip = path;
-            Debug.Log($"Track snapshot saved to {path}");
-        }
-        catch (System.Exception error) when (error is IOException || error is System.UnauthorizedAccessException)
+            name = "trackSnapshotComment",
+            multiline = true
+        });
+        comment.style.height = 110;
+        comment.style.flexGrow = 0;
+        comment.style.flexShrink = 0;
+        dialog.Add(comment);
+
+        var statusRow = new VisualElement();
+        statusRow.style.flexDirection = FlexDirection.Row;
+        statusRow.style.alignItems = Align.Center;
+        statusRow.style.height = 32;
+        statusRow.style.flexShrink = 0;
+        var activity = CreateSimulationActivityIcon();
+        activity.style.width = activity.style.height = 18;
+        activity.style.marginTop = activity.style.marginBottom = 0;
+        activity.style.marginRight = 7;
+        activity.style.display = DisplayStyle.None;
+        statusRow.Add(activity);
+        var status = SettingsFormStyle.Label(string.Empty, "settings-validation-summary");
+        status.style.flexGrow = 1;
+        statusRow.Add(status);
+        dialog.Add(statusRow);
+
+        var actions = new VisualElement();
+        actions.AddToClassList("settings-footer");
+        var save = SettingsFormStyle.Button("Save Snapshot", null, primary: true);
+        save.tooltip = "Save the last 15 seconds with your comment.";
+        var cancel = SettingsFormStyle.Button("Cancel", null);
+        cancel.tooltip = "Close the dialog without saving a snapshot.";
+        save.clicked += Save;
+        cancel.clicked += Cancel;
+        actions.Add(save);
+        actions.Add(cancel);
+        dialog.Add(actions);
+
+        overlay.RegisterCallback<KeyDownEvent>(evt =>
         {
-            snapshotStatus.text = "Snapshot could not be saved";
-            snapshotStatus.tooltip = error.Message;
-            Debug.LogWarning($"Track snapshot save failed: {error.Message}");
+            if (evt.keyCode != KeyCode.Escape) return;
+            Cancel();
+            evt.StopPropagation();
+        }, TrickleDown.TrickleDown);
+
+        trackSnapshotDialog = overlay;
+        ReleaseTrackPointer();
+        HideTrackIconTooltip();
+        PauseSession();
+        trackScreen.SetEnabled(false);
+        trackScreen.parent.Add(overlay);
+        comment.Focus();
+
+        void Cancel()
+        {
+            if (snapshotSaveCancellation == null)
+            {
+                CloseTrackSnapshotDialog();
+                return;
+            }
+
+            snapshotSaveCancellation.Cancel();
+            cancel.SetEnabled(false);
+            SettingsFormStyle.SetValidationMessage(status, "Cancelling...", false);
         }
-        snapshotStatus.style.display = DisplayStyle.Flex;
+
+        async void Save()
+        {
+            if (snapshotSaveCancellation != null)
+                return;
+
+            using var cancellation = new System.Threading.CancellationTokenSource();
+            snapshotSaveCancellation = cancellation;
+            string note = comment.value;
+            comment.SetEnabled(false);
+            save.SetEnabled(false);
+            cancel.Focus();
+            SettingsFormStyle.SetValidationMessage(status, "Saving snapshot...", false);
+            activity.style.display = DisplayStyle.Flex;
+            float rotation = 0f;
+            var animation = activity.schedule.Execute(() =>
+            {
+                rotation = (rotation + 12f) % 360f;
+                activity.style.rotate = new Rotate(new Angle(rotation));
+            }).Every(30);
+            try
+            {
+                await Awaitable.NextFrameAsync(cancellation.Token);
+                string path = await preview.SaveSnapshotAsync(note, cancellation.Token);
+                if (trackSnapshotDialog != overlay)
+                    return;
+
+                snapshotStatus.text = "Snapshot saved";
+                snapshotStatus.tooltip = path;
+                snapshotStatus.style.display = DisplayStyle.Flex;
+                Debug.Log($"Track snapshot saved to {path}");
+                CloseTrackSnapshotDialog();
+            }
+            catch (System.OperationCanceledException) when (cancellation.IsCancellationRequested)
+            {
+                if (trackSnapshotDialog == overlay)
+                    CloseTrackSnapshotDialog();
+            }
+            catch (System.Exception error)
+            {
+                if (trackSnapshotDialog != overlay)
+                    return;
+                if (cancellation.IsCancellationRequested)
+                {
+                    CloseTrackSnapshotDialog();
+                    return;
+                }
+
+                Debug.LogWarning($"Track snapshot save failed: {error.Message}");
+                SettingsFormStyle.SetValidationMessage(status, "Could not save the snapshot. Try again or cancel.", true);
+                comment.SetEnabled(true);
+                save.SetEnabled(true);
+                comment.Focus();
+            }
+            finally
+            {
+                animation.Pause();
+                activity.style.display = DisplayStyle.None;
+                snapshotSaveCancellation = null;
+            }
+        }
+    }
+
+    private void CloseTrackSnapshotDialog(bool resume = true)
+    {
+        if (trackSnapshotDialog == null)
+            return;
+
+        if (!resume)
+            snapshotSaveCancellation?.Cancel();
+        trackSnapshotDialog.RemoveFromHierarchy();
+        trackSnapshotDialog = null;
+        trackScreen.SetEnabled(true);
+
+        if (resume && activeSession != null && trackPreview?.SessionComplete == false)
+        {
+            SetPitSettingsOpen(false);
+            PlaySession();
+            nextTrackCameraCut = Time.unscaledTimeAsDouble + CameraCycleIntervalSeconds;
+        }
+        if (resume)
+            snapshotButton.Focus();
     }
 
     private void UpdateCautionReason(string reason)
@@ -7923,6 +8070,7 @@ public sealed class StartupMenu : MonoBehaviour
 
     private void CloseTrackSession(bool showTestPracticeGarage = false, string testPracticeMessage = null)
     {
+        CloseTrackSnapshotDialog(resume: false);
         closeTrackOptionPicker?.Invoke();
         ReleaseTrackPointer();
         SetPitSettingsOpen(false);

@@ -237,7 +237,7 @@ public sealed partial class TrackPreview
     }
 
     private float IowaResponseRoadOffset(IowaResponseUnit unit) =>
-        definition.id == NorthWilkesboroTrackId ? .016f : unit.Home.y;
+        definition.id is NorthWilkesboroTrackId or DoverTrackId ? .016f : unit.Home.y;
 
     private IowaResponseTrip BuildIowaResponseRoute(IowaResponseUnit unit, IowaWreck incident)
     {
@@ -275,7 +275,7 @@ public sealed partial class TrackPreview
         float joinStation = station + apronJoin;
         float roadOffset = IowaResponseRoadOffset(unit);
         Vector3 join = TrackPoint(joinStation, ApronLane(joinStation), out var trackForward, out _);
-        if (definition.id == NorthWilkesboroTrackId)
+        if (definition.id is NorthWilkesboroTrackId or DoverTrackId)
             join.y += roadOffset;
         Vector3 firstTangent = (start - road[road.Length - 2]).normalized * 6f;
         Vector3 lastTangent = trackForward * 13f;

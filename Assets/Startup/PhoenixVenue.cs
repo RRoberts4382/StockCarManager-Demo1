@@ -9,6 +9,7 @@ public sealed partial class TrackPreview
     {
         PhoenixTrackId => "Phoenix",
         LasVegasTrackId => "Las Vegas",
+        DoverTrackId => DoverVenueName,
         MichiganTrackId => "Michigan",
         RichmondTrackId => "Richmond",
         NorthWilkesboroTrackId => "North Wilkesboro",

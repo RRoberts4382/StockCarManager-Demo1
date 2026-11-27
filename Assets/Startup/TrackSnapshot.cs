@@ -1,19 +1,26 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using UnityEngine;
 
 internal sealed class TrackSnapshot
 {
     private const int SamplesPerSecond = 10;
-    private const int WindowSeconds = 60;
+    internal const int WindowSeconds = 15;
     private const int Capacity = WindowSeconds * SamplesPerSecond + 1;
+    private const int LaneStepsPerSecond = 60;
+    private const int LaneCapacity = WindowSeconds * LaneStepsPerSecond + 1;
     private const double CaptureTolerance = 0.00001;
     private readonly Frame[] frames = new Frame[Capacity];
+    private readonly LaneFrame[] laneFrames = new LaneFrame[LaneCapacity];
     private readonly Queue<OvalPassAttempt> ovalPassAttempts = new();
     private readonly Queue<PlateMergeAttempt> plateMergeAttempts = new();
     private int next;
     private int count;
+    private int nextLaneFrame, laneFrameCount;
     private double lastCapture = double.NegativeInfinity;
 
     [Serializable]
@@ -95,6 +102,28 @@ internal sealed class TrackSnapshot
     }
 
     [Serializable]
+    internal sealed class LaneFrame
+    {
+        // Timestamp at the end of this simulation step, in the same timebase as frames.
+        public double simulationSeconds;
+        public float sessionSeconds;
+        public LaneSample[] cars;
+    }
+
+    [Serializable]
+    internal struct LaneSample
+    {
+        public int number;
+        public bool onTrackAtStart, onTrackAtEnd, overlapSeparationChecked;
+        public float trackStartMeters, trackEndMeters;
+        public float laneStartMeters, requestedTargetLaneMeters, laneAfterTrafficMeters, laneEndMeters;
+        public float laneBeforeOverlapSeparationMeters, trackBeforeOverlapSeparationMeters;
+        public float overlapLaneAdjustmentMeters, overlapTrackAdjustmentMeters;
+        public float headingDegrees;
+        public VehicleBehavior003.TrafficLaneDecision steering;
+    }
+
+    [Serializable]
     private struct OvalPassAttempt
     {
         public double simulationSeconds;
@@ -114,13 +143,16 @@ internal sealed class TrackSnapshot
     [Serializable]
     private sealed class FileData
     {
-        public int formatVersion = 31;
+        public int formatVersion = 32;
+        public int windowSeconds = WindowSeconds;
+        public int laneStepsPerSecond = LaneStepsPerSecond;
         public string poseSpace = "TrackPreview local space (meters)";
         public float centerToRearAxleMeters = RearAxleHeading.CenterToRearAxle;
-        public string savedUtc;
+        public string savedUtc, comment;
         public string trackModel, speedModel, behaviorModel, session;
         public TrackDefinition track;
         public Frame[] frames;
+        public LaneFrame[] laneFrames;
         public int ovalPassAttemptCount;
         public OvalPassAttempt[] ovalPassAttempts = Array.Empty<OvalPassAttempt>();
         public int plateMergeAttemptCount;
@@ -186,14 +218,24 @@ internal sealed class TrackSnapshot
         return frame;
     }
 
-    public string Save(CarSimulationContext context, string trackModel, string speedModel, string behaviorModel)
+    internal LaneFrame BeginLaneFrame(double simulationSeconds, int carCount)
+    {
+        var frame = laneFrames[nextLaneFrame] ??= new LaneFrame { cars = new LaneSample[carCount] };
+        nextLaneFrame = (nextLaneFrame + 1) % LaneCapacity;
+        laneFrameCount = Math.Min(laneFrameCount + 1, LaneCapacity);
+        frame.simulationSeconds = simulationSeconds;
+        return frame;
+    }
+
+    internal Task<string> SaveAsync(CarSimulationContext context, string trackModel, string speedModel, string behaviorModel,
+        string comment, CancellationToken cancellationToken)
     {
         string directory = Path.Combine(Application.persistentDataPath, "TrackSnapshots");
-        Directory.CreateDirectory(directory);
         DateTime now = DateTime.UtcNow;
         var data = new FileData
         {
             savedUtc = now.ToString("o"),
+            comment = comment ?? string.Empty,
             trackModel = trackModel,
             speedModel = speedModel,
             behaviorModel = behaviorModel,
@@ -201,7 +243,8 @@ internal sealed class TrackSnapshot
             track = context.Track,
             rivalSetupChanges = context.Session.rivalSetupChanges,
             rivalPracticeTelemetry = context.Session.rivalPracticeTelemetry,
-            frames = new Frame[count]
+            frames = new Frame[count],
+            laneFrames = Array.Empty<LaneFrame>()
         };
         int oldest = (next + Capacity - count) % Capacity;
         for (int i = 0; i < count; i++)
@@ -209,6 +252,7 @@ internal sealed class TrackSnapshot
         if (count > 0)
         {
             double latestCapture = data.frames[count - 1].simulationSeconds;
+            data.laneFrames = LaneFramesThrough(latestCapture);
             data.ovalPassAttempts = AttemptsThrough(ovalPassAttempts, latestCapture, attempt => attempt.simulationSeconds);
             data.ovalPassAttemptCount = data.ovalPassAttempts.Length;
             data.plateMergeAttempts = AttemptsThrough(plateMergeAttempts, latestCapture, attempt => attempt.simulationSeconds);
@@ -216,8 +260,41 @@ internal sealed class TrackSnapshot
         }
 
         string path = Path.Combine(directory, $"snapshot-{now:yyyyMMdd-HHmmss-fff}-{Guid.NewGuid():N}.json");
-        File.WriteAllText(path, JsonUtility.ToJson(data, true));
-        return path;
+        // Track View holds the session paused until this task completes, so its ring buffers stay frozen.
+        return Task.Run(async () =>
+        {
+            string json = JsonUtility.ToJson(data);
+            cancellationToken.ThrowIfCancellationRequested();
+            Directory.CreateDirectory(directory);
+            string pendingPath = path + ".tmp";
+            try
+            {
+                await File.WriteAllTextAsync(pendingPath, json, new UTF8Encoding(false), cancellationToken)
+                    .ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+                File.Move(pendingPath, path);
+                return path;
+            }
+            finally
+            {
+                if (File.Exists(pendingPath))
+                    File.Delete(pendingPath);
+            }
+        }, cancellationToken);
+    }
+
+    private LaneFrame[] LaneFramesThrough(double latestCapture)
+    {
+        int oldest = (nextLaneFrame + LaneCapacity - laneFrameCount) % LaneCapacity;
+        double cutoff = latestCapture - WindowSeconds - CaptureTolerance;
+        var included = new List<LaneFrame>(laneFrameCount);
+        for (int i = 0; i < laneFrameCount; i++)
+        {
+            var frame = laneFrames[(oldest + i) % LaneCapacity];
+            if (frame.simulationSeconds >= cutoff && frame.simulationSeconds <= latestCapture + CaptureTolerance)
+                included.Add(frame);
+        }
+        return included.ToArray();
     }
 
     private static T[] AttemptsThrough<T>(Queue<T> attempts, double latestCapture, Func<T, double> simulationSeconds)

@@ -17,7 +17,8 @@ public sealed partial class TrackPreview
         "Richmond infield campground RVs golf carts and grills", "Richmond media parking parked vehicles",
         "Richmond paddock parking parked vehicles", "Richmond support parking behind haulers parked vehicles",
         "Richmond backstretch RV camping parked vehicles", "Richmond turn 3 RV camping parked vehicles",
-        "North Wilkesboro infield staff parking parked vehicles"
+        "North Wilkesboro infield staff parking parked vehicles",
+        "Dover infield spectator ", "Dover parked car ", "Dover motorhome ", "Dover campsite fixture "
     };
 
     private static bool HideSoloTestMesh(string name)
