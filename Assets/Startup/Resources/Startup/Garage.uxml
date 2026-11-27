@@ -138,6 +138,8 @@
                     <ui:VisualElement name="scheduleTrackOutline" class="schedule-track-outline" picking-mode="Ignore" />
                     <ui:VisualElement name="scheduleTrackRatings" class="track-ratings" />
                     <ui:VisualElement class="schedule-event-actions">
+                        <ui:Button name="scheduleTestSessionButton" text="Test Session" class="settings-button schedule-action-button" tooltip="Run a solo test session on the selected track with your car." />
+                        <ui:VisualElement class="schedule-action-spacer" picking-mode="Ignore" />
                         <ui:Button name="simulateSeasonButton" text="Simulate Season" class="settings-button schedule-action-button" tooltip="Temporary testing: generate random results for all remaining events without running race simulations, then move to the day after the last race." />
                         <ui:Button name="simulateEventButton" text="Simulate Event" class="settings-button schedule-action-button" tooltip="Simulate the selected race event." />
                         <ui:Button name="startRaceButton" text="Go To Event" class="settings-button schedule-action-button" tooltip="Open the selected event or view its results." />

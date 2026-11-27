@@ -49,8 +49,10 @@ public sealed class StartupMenu : MonoBehaviour
     private bool garageCarParked;
     private double trackFpsWarmupUntil;
     private bool developmentPractice;
+    private bool developmentPracticeFromSchedule;
     private Career developmentPracticeCareer;
     private VisualElement developmentTrackPicker;
+    private Toggle developmentSessionTime;
     private const string DevelopmentTrackPreference = "SCM.DevelopmentPractice.TrackId";
     private const string DevelopmentCarPreference = "SCM.DevelopmentPractice.CarModel";
     private List<TrackCatalog.Entry> developmentTracks;
@@ -83,6 +85,7 @@ public sealed class StartupMenu : MonoBehaviour
     private int previewCarNumber;
     private Button startRaceButton;
     private Button simulateEventButton;
+    private Button scheduleTestSessionButton;
     private TrackOutlineView scheduleTrackOutline;
     private Button trackSettingsButton;
     private Label playerCarStatus;
@@ -246,15 +249,29 @@ public sealed class StartupMenu : MonoBehaviour
         var practiceTrack = developmentTrackPicker.Q<DropdownField>("developmentTracks");
         RevealSelectedTrackOnOpen(practiceTrack);
         var practiceCar = developmentTrackPicker.Q<DropdownField>("developmentCars");
+        developmentSessionTime = SettingsFormStyle.StyleField(
+            SettingsFormStyle.PillSwitch("Time of day", labelAbove: true));
+        developmentSessionTime.text = "Day";
+        developmentSessionTime.tooltip = "Choose whether the test session starts during the day or under the lights.";
+        developmentSessionTime.style.display = DisplayStyle.None;
+        developmentSessionTime.style.alignSelf = Align.FlexStart;
+        developmentSessionTime.style.flexGrow = 0;
+        developmentSessionTime.style.flexShrink = 0;
+        developmentSessionTime.RegisterValueChangedCallback(evt =>
+            developmentSessionTime.text = evt.newValue ? "Night" : "Day");
+        practiceCar.parent.Insert(practiceCar.parent.IndexOf(practiceCar) + 1, developmentSessionTime);
         var startPractice = developmentTrackPicker.Q<Button>("startDevelopmentPractice");
         var startTestRace = developmentTrackPicker.Q<Button>("startDevelopmentRace");
         practiceTrack.RegisterValueChangedCallback(_ =>
         {
             int index = practiceTrack.index;
-            if (index < 0 || index >= developmentTracks.Count)
+            TrackCatalog.Entry track = index >= 0 && index < developmentTracks.Count
+                ? developmentTracks[index] : null;
+            UpdateDevelopmentSessionTime(track);
+            if (track == null)
                 return;
 
-            PlayerPrefs.SetInt(DevelopmentTrackPreference, developmentTracks[index].Definition.id);
+            PlayerPrefs.SetInt(DevelopmentTrackPreference, track.Definition.id);
             PlayerPrefs.Save();
         });
         startPractice.clicked += () => StartSelectedDevelopmentSession(RaceSessionKind.Practice);
@@ -382,6 +399,8 @@ public sealed class StartupMenu : MonoBehaviour
         startRaceButton.clicked += OpenSelectedEvent;
         simulateEventButton = garageScreen.Q<Button>("simulateEventButton");
         simulateEventButton.clicked += SimulateEvent;
+        scheduleTestSessionButton = garageScreen.Q<Button>("scheduleTestSessionButton");
+        scheduleTestSessionButton.clicked += StartSelectedTestSession;
         garageScreen.Q<Button>("simulateSeasonButton").clicked += SimulateSeasonTemporary;
         garageScreen.Q<Button>("eventCarPicker").clicked += ShowRaceCarPicker;
         garageScreen.Q<Button>("carOptionsClose").clicked += CloseCarOptions;
@@ -759,6 +778,7 @@ public sealed class StartupMenu : MonoBehaviour
         dropdown.choices = choices;
         dropdown.SetValueWithoutNotify(tracksAvailable ? choices[Mathf.Max(0, selected)] : string.Empty);
         dropdown.SetEnabled(tracksAvailable);
+        UpdateDevelopmentSessionTime(tracksAvailable ? developmentTracks[Mathf.Max(0, selected)] : null);
 
         developmentCars = CarTypeDefinition.AvailableModels();
         string savedModel = PlayerPrefs.GetString(DevelopmentCarPreference, "Impala");
@@ -781,6 +801,10 @@ public sealed class StartupMenu : MonoBehaviour
         (available ? start : developmentTrackPicker.Q<Button>("backFromDevelopmentPractice")).Focus();
     }
 
+    private void UpdateDevelopmentSessionTime(TrackCatalog.Entry track) =>
+        developmentSessionTime.style.display = TrackPreview.CanRunNightTest(track?.Definition)
+            ? DisplayStyle.Flex : DisplayStyle.None;
+
     private void StartDevelopmentSession(TrackCatalog.Entry track, string modelResource, RaceSessionKind kind)
     {
         var definition = track.Definition;
@@ -796,17 +820,13 @@ public sealed class StartupMenu : MonoBehaviour
         PlayerPrefs.SetString(DevelopmentCarPreference, modelResource);
         PlayerPrefs.Save();
         developmentTrackPicker.style.display = DisplayStyle.None;
-        var existingDriver = activeCareer?.Driver;
-        var testDriver = existingDriver != null
-            ? JsonUtility.FromJson<Driver>(JsonUtility.ToJson(existingDriver))
-            : Driver.Create(new System.Random(developmentTrackId), null);
         var career = new Career
         {
             teamName = activeCareer?.teamName ?? "Player Team",
             primaryTeamColor = activeCareer?.primaryTeamColor,
             secondaryTeamColor = activeCareer?.secondaryTeamColor,
             teamBalance = RaceFinances.StartingBalance,
-            drivers = new List<Driver> { testDriver }
+            drivers = new List<Driver> { CreateTestDriver(developmentTrackId) }
         };
         career.InitializeCars(new System.Random(developmentTrackId), randomizeRivals: true);
         var car = career.cars[0];
@@ -814,12 +834,24 @@ public sealed class StartupMenu : MonoBehaviour
             car.setup = RivalSetup001.Create(definition, car.chassisNumber ?? car.number.ToString());
         foreach (var entry in career.AllCars)
             entry.modelResource = modelResource;
+        BeginTestSession(track, career, car, kind);
+    }
+
+    private Driver CreateTestDriver(int trackId) => activeCareer?.Driver is Driver driver
+        ? JsonUtility.FromJson<Driver>(JsonUtility.ToJson(driver))
+        : Driver.Create(new System.Random(trackId), null);
+
+    private void BeginTestSession(TrackCatalog.Entry track, Career career, TeamCar car, RaceSessionKind kind,
+        bool fromSchedule = false)
+    {
+        var definition = track.Definition;
+        bool testRace = kind == RaceSessionKind.Race;
         var session = testRace
             ? new RaceSession { kind = RaceSessionKind.Race, name = "Test Race", laps = RaceSession.TestRaceLaps }
-            : new RaceSession { kind = RaceSessionKind.Practice, name = "Practice", minutes = RaceSession.PracticeMinutes };
+            : new RaceSession { kind = RaceSessionKind.Practice, name = fromSchedule ? "Test Session" : "Practice", minutes = RaceSession.PracticeMinutes };
         var race = new ScheduledRace
         {
-            trackId = developmentTrackId,
+            trackId = definition.id,
             trackName = definition.name,
             laps = session.laps,
             carNumber = car.number,
@@ -830,8 +862,11 @@ public sealed class StartupMenu : MonoBehaviour
             race.EnsureStages(definition.raceStageLaps);
 
         var forecast = SessionWeatherForecast.Ensure(session, definition, race);
+        if (!fromSchedule && developmentSessionTime.value && TrackPreview.CanRunNightTest(definition))
+            forecast.startHour = 20f;
         developmentPracticeCareer = career;
         developmentPractice = true;
+        developmentPracticeFromSchedule = fromSchedule;
         OpenTrack(track, session, true, car.number, SessionWeatherForecast.IsNightAt(forecast.startHour), car);
         if (trackPreview.Image == null)
         {
@@ -846,10 +881,11 @@ public sealed class StartupMenu : MonoBehaviour
 
         titleScreen.style.display = DisplayStyle.None;
         activeRace = race;
-        OpenEventGarageView(race, definition, car, System.Array.Empty<string>());
+        OpenEventGarageView(race, definition, car, fromSchedule ? ActiveSponsorNames() : System.Array.Empty<string>());
         activeSession = session;
         raceEventView.SetRunningSession(session);
-        var simulation = new CarSimulationContext(definition, race, session, TrackPreview.CreateTimingEntries(car, career))
+        var entries = fromSchedule ? TrackPreview.CreateSoloTimingEntries(car, career) : TrackPreview.CreateTimingEntries(car, career);
+        var simulation = new CarSimulationContext(definition, race, session, entries)
         {
             EqualConditionTesting = !testRace && settings.EqualConditionPractice
         };
@@ -1064,6 +1100,8 @@ public sealed class StartupMenu : MonoBehaviour
             startRaceButton.clicked -= OpenSelectedEvent;
         if (simulateEventButton != null)
             simulateEventButton.clicked -= SimulateEvent;
+        if (scheduleTestSessionButton != null)
+            scheduleTestSessionButton.clicked -= StartSelectedTestSession;
         if (addTeamCarButton != null)
             addTeamCarButton.clicked -= OpenCarMarket;
         if (loadCareerButton != null)
@@ -5016,11 +5054,13 @@ public sealed class StartupMenu : MonoBehaviour
             rows.schedule.Execute(() => { rows.ScrollTo(purchasedCard); purchasedCard.Focus(); });
     }
 
+    private ScheduledRace NextScheduleEvent => activeCareer?.schedule?.races?.FirstOrDefault(race => !race.completed);
+
     private void RefreshSchedule(bool selectNext = false)
     {
         var schedule = activeCareer.schedule;
         var races = schedule.races;
-        var next = races?.FirstOrDefault(race => !race.completed);
+        var next = NextScheduleEvent;
         var nextTrack = next == null ? null : catalog.Find(next.trackId)?.Definition;
         string trackType = nextTrack switch
         {
@@ -5074,19 +5114,25 @@ public sealed class StartupMenu : MonoBehaviour
 
         var eventTrack = selectedEvent == null ? null : catalog.Find(selectedEvent.trackId);
         bool available = eventTrack != null;
+        scheduleTestSessionButton.SetEnabled(available && !simulatingScheduleEvent && TestSessionCar(selectedEvent) != null);
         DisplayTrackRatings(garageScreen.Q("scheduleTrackRatings"), eventTrack?.Definition.weights);
         scheduleTrackOutline.SetTrack(eventTrack?.Definition);
         bool eventCompleted = selectedEvent?.completed == true;
+        bool isNextEvent = next != null && selectedEvent == next;
+        bool canFieldDriver = CanFieldDriver(activeCareer);
         startRaceButton.text = eventCompleted ? "View Results" : "Go To Event";
-        bool canRunEvent = available && !eventCompleted && CanFieldDriver(activeCareer) &&
-            chosenCar != null;
-        bool canResume = available && CanFieldDriver(activeCareer) &&
+        bool canStartNextEvent = isNextEvent && available && canFieldDriver && !simulatingScheduleEvent;
+        bool canRunEvent = canStartNextEvent && chosenCar != null;
+        bool canResume = canStartNextEvent &&
             selectedEvent?.sessions?.Any(session => session.Completed) == true && EventGarageCar(selectedEvent) != null;
         startRaceButton.SetEnabled(eventCompleted || canRunEvent || canResume);
         simulateEventButton.SetEnabled(canRunEvent);
-        garageScreen.Q<Button>("simulateSeasonButton").SetEnabled(CanFieldDriver(activeCareer) && !simulatingScheduleEvent && races.Any(race => !race.completed));
-        simulateEventButton.tooltip = CanFieldDriver(activeCareer) ? "Simulate the selected race event." : DriverEntryMessage(activeCareer);
-        startRaceButton.tooltip = eventCompleted ? "View this event's recorded results." : CanFieldDriver(activeCareer) ? "Go to the selected race event." : DriverEntryMessage(activeCareer);
+        garageScreen.Q<Button>("simulateSeasonButton").SetEnabled(next != null && canFieldDriver && !simulatingScheduleEvent);
+        simulateEventButton.tooltip = !isNextEvent ? "Select the next scheduled event to simulate it."
+            : canFieldDriver ? "Simulate the selected race event." : DriverEntryMessage(activeCareer);
+        startRaceButton.tooltip = eventCompleted ? "View this event's recorded results."
+            : !isNextEvent ? "Select the next scheduled event to open it."
+            : canFieldDriver ? "Go to the selected race event." : DriverEntryMessage(activeCareer);
         var details = garageScreen.Q<Label>("scheduleStatus");
         if (selectedEvent == null)
         {
@@ -5096,11 +5142,11 @@ public sealed class StartupMenu : MonoBehaviour
         {
             string status = selectedEvent.completed ? "Completed" : !available ? "Track definition unavailable"
                 : !HasDriver(activeCareer) ? "No driver assigned" : DriverInCustody(activeCareer) ? "Driver unavailable"
-                : selectedEvent == next ? "Next race" : "Available";
+                : isNextEvent ? "Next race" : "Upcoming";
             details.text = $"{selectedEvent.trackName}\n{RaceDate(selectedEvent)}\n{selectedEvent.EffectiveRaceLaps} laps  /  {status}";
             if (selectedEvent.completed)
                 details.text += "\n" + (selectedEvent.playerSkipped ? "Team skipped this race" : chosenCar?.ChassisDisplayName ?? "Car not recorded");
-            if (!eventCompleted && !CanFieldDriver(activeCareer))
+            if (!eventCompleted && !canFieldDriver)
                 details.text += "\n" + DriverEntryMessage(activeCareer);
             if (!eventCompleted && chosenCar == null)
                 details.text += "\nChoose a race-ready chassis from the race car list.";
@@ -5387,6 +5433,36 @@ public sealed class StartupMenu : MonoBehaviour
         }
     }
 
+    private TeamCar TestSessionCar(ScheduledRace race) =>
+        race == null ? null : EventGarageCar(race) ?? activeCareer.cars.FirstOrDefault();
+
+    private void StartSelectedTestSession()
+    {
+        var race = selectedEvent;
+        if (race == null || activeCareer == null || simulatingScheduleEvent)
+            return;
+
+        var track = catalog.Find(race.trackId);
+        var enteredCar = TestSessionCar(race);
+        if (track == null || enteredCar == null)
+            return;
+
+        // Session wear, setup changes, and results belong to the test copy.
+        var car = JsonUtility.FromJson<TeamCar>(JsonUtility.ToJson(enteredCar));
+        var testCareer = new Career
+        {
+            teamName = activeCareer.teamName,
+            seriesId = activeCareer.seriesId,
+            engineSupplier = activeCareer.engineSupplier,
+            primaryTeamColor = activeCareer.primaryTeamColor,
+            secondaryTeamColor = activeCareer.secondaryTeamColor,
+            teamBalance = activeCareer.teamBalance,
+            cars = new List<TeamCar> { car },
+            drivers = new List<Driver> { CreateTestDriver(track.Definition.id) }
+        };
+        BeginTestSession(track, testCareer, car, RaceSessionKind.Practice, fromSchedule: true);
+    }
+
     private static string RaceDate(ScheduledRace race) =>
         System.DateTime.TryParseExact(race.date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed)
             ? parsed.ToString("ddd, MMM d, yyyy") : race.date;
@@ -5414,7 +5490,7 @@ public sealed class StartupMenu : MonoBehaviour
             return;
         }
 
-        if (ShowRequiredEmailTooltip())
+        if (race != NextScheduleEvent || simulatingScheduleEvent || ShowRequiredEmailTooltip())
             return;
 
         var track = catalog.Find(race.trackId);
@@ -5632,7 +5708,7 @@ public sealed class StartupMenu : MonoBehaviour
     private async void SimulateEvent()
     {
         var race = selectedEvent;
-        if (simulatingScheduleEvent || race == null || race.completed || !CanFieldDriver(activeCareer)) return;
+        if (simulatingScheduleEvent || race == null || race != NextScheduleEvent || !CanFieldDriver(activeCareer)) return;
         simulatingScheduleEvent = true;
         bool cancelled = false, success = false;
         string error = null, checkpoint = null;
@@ -7318,8 +7394,11 @@ public sealed class StartupMenu : MonoBehaviour
             trackPreview.SetCollisionsEnabled(true);
             trackPreview.TrafficLaneChangesEnabled = true;
             trackPreview.SetPreferredLineVisible(PlayerPrefs.GetInt(PreferredLinePreference, 1) != 0);
-            trackPreview.Initialize(track.Definition, carNumber, ActiveSponsorNames(), playerCar ?? EventCar(activeRace), night,
-                rivalCars: EventServiceCareer?.rivalCars);
+            if (developmentPracticeFromSchedule)
+                trackPreview.InitializeSolo(track.Definition, ActiveSponsorNames(), playerCar, night);
+            else
+                trackPreview.Initialize(track.Definition, carNumber, ActiveSponsorNames(), playerCar ?? EventCar(activeRace), night,
+                    rivalCars: EventServiceCareer?.rivalCars);
             previewTrack = track;
             previewCarNumber = carNumber;
             trackSessionMap.SetPreview(trackPreview.Image != null ? trackPreview : null);
@@ -7337,7 +7416,9 @@ public sealed class StartupMenu : MonoBehaviour
         trackName.text = $"{track.Definition.name} - {session.name}";
         trackName.tooltip = trackName.text;
         var seriesName = trackScreen.Q<Label>("trackSeriesName");
-        if (developmentPractice)
+        if (developmentPracticeFromSchedule)
+            seriesName.text = careerSetup.SeriesName(developmentPracticeCareer);
+        else if (developmentPractice)
         {
             string model = playerCar?.modelResource;
             var series = RacingSeries.Catalog.FirstOrDefault(item =>
@@ -7877,7 +7958,17 @@ public sealed class StartupMenu : MonoBehaviour
             activeRace = null;
             developmentPracticeCareer = null;
             developmentPractice = false;
-            ShowDevelopmentTrackPicker(testPracticeMessage);
+            bool returnToSchedule = developmentPracticeFromSchedule;
+            developmentPracticeFromSchedule = false;
+            if (returnToSchedule)
+            {
+                garageScreen.style.display = DisplayStyle.Flex;
+                if (!string.IsNullOrEmpty(testPracticeMessage))
+                    garageScreen.Q<Label>("scheduleStatus").text = testPracticeMessage;
+                scheduleTestSessionButton.Focus();
+            }
+            else
+                ShowDevelopmentTrackPicker(testPracticeMessage);
             return;
         }
         if (activeRace != null)

@@ -15,14 +15,18 @@ public sealed partial class TrackPreview
     private float richmondPaceTravel;
     private float richmondPaceJoinAfterExit;
     private float richmondPaceDriveIntoYardAt;
+    private float paceBayPitJoin;
 
     private bool RichmondPaceIsParked => richmondPaceReturn != null && richmondPacePhase == RichmondPacePhase.Parked;
 
     private void ConfigureRichmondPaceBay()
     {
-        if (definition.id is not (RichmondTrackId or NorthWilkesboroTrackId) || !importedTrackGeometry)
+        if (definition.id is not (RichmondTrackId or NorthWilkesboroTrackId or LasVegasTrackId) || !importedTrackGeometry)
             return;
 
+        richmondPaceReturn = null;
+        richmondPaceDeparture = null;
+        pitTraffic.PaceBayParkingDistance = null;
         var markers = GetComponentsInChildren<Transform>(true);
         string prefix = VenueSceneryName + " pace ";
         var bay = markers.FirstOrDefault(item => item.name == prefix + "bay");
@@ -39,6 +43,24 @@ public sealed partial class TrackPreview
         richmondPaceBayHeading = Quaternion.LookRotation(outbound[1] - outbound[0], Vector3.up);
         inbound[^1] = richmondPaceBay;
         outbound[0] = richmondPaceBay;
+
+        if (definition.id == LasVegasTrackId)
+        {
+            // This bay returns to pit road before its exit connector. Anchor each
+            // handoff to the imported pit spline and leave the normal exit in charge.
+            float entry = PitStation(inbound[0]);
+            paceBayPitJoin = PitStation(outbound[^1]);
+            var pitVehicle = new TrackPitTraffic.Car { InPit = true };
+            inbound[0] = SampleTrafficPosition(pitVehicle, entry, 0f);
+            outbound[^1] = SampleTrafficPosition(pitVehicle, paceBayPitJoin, 0f);
+            pitTraffic.PaceBayParkingDistance = entry;
+            richmondPaceReturn = new PaceBayRoute(new List<Vector3>(inbound));
+            richmondInitialDeparture = richmondCautionDeparture = new PaceBayRoute(new List<Vector3>(outbound));
+            richmondPaceDriveIntoYardAt = 0f;
+            richmondPacePhase = RichmondPacePhase.Parked;
+            richmondPaceTravel = 0f;
+            return;
+        }
 
         // The rendered vehicle uses the authored gate paths. The race and
         // caution controllers continue to use their original pace distances.
@@ -88,6 +110,9 @@ public sealed partial class TrackPreview
             return Vector3.Dot(point - center, across);
         }
 
+        float PitStation(Vector3 point) => pitTraffic.RoadStart + pitTraffic.RoadLength *
+            pitRoute[1].ClosestFraction(customLayout.ToSourceSpace(point));
+
         Vector3[] ReadPath(string prefix) => markers
             .Where(marker => marker.name.StartsWith(prefix, StringComparison.Ordinal))
             .OrderBy(marker => marker.name, StringComparer.Ordinal)
@@ -126,6 +151,14 @@ public sealed partial class TrackPreview
                 richmondPacePhase = RichmondPacePhase.Departing;
                 break;
             case RichmondPacePhase.Departing:
+                if (pitTraffic.PaceBayParkingDistance.HasValue)
+                {
+                    richmondPaceTravel = richmondPaceDeparture.Length *
+                        Mathf.InverseLerp(pitParking, paceBayPitJoin, virtualPace.Distance);
+                    if (!virtualPace.OnPitRoad || virtualPace.Distance >= paceBayPitJoin)
+                        richmondPacePhase = RichmondPacePhase.Pacing;
+                    break;
+                }
                 float exitTravel = virtualPace.OnPitRoad
                     ? virtualPace.Distance - pitTraffic.RouteLength
                     : Mathf.Repeat(virtualPace.Distance - pitTraffic.ExitDistance, lapLength);
@@ -158,7 +191,14 @@ public sealed partial class TrackPreview
 
     private void AdvanceRichmondPaceRoute(PaceBayRoute route, float speed)
     {
-        if (stages?.HasPaceCar == true && speed > 0f)
+        if (stages?.HasPaceCar == true)
+            speed = PaceBayClearSpeed(route, speed);
+        richmondPaceTravel = Mathf.Min(richmondPaceTravel + speed * SessionStep, route.Length);
+    }
+
+    private float PaceBayClearSpeed(PaceBayRoute route, float speed)
+    {
+        if (speed > 0f)
         {
             float remaining = route.Length - richmondPaceTravel;
             float lookAhead = Mathf.Min(remaining, speed * speed / (2f * TrackPitTraffic.PitApproachDeceleration) + 2f);
@@ -172,7 +212,7 @@ public sealed partial class TrackPreview
                 blocker >= 0 ? "Pace bay route clearance" : "");
             cautionPaceTrafficSpeed = speed;
         }
-        richmondPaceTravel = Mathf.Min(richmondPaceTravel + speed * SessionStep, route.Length);
+        return speed;
     }
 
     private bool PositionRichmondPaceBay((bool OnPitRoad, float Distance, float ParkingBlend) virtualPace)
@@ -196,7 +236,8 @@ public sealed partial class TrackPreview
             default:
                 if (!virtualPace.OnPitRoad)
                     return PositionRichmondPacePitApproach(virtualPace.Distance);
-                PositionPitCar(paceCar, virtualPace.Distance);
+                PositionPitCar(paceCar, virtualPace.Distance,
+                    isRaceFormation: pitTraffic.PaceBayParkingDistance.HasValue && !raceReleased && !raceStart.PaceReturning);
                 break;
         }
         return true;

@@ -1,0 +1,25 @@
+{
+  "sampleCount": 154498,
+  "minimumCenterClearanceMetres": 1.2878269350574332,
+  "minimumTireClearanceMetresAtOnePointEightMetresWidth": 0.38782693505743315,
+  "signedCurvatureChecks": [
+    {
+      "chordMetres": 0.75,
+      "minimumTurnDegrees": 0.00831898631162813,
+      "maximumTurnDegrees": 0.43024352492523377,
+      "rightTurnSamples": 0
+    },
+    {
+      "chordMetres": 1.0,
+      "minimumTurnDegrees": 0.011269766217560243,
+      "maximumTurnDegrees": 0.5736540296213717,
+      "rightTurnSamples": 0
+    },
+    {
+      "chordMetres": 2.0,
+      "minimumTurnDegrees": 0.022867321963197993,
+      "maximumTurnDegrees": 1.1472702955266227,
+      "rightTurnSamples": 0
+    }
+  ]
+}

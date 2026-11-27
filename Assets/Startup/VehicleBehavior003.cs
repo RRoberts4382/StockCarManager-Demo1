@@ -46,6 +46,9 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
     public virtual string Name => "VehicleBehavior003";
 
     internal const float MaximumLateralSpeed = 3f;
+    private const float LaneChangeCruiseSpeed = 2f;
+    private const float LaneChangeAcceleration = 3.5f;
+    private const float LaneChangeReversalBraking = 6f;
 
     public Func<float, float> BuildRacingLine(float lapLength, float inside, bool isOval, Func<float, Vector3> heading) =>
         BuildTrackRacingLine(lapLength, inside, isOval, heading, null);
@@ -223,6 +226,25 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
     protected virtual float StepTowardPreferredLane(int index, float lane, float target, float seconds) =>
         Mathf.MoveTowards(lane, target, MaximumLateralSpeed * seconds);
 
+    internal static float LaneChangeStep(float error, float lateralSpeed, float seconds)
+    {
+        float remaining = Mathf.Abs(error);
+        if (remaining <= .001f) return error;
+
+        // Include this step's travel in the stopping distance so a car can
+        // lose lateral speed before it reaches the destination.
+        float direction = Mathf.Sign(error);
+        float speedStep = LaneChangeAcceleration * seconds;
+        float stoppingSpeed = Mathf.Sqrt(speedStep * speedStep + 2f * LaneChangeAcceleration * remaining) - speedStep;
+        float targetSpeed = direction * Mathf.Min(LaneChangeCruiseSpeed, stoppingSpeed);
+        if (lateralSpeed * direction < 0f)
+            lateralSpeed = Mathf.MoveTowards(lateralSpeed, 0f, LaneChangeReversalBraking * seconds);
+        else
+            lateralSpeed = Mathf.MoveTowards(lateralSpeed, targetSpeed, speedStep);
+        float movement = lateralSpeed * seconds;
+        return movement * direction > remaining ? error : movement;
+    }
+
     protected virtual float PreferredLaneEdgeClearance(int index, float lane, float inside) => 1.05f;
 
     internal struct TrafficLaneControl
@@ -238,6 +260,7 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
         internal bool WaitingForRoom;
         internal bool HasLane;
         internal float LateralSpeed;
+        internal float LaneChangeSpeed;
         internal float LastLane;
     }
 
@@ -321,8 +344,8 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
             ? OvalPassingThreshold(StrictOvalPassingOpportunityDuration, DefaultOvalPassingOpportunityDuration,
                 EasierOvalPassingOpportunityDuration, OvalPassingEase)
             : PassingOpportunityDuration;
-        float[] fittedAdvances = UsePreferredLineTraffic && this is VehicleBehavior004 fitted
-            ? fitted.PreferredLineAdvance : null;
+        float[] preferredAdvances = (this as VehicleBehavior004)?.PreferredLineAdvance;
+        float[] fittedAdvances = UsePreferredLineTraffic ? preferredAdvances : null;
         bool coordinateArc = respondToTraffic && startLanes != null && fittedAdvances != null;
         Span<int> laneOrder = coordinateArc ? stackalloc int[lanes.Length] : Span<int>.Empty;
         if (coordinateArc)
@@ -332,14 +355,17 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
         {
             int i = coordinateArc ? laneOrder[slot] : slot;
             bool directedDraftPass = plate && allowPassing && draftPassLane?[i] == true && stabilizeLane?[i] != false;
-            bool stabilize = laneControl != null && stabilizeLane[i] && respondToTraffic && keepLaneControl &&
-                (draftLine?[i] != true || directedDraftPass) && onTrack[i] && speeds[i] > 0f && seconds > 0f;
-            var control = stabilize ? laneControl[i] : default;
+            bool activeLane = laneControl != null && stabilizeLane[i] && onTrack[i] && speeds[i] > 0f && seconds > 0f;
+            bool smoothChange = activeLane && !plate;
+            bool stabilize = activeLane && respondToTraffic && keepLaneControl && (draftLine?[i] != true || directedDraftPass);
             float lane = lanes[i];
+            var previousControl = laneControl?[i] ?? default;
+            if (!previousControl.HasLane || Mathf.Abs(lane - previousControl.LastLane) > .001f)
+                previousControl = default;
+            var control = stabilize ? previousControl : default;
+            float previousLaneChangeSpeed = previousControl.LaneChangeSpeed;
             if (laneControl != null && !stabilize)
                 laneControl[i] = default;
-            if (control.HasLane && Mathf.Abs(lane - control.LastLane) > .001f)
-                control = default;
             if (!onTrack[i] || speeds[i] <= 0f)
             {
                 if (laneDraft != null)
@@ -359,11 +385,15 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
             if (!respondToTraffic)
             {
                 float heldOffset = canVaryLane ? laneDraft.AppliedLaneOffsets[i] : 0f;
-                lanes[i] = StepTowardPreferredLane(i, lane, target + heldOffset, seconds);
+                float change = smoothChange ? LaneChangeStep(target + heldOffset - lane, previousLaneChangeSpeed, seconds) : 0f;
+                lanes[i] = smoothChange ? lane + change + (preferredAdvances?[i] ?? 0f)
+                    : StepTowardPreferredLane(i, lane, target + heldOffset, seconds);
                 if (canVaryLane)
                     ApplyLaneVariation(i, lapLength, seconds, distances, widths, onTrack, lanes, currentSpeeds, laneDraft, startLanes);
                 else if (laneDraft != null)
                     laneDraft.AppliedLaneOffsets[i] = 0f;
+                if (smoothChange)
+                    SaveLaneMotion(change);
                 continue;
             }
 
@@ -530,11 +560,17 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
             float drivingTarget = followingLeader || draftLine?[i] == true ? target : target + appliedOffset;
             if (recoveringInsideEdge)
                 drivingTarget = Mathf.Min(drivingTarget * inside, insideLimit) * inside;
-            float next = followingPreferred && (!control.ReturningToLine || UsePreferredLineTraffic) && !recoveringInsideEdge
-                ? StepTowardPreferredLane(i, lane, drivingTarget, seconds)
+            bool advanceWithLine = followingPreferred && (!control.ReturningToLine || UsePreferredLineTraffic) && !recoveringInsideEdge;
+            // Apply the fitted line's normal movement separately. Only an
+            // actual correction across that line should accelerate or slow down.
+            bool smoothCorrection = smoothChange && !recoveringInsideEdge && !holdLaneAlongside && !followingLeader;
+            float correction = smoothCorrection ? LaneChangeStep(drivingTarget - lane, previousLaneChangeSpeed, seconds) : 0f;
+            float next = smoothCorrection ? lane + correction + (advanceWithLine ? preferredAdvances?[i] ?? 0f : 0f)
+                : advanceWithLine ? StepTowardPreferredLane(i, lane, drivingTarget, seconds)
                 : Mathf.MoveTowards(lane, drivingTarget, MaximumLateralSpeed * seconds);
             if (recoveringInsideEdge && outwardArc)
                 next += fittedAdvance;
+            float requestedStep = next - lane;
             bool nearTraffic = false;
             if (stabilize && next != lane)
             {
@@ -579,7 +615,10 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
                     if (opening > 0f)
                     {
                         float catchUpRoom = Mathf.Max(0f, safeRoom - opening);
-                        movement = Mathf.Min(movement, opening + catchUpRoom * Mathf.Clamp01(seconds / TrafficLookAheadSeconds));
+                        // Retain the existing clearance smoothly as the next gap starts to open.
+                        float openingWeight = Mathf.SmoothStep(0f, 1f, opening / easeDistance);
+                        float catchUp = Mathf.Lerp(1f, Mathf.Clamp01(seconds / TrafficLookAheadSeconds), openingWeight);
+                        movement = Mathf.Min(movement, opening + catchUpRoom * catchUp);
                     }
                     control.Easing = movement < requestedMovement - .00001f;
                     next = lane + direction * movement;
@@ -596,10 +635,18 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
             else if (laneDraft != null)
                 laneDraft.AppliedLaneOffsets[i] = 0f;
 
-            if (stabilize)
+            if (stabilize || smoothChange)
             {
                 control.Easing |= !safe && nearTraffic;
+                float usedMotion = !safe ? 0f : Mathf.Abs(requestedStep) <= .00001f ? 1f
+                    : Mathf.Clamp01((next - lane) / requestedStep);
+                SaveLaneMotion(correction * usedMotion);
+            }
+
+            void SaveLaneMotion(float correctionStep)
+            {
                 control.LateralSpeed = (lanes[i] - lane) / seconds;
+                control.LaneChangeSpeed = correctionStep / seconds;
                 control.LastLane = lanes[i];
                 control.HasLane = true;
                 laneControl[i] = control;

@@ -183,7 +183,8 @@ internal sealed class TrackPitTraffic
     public float RoadStart { get; }
     public float RoadEnd { get; }
     public float RoadLength => RoadEnd - RoadStart;
-    public float ParkingDistance => RoadEnd - Mathf.Min(4f, RoadLength * 0.1f);
+    internal float? PaceBayParkingDistance { get; set; }
+    public float ParkingDistance => PaceBayParkingDistance ?? (RoadEnd - Mathf.Min(4f, RoadLength * 0.1f));
     public float RouteLength => boundaries[2];
     public float SpeedLimit => speedLimit;
 

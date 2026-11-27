@@ -41,7 +41,7 @@ internal sealed class VehicleBehavior007 : VehicleBehavior006
         float subjectTravel = 0f, blockerTravel = 0f;
         float subjectSpeed = subject.Speed, blockerSpeed = blocker.Speed;
         float lane = subject.Lane, lateralSpeed = 0f;
-        float blockerLane = blocker.Lane;
+        float blockerLane = blocker.Lane, blockerLateralSpeed = 0f;
         float blockerReference = blockerLaneAt?.Invoke(blocker.Index, blocker.Station) ?? blockerLane;
         float passOffset = destinationLane - blocker.Lane;
         float passDirection = Mathf.Sign(passOffset);
@@ -54,8 +54,9 @@ internal sealed class VehicleBehavior007 : VehicleBehavior006
             float subjectStation = subject.Station + subjectTravel + subjectSpeed * step * .5f;
             float blockerStation = blocker.Station + blockerTravel + blockerSpeed * step * .5f;
             float nextBlockerReference = blockerLaneAt?.Invoke(blocker.Index, blockerStation + blockerSpeed * step * .5f) ?? blockerReference;
-            float nextBlockerLane = Mathf.MoveTowards(blockerLane, blockerReference, MaximumLateralSpeed * step) +
-                (nextBlockerReference - blockerReference);
+            float blockerCorrection = LaneChangeStep(blockerReference - blockerLane, blockerLateralSpeed, step);
+            blockerLateralSpeed = blockerCorrection / step;
+            float nextBlockerLane = blockerLane + blockerCorrection + (nextBlockerReference - blockerReference);
             float sampleBlockerLane = (blockerLane + nextBlockerLane) * .5f;
             // The live pass aims beside the blocker as its line moves through the turn.
             float nextTarget = nextBlockerLane + passOffset;
@@ -69,8 +70,9 @@ internal sealed class VehicleBehavior007 : VehicleBehavior006
                     nextTarget = Mathf.Clamp(nextTarget, range.x, range.y);
                 }
             }
-            lateralSpeed = Mathf.Min(MaximumLateralSpeed, lateralSpeed + TrafficLateralAcceleration * step);
-            float nextLane = Mathf.MoveTowards(lane, nextTarget, lateralSpeed * step);
+            float correction = LaneChangeStep(nextTarget - lane, lateralSpeed, step);
+            lateralSpeed = correction / step;
+            float nextLane = lane + correction;
             float sampleLane = (lane + nextLane) * .5f;
             float nextSubjectSpeed = AdvanceSpeed(subjectSpeed, paceAt(subject.Index, subjectStation, sampleLane), step);
             float nextBlockerSpeed = AdvanceSpeed(blockerSpeed, paceAt(blocker.Index, blockerStation, sampleBlockerLane), step);

@@ -4023,14 +4023,17 @@
 }
 
 #schedulePage .schedule-event-actions { flex-direction: row; flex-wrap: wrap; justify-content: flex-end; }
+#schedulePage .schedule-action-spacer { flex-grow: 1; min-width: 0; }
 #schedulePage .schedule-event-actions > .schedule-action-button {
     background-color: #182634; color: #f5f5f5; border-width: 1px; border-color: #009bdd;
     border-radius: 8px; min-height: 38px; min-width: 0; padding: 5px 10px;
     margin: 4px 0 0 6px; font-size: 12px; white-space: nowrap;
 }
+#schedulePage #scheduleTestSessionButton { margin-left: 0; }
 #schedulePage .schedule-action-button:hover,
 #schedulePage .schedule-action-button:focus { background-color: #263e50; border-color: #55c4ef; }
 #schedulePage .schedule-action-button:disabled { opacity: 0.45; }
+#schedulePage #simulateSeasonButton { color: #ff6969; border-color: #ff6969; }
 
 #mailTab > .mail-response-badge {
     position: absolute; top: 2px; right: 3px;

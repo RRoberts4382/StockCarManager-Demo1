@@ -12,6 +12,8 @@ public sealed partial class TrackPreview
 
     private void QueueIowaStandingFan(Vector3 position, Vector3 facing, int seed, int teamIndex = -1)
     {
+        if (soloTestSession && IsInfieldPosition(position))
+            return;
         facing.y = 0f;
         if (facing.sqrMagnitude < .001f)
             facing = Vector3.forward;
@@ -22,6 +24,12 @@ public sealed partial class TrackPreview
     private void QueueIowaWalkingFan(Vector3 start, Vector3 end, int seed, int teamIndex = -1,
         float[] groundHeights = null)
     {
+        if (soloTestSession)
+        {
+            int segments = Mathf.Max(1, Mathf.CeilToInt(Vector3.Distance(start, end) / 2f));
+            for (int i = 0; i <= segments; i++)
+                if (IsInfieldPosition(Vector3.Lerp(start, end, i / (float)segments))) return;
+        }
         Vector3 facing = end - start;
         facing.y = 0f;
         if (facing.sqrMagnitude < 1f)

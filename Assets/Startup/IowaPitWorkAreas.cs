@@ -201,8 +201,13 @@ public sealed partial class TrackPreview
             return Take(selected);
         }
 
-        void Crew(Vector3 position, int pose, float yaw) =>
-            AddIowaPitCrewFigure(mesh, position, yaw, pose, 1f + Offset(.055f), random.Next(3));
+        void Crew(Vector3 position, int pose, float yaw)
+        {
+            float scale = 1f + Offset(.055f);
+            int skin = random.Next(3);
+            if (!soloTestSession)
+                AddIowaPitCrewFigure(mesh, position, yaw, pose, scale, skin);
+        }
     }
 
     private void AddIowaPitWorkPad(int carNumber, Vector3 center, Quaternion facing, float rear, Material concrete)

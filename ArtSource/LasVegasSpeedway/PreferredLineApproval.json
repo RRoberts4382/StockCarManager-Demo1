@@ -1,0 +1,14 @@
+{
+  "trackId": 26,
+  "status": "approved by user after in-game testing",
+  "referenceMethod": "Offline float32 reprojection anchored to previous Unity sample positions",
+  "updatedReferenceRows": 378,
+  "retainedLasVegasRows": 830,
+  "previousUnityBaselineMaximumDisagreementMetres": 0.0002836669921890689,
+  "simulatedUnityMinimumSignedTurnDegreesByChord": [
+    -0.002331988012838859,
+    -0.001748902032761142,
+    -1.3344692578400036e-07
+  ],
+  "minimumTireClearanceMetres": 0.25999999999887036
+}

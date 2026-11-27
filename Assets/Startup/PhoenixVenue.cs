@@ -8,6 +8,7 @@ public sealed partial class TrackPreview
     private string VenueSceneryName => definition.id switch
     {
         PhoenixTrackId => "Phoenix",
+        LasVegasTrackId => "Las Vegas",
         MichiganTrackId => "Michigan",
         RichmondTrackId => "Richmond",
         NorthWilkesboroTrackId => "North Wilkesboro",
@@ -106,16 +107,21 @@ public sealed partial class TrackPreview
         // FBX can store the unit conversion in the marker mesh or transform.
         // Transform the actual mesh endpoints so seating follows the authored width.
         Bounds bounds = filter.sharedMesh.bounds;
-        Vector3 halfRow = Vector3.right * bounds.extents.x;
+        Vector3 center = transform.InverseTransformPoint(marker.TransformPoint(bounds.center));
+        if (soloTestSession && IsInfieldPosition(center))
+            return;
+        float station = TrackUtilityGeometry.ClosestMainDistance(customLayout, lapLength, center);
+        var outside = SampleOutsideEdge(station);
+        Vector3 outward = outside.Outward;
+        Vector3 halfRow = definition.id == LasVegasTrackId
+            ? LasVegasBenchHalfRow(marker, bounds, center, outside.Position, ref outward)
+            : Vector3.right * bounds.extents.x;
         Vector3 a = transform.InverseTransformPoint(marker.TransformPoint(bounds.center - halfRow));
         Vector3 b = transform.InverseTransformPoint(marker.TransformPoint(bounds.center + halfRow));
         float width = Vector3.Distance(a, b);
         int count = Mathf.FloorToInt((width - .50f) / GrandstandMeshBuilder.SeatSpacing);
         if (count > 0)
         {
-            Vector3 center = (a + b) * .5f;
-            float station = TrackUtilityGeometry.ClosestMainDistance(customLayout, lapLength, center);
-            Vector3 outward = SampleOutsideEdge(station).Outward;
             var firstSeat = new Vector3(-(count - 1) * GrandstandMeshBuilder.SeatSpacing * .5f, 0f, 0f);
             string name = marker.name.Substring(benchPrefix.Length);
             int dash = name.IndexOf('-');
@@ -123,6 +129,26 @@ public sealed partial class TrackPreview
             attendance.Register(standPrefix + section, new GrandstandMeshBuilder.SeatStrip(firstSeat, count),
                 a, b, outward, outward, width);
         }
+    }
+
+    private Vector3 LasVegasBenchHalfRow(Transform marker, Bounds bounds, Vector3 center,
+        Vector3 outsideEdge, ref Vector3 outward)
+    {
+        // Las Vegas bakes each curved row's heading into its mesh vertices.
+        // Use the nearby racing surface for facing and cut a line through the
+        // marker bounds along the bench instead of assuming marker-local X.
+        Vector3 fromTrack = Vector3.ProjectOnPlane(center - outsideEdge, Vector3.up);
+        if (fromTrack.sqrMagnitude > .001f)
+            outward = fromTrack.normalized;
+        Vector3 along = Vector3.Cross(Vector3.up, outward);
+        Vector3 local = marker.InverseTransformVector(transform.TransformVector(along));
+        Vector3 extents = bounds.extents;
+        float halfLength = Mathf.Min(AxisLimit(extents.x, local.x),
+            Mathf.Min(AxisLimit(extents.y, local.y), AxisLimit(extents.z, local.z)));
+        return local * halfLength;
+
+        static float AxisLimit(float extent, float direction) =>
+            Mathf.Abs(direction) > .00001f ? extent / Mathf.Abs(direction) : float.PositiveInfinity;
     }
 
     private (string Name, float Station)[] PhoenixSafetySites()
