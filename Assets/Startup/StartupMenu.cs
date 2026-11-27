@@ -5346,7 +5346,7 @@ public sealed class StartupMenu : MonoBehaviour
     internal static VisualElement TrackAttributeIcon(CarComponent? component) =>
         component.HasValue ? ShopComponentPanel.ComponentIcon(component.Value) : TrackIndicatorIcon(tireWear: true);
 
-    private static VisualElement TrackIndicatorIcon(bool tireWear)
+    private static VisualElement TrackIndicatorIcon(bool tireWear, float size = 40f)
     {
         var icon = new VisualElement();
         Color32 color = tireWear ? new Color32(228, 235, 242, 255) : new Color32(85, 196, 239, 255);
@@ -5355,7 +5355,8 @@ public sealed class StartupMenu : MonoBehaviour
         {
             var painter = context.painter2D;
             painter.strokeColor = icon.resolvedStyle.color;
-            painter.lineWidth = 2;
+            float scale = size / 40f;
+            painter.lineWidth = 2 * scale;
             painter.BeginPath();
             if (tireWear)
             {
@@ -5375,12 +5376,12 @@ public sealed class StartupMenu : MonoBehaviour
             painter.Stroke();
             void Circle(float x, float y, float radius)
             {
-                painter.MoveTo(new Vector2(x + radius, y));
-                painter.Arc(new Vector2(x, y), radius, Angle.Degrees(0), Angle.Degrees(360));
+                painter.MoveTo(new Vector2(x + radius, y) * scale);
+                painter.Arc(new Vector2(x, y) * scale, radius * scale, Angle.Degrees(0), Angle.Degrees(360));
             }
             void Line(float x1, float y1, float x2, float y2)
             {
-                painter.MoveTo(new Vector2(x1, y1)); painter.LineTo(new Vector2(x2, y2));
+                painter.MoveTo(new Vector2(x1, y1) * scale); painter.LineTo(new Vector2(x2, y2) * scale);
             }
         };
         return icon;
@@ -6908,6 +6909,10 @@ public sealed class StartupMenu : MonoBehaviour
                 menu.AddItem("Call Caution", false, CallCaution);
             else
                 menu.AddDisabledItem("Call Caution", false);
+            if (preview.CanTriggerPlayerMechanicalFailure && !sessionInGarage && !PitSettingsOpen)
+                menu.AddItem("Trigger Player Mechanical Failure", false, preview.TriggerPlayerMechanicalFailure);
+            else
+                menu.AddDisabledItem("Trigger Player Mechanical Failure", false);
         }
         menu.DropDown(trackSettingsButton.worldBound, trackSettingsButton, DropdownMenuSizeMode.Content);
     }
@@ -7147,6 +7152,14 @@ public sealed class StartupMenu : MonoBehaviour
             name = "trackSnapshotComment",
             multiline = true
         });
+        comment.style.whiteSpace = WhiteSpace.Normal;
+        var commentInput = comment.Q(className: "unity-base-text-field__input");
+        commentInput.style.whiteSpace = WhiteSpace.Normal;
+        commentInput.Query<TextElement>().ForEach(text =>
+        {
+            text.style.whiteSpace = WhiteSpace.Normal;
+            text.style.minWidth = 0;
+        });
         comment.style.height = 110;
         comment.style.flexGrow = 0;
         comment.style.flexShrink = 0;
@@ -7157,9 +7170,11 @@ public sealed class StartupMenu : MonoBehaviour
         statusRow.style.alignItems = Align.Center;
         statusRow.style.height = 32;
         statusRow.style.flexShrink = 0;
-        var activity = CreateSimulationActivityIcon();
-        activity.style.width = activity.style.height = 18;
-        activity.style.marginTop = activity.style.marginBottom = 0;
+        const float activitySize = 18;
+        var activity = TrackIndicatorIcon(tireWear: true, size: activitySize);
+        activity.style.width = activity.style.height = activitySize;
+        activity.style.flexShrink = 0;
+        activity.style.transformOrigin = new TransformOrigin(Length.Percent(50), Length.Percent(50));
         activity.style.marginRight = 7;
         activity.style.display = DisplayStyle.None;
         statusRow.Add(activity);
