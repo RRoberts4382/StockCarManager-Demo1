@@ -271,6 +271,8 @@ internal sealed class RaceSessionRun
     public float Elapsed => (float)PreciseElapsed;
     public SessionWeatherState Weather { get; }
     public int TimingRevision { get; private set; }
+    public bool HasLapOfAtLeastOneMinute =>
+        cars.Any(car => car.Result.lapTimes.Exists(seconds => seconds >= 60f && !float.IsInfinity(seconds)));
     public float Remaining => Math.Max(0f, session.minutes * 60f - Elapsed);
     public float PlayerBestLap => cars[0].Result.FastestLap;
     public int TargetLaps { get; private set; }
