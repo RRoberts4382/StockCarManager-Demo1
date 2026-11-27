@@ -23,11 +23,12 @@ internal sealed class VehicleCollision001
         internal readonly int First, Second;
         internal readonly Vector2 FirstOffset, SecondOffset;
         internal readonly bool FirstSide, SecondSide;
+        internal readonly Vector2? FirstPanelContact, SecondPanelContact;
         internal readonly float Damage;
         internal bool SideToSide => FirstSide && SecondSide;
 
         internal BodyImpact(int first, int second, Vector2 firstOffset, Vector2 secondOffset,
-            bool firstSide, bool secondSide, float damage)
+            bool firstSide, bool secondSide, float damage, Vector2? firstPanelContact = null, Vector2? secondPanelContact = null)
         {
             First = first;
             Second = second;
@@ -35,6 +36,8 @@ internal sealed class VehicleCollision001
             SecondOffset = secondOffset;
             FirstSide = firstSide;
             SecondSide = secondSide;
+            FirstPanelContact = firstPanelContact;
+            SecondPanelContact = secondPanelContact;
             Damage = damage;
         }
     }
@@ -84,7 +87,7 @@ internal sealed class VehicleCollision001
     public void Resolve(RaceSessionRun run, float lapLength, float seconds,
         bool[] onTrack, float[] startDistances, float[] endDistances, float[] startLanes, float[] endLanes,
         bool wrap = true, float[] startYaw = null, float[] endYaw = null, bool[] draftBumpEligible = null,
-        int[] strongDraftBumpTargets = null)
+        int[] strongDraftBumpTargets = null, CornerYawSweep[] cornerYaw = null)
     {
         Array.Clear(draftBumpSpeedChange, 0, draftBumpSpeedChange.Length);
         Array.Clear(gaveDraftBump, 0, gaveDraftBump.Length);
@@ -134,11 +137,22 @@ internal sealed class VehicleCollision001
                 }
                 else contact = OverlapsDuringStep(gap, longitudinal, ContactLength, ref enter, ref exit) &&
                     OverlapsDuringStep(side, lateral, contactWidth, ref enter, ref exit);
+                bool yawTouching = false;
+                YawHit yawHit = default;
+                bool yawContact = !oriented && cornerYaw != null &&
+                    (cornerYaw[first].Active || cornerYaw[second].Active) &&
+                    SweepCornerYaw(cornerYaw[first], cornerYaw[second], new Vector2(side, gap), new Vector2(lateral, longitudinal),
+                        seconds, touching[first, second], !contact, out yawHit, out yawTouching);
+                if (yawContact)
+                {
+                    contact = true;
+                    enter = yawHit.Time;
+                }
                 bool continuingBump = gentleBumpContacts[first, second];
                 bool gentleBump = false;
                 if (contact && (!touching[first, second] || continuingBump))
                 {
-                    if (draftBumpEligible != null && wrap && !oriented &&
+                    if (!yawContact && draftBumpEligible != null && wrap && !oriented &&
                         draftBumpEligible[first] && draftBumpEligible[second] &&
                         Mathf.Abs(gap) >= ContactLength - .05f && gap * (gap + longitudinal) > 0f &&
                         Mathf.Abs(side) <= DraftBumpAlignment && Mathf.Abs(side + lateral) <= DraftBumpAlignment &&
@@ -167,7 +181,8 @@ internal sealed class VehicleCollision001
                         }
                     }
 
-                    float relativeSpeed = gentleBump ? 0f : Mathf.Sqrt(longitudinal * longitudinal + lateral * lateral) / seconds;
+                    float relativeSpeed = yawContact ? yawHit.ClosingSpeed :
+                        gentleBump ? 0f : Mathf.Sqrt(longitudinal * longitudinal + lateral * lateral) / seconds;
                     float damage = Mathf.Clamp(relativeSpeed * 1.2f, .5f, 100f);
                     // A gentle draft bump leaves a scuff on first contact without adding race damage.
                     if (ReportBodyImpact != null && (!gentleBump || !continuingBump))
@@ -179,8 +194,12 @@ internal sealed class VehicleCollision001
                             firstOffset = LocalOffset(offset, Mathf.LerpAngle(startYaw[first], endYaw[first], enter));
                             secondOffset = LocalOffset(-offset, Mathf.LerpAngle(startYaw[second], endYaw[second], enter));
                         }
-                        ReportBodyImpact(new BodyImpact(first, second, firstOffset, secondOffset,
-                            IsSideContact(firstOffset, contactWidth), IsSideContact(secondOffset, contactWidth), damage));
+                        if (yawContact)
+                            ReportBodyImpact(new BodyImpact(first, second, firstOffset, secondOffset,
+                                yawHit.FirstSide, yawHit.SecondSide, damage, yawHit.FirstPoint, yawHit.SecondPoint));
+                        else
+                            ReportBodyImpact(new BodyImpact(first, second, firstOffset, secondOffset,
+                                IsSideContact(firstOffset, contactWidth), IsSideContact(secondOffset, contactWidth), damage));
                     }
                     if (!gentleBump)
                     {
@@ -201,9 +220,9 @@ internal sealed class VehicleCollision001
 
                 // Small release margin avoids repeated impacts from contact projection jitter.
                 float releaseMargin = touching[first, second] || gentleBump || impactDamage[first] > 0f ? .05f : 0f;
-                touching[first, second] = oriented
+                touching[first, second] = yawTouching || (oriented
                     ? PitFootprint.Overlaps(gap + longitudinal, side + lateral, endYaw[first], endYaw[second], releaseMargin * .5f)
-                    : Mathf.Abs(gap + longitudinal) < ContactLength + releaseMargin && Mathf.Abs(side + lateral) < contactWidth + releaseMargin;
+                    : Mathf.Abs(gap + longitudinal) < ContactLength + releaseMargin && Mathf.Abs(side + lateral) < contactWidth + releaseMargin);
                 gentleBumpContacts[first, second] = touching[first, second] && (contact ? gentleBump : continuingBump);
             }
         }
@@ -213,6 +232,170 @@ internal sealed class VehicleCollision001
             if (impactDamage[i] > 0f)
                 run.ApplyDamage(i, impactDamage[i]);
         }
+    }
+
+    internal readonly struct CornerYawSweep
+    {
+        private readonly float start, end, halfWidth;
+        private readonly Vector2 pivot;
+        internal bool Active => start != 0f || end != 0f;
+        internal float HalfWidth => halfWidth > 0f ? halfWidth : ContactWidth * .5f;
+        internal float Reach => Mathf.Max(Mathf.Abs(start), Mathf.Abs(end)) * Mathf.Deg2Rad *
+            (ContactLength * .5f + Mathf.Abs(pivot.y) + HalfWidth + Mathf.Abs(pivot.x));
+
+        internal CornerYawSweep(float start, float end, Vector2 pivot, float halfWidth)
+        {
+            this.start = start;
+            this.end = end;
+            this.pivot = pivot;
+            this.halfWidth = halfWidth;
+        }
+
+        internal YawFootprint At(Vector2 position, float time)
+        {
+            float yaw = Mathf.Lerp(start, end, time) * Mathf.Deg2Rad;
+            var forward = new Vector2(Mathf.Sin(yaw), Mathf.Cos(yaw));
+            var right = new Vector2(forward.y, -forward.x);
+            Vector2 center = position + pivot - right * pivot.x - forward * pivot.y;
+            return new YawFootprint(center, forward, right, ContactLength * .5f, HalfWidth);
+        }
+    }
+
+    internal readonly struct YawFootprint
+    {
+        internal readonly Vector2 Center, Forward, Right;
+        private readonly float halfLength, halfWidth;
+
+        internal YawFootprint(Vector2 center, Vector2 forward, Vector2 right, float halfLength, float halfWidth)
+        {
+            Center = center;
+            Forward = forward;
+            Right = right;
+            this.halfLength = halfLength;
+            this.halfWidth = halfWidth;
+        }
+
+        internal YawFootprint Rear => new YawFootprint(Center - Forward * (halfLength * .5f),
+            Forward, Right, halfLength * .5f, halfWidth);
+        internal float RadiusAlong(Vector2 axis) =>
+            halfWidth * Mathf.Abs(Vector2.Dot(Right, axis)) + halfLength * Mathf.Abs(Vector2.Dot(Forward, axis));
+        internal Vector2 LocalPoint(Vector2 point) => new Vector2(Vector2.Dot(point - Center, Right), Vector2.Dot(point - Center, Forward));
+        internal bool IsSide(Vector2 normal) =>
+            Mathf.Abs(Vector2.Dot(Right, normal)) >= Mathf.Abs(Vector2.Dot(Forward, normal));
+    }
+
+    private readonly struct YawHit
+    {
+        internal readonly float Time, ClosingSpeed;
+        internal readonly Vector2 FirstPoint, SecondPoint;
+        internal readonly bool FirstSide, SecondSide;
+
+        internal YawHit(float time, float closingSpeed, YawFootprint first, YawFootprint second, Vector2 point, Vector2 normal)
+        {
+            Time = time;
+            ClosingSpeed = closingSpeed;
+            FirstPoint = first.LocalPoint(point);
+            SecondPoint = second.LocalPoint(point);
+            FirstSide = first.IsSide(normal);
+            SecondSide = second.IsSide(normal);
+        }
+    }
+
+    private static bool SweepCornerYaw(CornerYawSweep first, CornerYawSweep second, Vector2 offset, Vector2 movement,
+        float seconds, bool wasTouching, bool checkImpact, out YawHit hit, out bool touchingAtEnd)
+    {
+        hit = default;
+        touchingAtEnd = false;
+        const float release = .025f;
+        float reach = first.Reach + second.Reach + release;
+        float enter = 0f, exit = 1f;
+        if (!OverlapsDuringStep(offset.x, movement.x, first.HalfWidth + second.HalfWidth + reach, ref enter, ref exit) ||
+            !OverlapsDuringStep(offset.y, movement.y, ContactLength + reach, ref enter, ref exit))
+            return false;
+
+        touchingAtEnd = ClearanceAt(1f, out _, out _, out _) <= (wasTouching ? release : 0f);
+        if (wasTouching || !checkImpact) return false;
+
+        int samples = Mathf.Clamp(Mathf.CeilToInt((movement.magnitude * (exit - enter) + reach) / .025f), 4, 32);
+        float previousTime = enter;
+        float previous = ClearanceAt(enter, out _, out _, out _);
+        for (int step = 1; step <= samples; step++)
+        {
+            float time = Mathf.Lerp(enter, exit, step / (float)samples);
+            float clearance = ClearanceAt(time, out _, out _, out _);
+            if (clearance <= 0f && (previous >= 0f || step == 1))
+            {
+                float duration = (time - previousTime) * seconds;
+                float speed = duration > 0f ? (previous - clearance) / duration : 0f;
+                if (speed > .01f)
+                {
+                    float impactTime = previous > 0f ? Mathf.Lerp(previousTime, time, previous / (previous - clearance)) : previousTime;
+                    ClearanceAt(impactTime, out var contactFirst, out var contactSecond, out var normal);
+                    Vector2 point = FootprintContactPoint(contactFirst, contactSecond, normal);
+                    hit = new YawHit(impactTime, speed, first.At(Vector2.zero, impactTime),
+                        second.At(offset + movement * impactTime, impactTime), point, normal);
+                    return true;
+                }
+            }
+            previousTime = time;
+            previous = clearance;
+        }
+        return false;
+
+        float ClearanceAt(float time, out YawFootprint contactFirst, out YawFootprint contactSecond, out Vector2 normal)
+        {
+            YawFootprint a = first.At(Vector2.zero, time);
+            YawFootprint b = second.At(offset + movement * time, time);
+            contactFirst = first.Active ? a.Rear : a;
+            contactSecond = b;
+            normal = default;
+            float minimum = float.PositiveInfinity;
+            if (first.Active) minimum = FootprintClearance(contactFirst, contactSecond, out normal);
+            if (second.Active)
+            {
+                var rear = b.Rear;
+                float otherClearance = FootprintClearance(a, rear, out var otherNormal);
+                if (otherClearance < minimum)
+                {
+                    minimum = otherClearance;
+                    contactFirst = a;
+                    contactSecond = rear;
+                    normal = otherNormal;
+                }
+            }
+            return minimum;
+        }
+    }
+
+    private static float FootprintClearance(YawFootprint first, YawFootprint second, out Vector2 normal)
+    {
+        // The axis with the greatest separation becomes the contact normal at first touch.
+        Vector2 delta = second.Center - first.Center;
+        normal = first.Right;
+        float separation = SeparationOn(first.Right);
+        float other = SeparationOn(first.Forward);
+        if (other > separation) { separation = other; normal = first.Forward; }
+        other = SeparationOn(second.Right);
+        if (other > separation) { separation = other; normal = second.Right; }
+        other = SeparationOn(second.Forward);
+        if (other > separation) { separation = other; normal = second.Forward; }
+        if (Vector2.Dot(delta, normal) < 0f) normal = -normal;
+        return separation;
+
+        float SeparationOn(Vector2 axis) =>
+            Mathf.Abs(Vector2.Dot(delta, axis)) - first.RadiusAlong(axis) - second.RadiusAlong(axis);
+    }
+
+    private static Vector2 FootprintContactPoint(YawFootprint first, YawFootprint second, Vector2 normal)
+    {
+        var along = new Vector2(normal.y, -normal.x);
+        float firstEdge = Vector2.Dot(first.Center, normal) + first.RadiusAlong(normal);
+        float secondEdge = Vector2.Dot(second.Center, normal) - second.RadiusAlong(normal);
+        float firstAlong = Vector2.Dot(first.Center, along), firstSpan = first.RadiusAlong(along);
+        float secondAlong = Vector2.Dot(second.Center, along), secondSpan = second.RadiusAlong(along);
+        float contactAlong = (Mathf.Max(firstAlong - firstSpan, secondAlong - secondSpan) +
+            Mathf.Min(firstAlong + firstSpan, secondAlong + secondSpan)) * .5f;
+        return normal * ((firstEdge + secondEdge) * .5f) + along * contactAlong;
     }
 
     // Split pit routes do not share a distance coordinate. Use the actual

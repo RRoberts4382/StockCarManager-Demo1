@@ -1967,7 +1967,10 @@ public sealed partial class TrackPreview : MonoBehaviour
             if (raceStart != null)
                 AdvanceRaceStartStep();
             else if (qualifying != null)
+            {
                 AdvanceQualifyingStep();
+                AdvanceCornerYaw(SessionStep);
+            }
             else
                 AdvancePracticeStep();
             PositionCars();
@@ -3370,6 +3373,7 @@ public sealed partial class TrackPreview : MonoBehaviour
 
     private void ResolveTrackCollisions(float seconds)
     {
+        AdvanceCornerYaw(seconds);
         if (!collisionsEnabled)
             return;
 
@@ -3420,7 +3424,8 @@ public sealed partial class TrackPreview : MonoBehaviour
         collisions.Resolve(SessionRun, lapLength, seconds, collisionParticipants, drivingDistances,
             collisionEndDistances, collisionTireStartLanes, collisionTireEndLanes,
             draftBumpEligible: allowDraftBumps ? draftBumpEligible : null,
-            strongDraftBumpTargets: allowDraftBumps ? draft.StrongDraftBumpTargets : null);
+            strongDraftBumpTargets: allowDraftBumps ? draft.StrongDraftBumpTargets : null,
+            cornerYaw: cornerYawSweeps);
         if ((TrackState is null or SessionTrackState.TrackOpen or SessionTrackState.WhiteFlag) &&
             !BlendingStartLanes && stages?.ReleasingRestartLanes != true && stages?.ReducedFuelBurn != true)
         {

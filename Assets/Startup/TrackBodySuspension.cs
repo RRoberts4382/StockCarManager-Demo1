@@ -143,15 +143,50 @@ public sealed partial class TrackPreview
     }
 
     private readonly BodySuspension[] bodySuspensions = new BodySuspension[CarCount];
-    // Decorative motion never consumes the race simulation's random sequence.
+    private readonly VehicleCollision001.CornerYawSweep[] cornerYawSweeps = new VehicleCollision001.CornerYawSweep[CarCount];
+    // Keep the yaw timing on its own random sequence.
     private readonly System.Random bodyYawRandom = new System.Random(Guid.NewGuid().GetHashCode());
     private ParticleSystem underbodySparks;
 
     private void ResetBodySuspension()
     {
         Array.Clear(bodySuspensions, 0, bodySuspensions.Length);
+        Array.Clear(cornerYawSweeps, 0, cornerYawSweeps.Length);
         underbodySparks?.Clear(false);
     }
+
+    private void AdvanceCornerYaw(float seconds)
+    {
+        for (int i = 0; i < cars.Length; i++)
+        {
+            cornerYawSweeps[i] = default;
+            if (!cars[i].gameObject.activeSelf)
+                continue;
+
+            var traffic = isQualifying ? (i == 0 ? qualifying?.Car : null) : trafficCars?[i];
+            float distance = traffic?.TrackDistance ?? sessionDistances[i];
+            float speed = SessionRun.CurrentSpeed(i);
+            bool onTrack = CanUseBodySuspension(i, traffic) && !SessionRun.Finished(i);
+            bool canStartYaw = onTrack && speed > 8f;
+            float turn = canStartYaw ? SessionRun.TireHandlingTurnAt(distance) : 0f;
+            float turnAhead = canStartYaw ? SessionRun.TireHandlingTurnAt(distance + speed * CornerYaw.ExitLookAhead) : 0f;
+            ref var yaw = ref bodySuspensions[i].BodyYaw;
+            float startYaw = yaw.Degrees;
+            yaw.Advance(turn, turnAhead, seconds, bodyYawRandom);
+            var visuals = carVisualLods[i];
+            bool bodyYaws = onTrack && visuals?.Current?.SupportsBodyTravel == true;
+            var pivot = visuals?.BodyYawPivot ?? Vector3.zero;
+            float halfWidth = raceCarHalfWidths[i] > 0f ? raceCarHalfWidths[i] : VehicleCollision001.ContactWidth * .5f;
+            cornerYawSweeps[i] = new VehicleCollision001.CornerYawSweep(
+                bodyYaws ? startYaw : 0f, bodyYaws ? yaw.Degrees : 0f, new Vector2(pivot.x, pivot.z), halfWidth);
+        }
+    }
+
+    private bool CanUseBodySuspension(int index, TrackPitTraffic.Car traffic) =>
+        traffic?.InPit != true && traffic?.ApronEntryActive != true && traffic?.ApronExitActive != true &&
+        (traffic?.FlatTireLaneBlend ?? 0f) == 0f && !crashes[index].Active && !SessionRun.Retired(index) &&
+        !iowaRecoveredCars[index].HasValue && (index != 0 || !NorthWilkesboroGarageOffPitRoute) &&
+        (raceStart == null || raceReleased);
 
     private void SampleBodySuspension()
     {
@@ -168,20 +203,13 @@ public sealed partial class TrackPreview
             var traffic = isQualifying ? (i == 0 ? qualifying?.Car : null) : trafficCars?[i];
             float distance = traffic?.TrackDistance ?? sessionDistances[i];
             float speed = SessionRun.CurrentSpeed(i);
-            bool onTrack = traffic?.InPit != true && traffic?.ApronEntryActive != true && traffic?.ApronExitActive != true &&
-                (traffic?.FlatTireLaneBlend ?? 0f) == 0f && !crashes[i].Active && !SessionRun.Retired(i) &&
-                !iowaRecoveredCars[i].HasValue && (i != 0 || !NorthWilkesboroGarageOffPitRoute) &&
-                (raceStart == null || raceReleased);
+            bool onTrack = CanUseBodySuspension(i, traffic);
             float load = onTrack ? SessionRun.VisualCorneringLoadAt(distance, speed) : 0f;
             suspension.CorneringLoad = Mathf.Lerp(suspension.CorneringLoad, load, rollResponse);
             bool underDriverControl = !crashes[i].Active && !SessionRun.Retired(i) && !SessionRun.Finished(i);
             float pitch = underDriverControl ? PedalPitch(SessionRun.ThrottleInput(i), SessionRun.BrakeInput(i)) : 0f;
             suspension.Pitch = Mathf.Lerp(suspension.Pitch, pitch, pitchResponse);
 
-            bool canYaw = onTrack && underDriverControl && speed > 8f;
-            float turn = canYaw ? SessionRun.TireHandlingTurnAt(distance) : 0f;
-            float turnAhead = canYaw ? SessionRun.TireHandlingTurnAt(distance + speed * CornerYaw.ExitLookAhead) : 0f;
-            suspension.BodyYaw.Advance(turn, turnAhead, SessionStep, bodyYawRandom);
             suspension.Heave = 0f;
 
             if (onTrack && speed > minimumBumpSpeed)

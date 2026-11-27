@@ -67,7 +67,7 @@ internal sealed class TrackBodyDamage
         Revision++;
     }
 
-    internal Vector3 Add(Vector2 otherOffset, bool side, float damage, bool modified = false)
+    internal Vector3 Add(Vector2 otherOffset, bool side, float damage, bool modified = false, Vector2? panelContact = null)
     {
         float scuff = Mathf.Lerp(.39f, .95f, Mathf.InverseLerp(.5f, 22f, damage));
         float depth = damage >= 6f ? Mathf.Lerp(.030f, .13f, Mathf.InverseLerp(6f, 32f, damage)) : 0f;
@@ -77,8 +77,8 @@ internal sealed class TrackBodyDamage
         if (side)
         {
             depth = Mathf.Min(depth, .10f);
-            float sign = otherOffset.x < 0f ? -1f : 1f;
-            float z = Mathf.Clamp(otherOffset.y * .52f, -1.10f, 1.00f);
+            float sign = (panelContact?.x ?? otherOffset.x) < 0f ? -1f : 1f;
+            float z = Mathf.Clamp(panelContact?.y ?? otherOffset.y * .52f, -1.10f, 1.00f);
             int section = z > .48f ? 0 : z < -.43f ? 2 : 1;
             slot = 2 + (sign < 0f ? 0 : 3) + section;
             // The lower door also has support vertices on the lowest-detail short-track body.
@@ -90,10 +90,10 @@ internal sealed class TrackBodyDamage
         }
         else
         {
-            float sign = otherOffset.y < 0f ? -1f : 1f;
+            float sign = (panelContact?.y ?? otherOffset.y) < 0f ? -1f : 1f;
             slot = sign > 0f ? 0 : 1;
             float bumperHeight = sign > 0f ? .27f : modified ? .23f : .34f;
-            center = new Vector3(Mathf.Clamp(otherOffset.x * .5f, -.65f, .65f), bumperHeight, 1.35f * sign);
+            center = new Vector3(Mathf.Clamp(panelContact?.x ?? otherOffset.x * .5f, -.65f, .65f), bumperHeight, 1.35f * sign);
             normal = Vector3.forward * sign;
             scuff = Mathf.Max(.48f, scuff);
             depth = Mathf.Min(depth, .065f);
@@ -195,9 +195,9 @@ public sealed partial class TrackPreview
 
     private void OnVehicleBodyImpact(VehicleCollision001.BodyImpact impact)
     {
-        Vector3 point = RecordTrackPanelImpact(impact.First, impact.FirstOffset, impact.FirstSide, impact.Damage);
+        Vector3 point = RecordTrackPanelImpact(impact.First, impact.FirstOffset, impact.FirstSide, impact.Damage, impact.FirstPanelContact);
         if (impact.Second >= 0)
-            RecordTrackPanelImpact(impact.Second, impact.SecondOffset, impact.SecondSide, impact.Damage);
+            RecordTrackPanelImpact(impact.Second, impact.SecondOffset, impact.SecondSide, impact.Damage, impact.SecondPanelContact);
         if (!impact.SideToSide) return;
 
         float speed = SessionRun.CurrentSpeed(impact.First);
@@ -210,19 +210,19 @@ public sealed partial class TrackPreview
         EmitBodyContactEffects(cars[impact.First], point, impact.Damage, speed);
     }
 
-    private Vector3 RecordTrackPanelImpact(int index, Vector2 offset, bool side, float damage)
+    private Vector3 RecordTrackPanelImpact(int index, Vector2 offset, bool side, float damage, Vector2? panelContact = null)
     {
         var visual = carVisualLods[index]?.Current;
-        float sideContactStation = offset.y * .52f;
+        float sideContactStation = panelContact?.y ?? offset.y * .52f;
         bool modified = HasModifiedNerfBars(visual?.Resource);
         bool nerfBar = modified && sideContactStation >= -.50f && sideContactStation <= .76f;
         if (visual == null || side && !nerfBar && !IsBodyDamagePrototype(index, visual.Resource))
         {
             float halfWidth = raceCarHalfWidths[index] > 0f ? raceCarHalfWidths[index] : .58f;
-            return new Vector3(Mathf.Sign(offset.x) * halfWidth, .33f, Mathf.Clamp(offset.y * .52f, -1.2f, 1.2f));
+            return new Vector3(Mathf.Sign(panelContact?.x ?? offset.x) * halfWidth, .33f, Mathf.Clamp(sideContactStation, -1.2f, 1.2f));
         }
         var state = carBodyDamage[index] ??= new TrackBodyDamage();
-        Vector3 contact = state.Add(offset, side, damage, modified);
+        Vector3 contact = state.Add(offset, side, damage, modified, panelContact);
         bodyDamageDirty[index] = true;
         // The mesh work is deferred to presentation so collision and scoring do not wait on it.
         return cars[index].InverseTransformPoint(visual.Body.TransformPoint(contact));
