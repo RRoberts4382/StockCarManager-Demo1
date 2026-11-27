@@ -1,5 +1,6 @@
 using System.Linq;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -2116,7 +2117,11 @@ public sealed partial class TrackPreview : MonoBehaviour
         {
             if (i == winnerBurnoutCar || i == 0 && NorthWilkesboroParkedForGarage)
                 continue;
-            if (!SessionRun.Retired(i) && (!trafficCars[i].InPit || trafficCars[i].PitDistance != practiceStallDistances[i]))
+            var car = trafficCars[i];
+            // Pit cleanup can remove a finisher without changing their scored result.
+            if (SessionRun.Retired(i) || (car.InGarage && car.Retired))
+                continue;
+            if (!car.InPit || car.PitDistance != practiceStallDistances[i])
                 return false;
         }
         return true;
@@ -7267,22 +7272,79 @@ public sealed partial class TrackPreview : MonoBehaviour
         }
     }
 
-    private Mesh sessionSkidMesh;
-    private readonly List<Vector3> skidVertices = new();
-    private readonly List<Color32> skidColors = new();
-    private readonly List<int> skidTriangles = new();
+    private const int SkidMeshSegmentCapacity = 8192;
+    private const int SkidMeshVertexCapacity = 4 * SkidMeshSegmentCapacity;
+    private const MeshUpdateFlags SkidMeshUpdateFlags =
+        MeshUpdateFlags.DontRecalculateBounds | MeshUpdateFlags.DontValidateIndices;
+    private static readonly VertexAttributeDescriptor[] SkidVertexLayout =
+    {
+        new(VertexAttribute.Position, VertexAttributeFormat.Float32, 3),
+        new(VertexAttribute.Color, VertexAttributeFormat.UNorm8, 4)
+    };
+    private static readonly ushort[] SkidMeshIndices = BuildSkidMeshIndices();
+    private readonly SkidMarkLayer skidMarks = new();
     private Vector3?[,] previousSkidContacts;
-    private bool skidMeshDirty;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private readonly struct SkidVertex
+    {
+        internal readonly Vector3 Position;
+        internal readonly Color32 Color;
+
+        internal SkidVertex(Vector3 position, Color32 color)
+        {
+            Position = position;
+            Color = color;
+        }
+    }
+
+    private sealed class SkidMarkLayer
+    {
+        internal readonly List<SkidVertex> Pending = new();
+        internal readonly List<Mesh> Meshes = new();
+        internal GameObject Root;
+        internal Material Material;
+        internal Bounds Bounds;
+        internal int VertexCount;
+    }
+
+    private static ushort[] BuildSkidMeshIndices()
+    {
+        var indices = new ushort[6 * SkidMeshSegmentCapacity];
+        for (int segment = 0; segment < SkidMeshSegmentCapacity; segment++)
+        {
+            int vertex = 4 * segment;
+            int index = 6 * segment;
+            indices[index] = (ushort)vertex;
+            indices[index + 1] = (ushort)(vertex + 2);
+            indices[index + 2] = (ushort)(vertex + 1);
+            indices[index + 3] = (ushort)(vertex + 1);
+            indices[index + 4] = (ushort)(vertex + 2);
+            indices[index + 5] = (ushort)(vertex + 3);
+        }
+        return indices;
+    }
 
     private void ResetSessionSkids()
     {
         ResetTrackSmoke();
-        skidVertices.Clear();
-        skidColors.Clear();
-        skidTriangles.Clear();
-        sessionSkidMesh?.Clear();
+        ClearSkidMarkMeshes();
         previousSkidContacts = new Vector3?[cars.Length, 4];
-        skidMeshDirty = false;
+    }
+
+    private void ClearSkidMarkMeshes()
+    {
+        if (skidMarks.Root != null)
+        {
+            skidMarks.Root.SetActive(false);
+            Destroy(skidMarks.Root);
+            skidMarks.Root = null;
+        }
+        foreach (var mesh in skidMarks.Meshes)
+            Destroy(mesh);
+        skidMarks.Meshes.Clear();
+        skidMarks.Pending.Clear();
+        skidMarks.VertexCount = 0;
     }
 
     private void SampleSessionSkids()
@@ -7359,54 +7421,84 @@ public sealed partial class TrackPreview : MonoBehaviour
             return;
 
         Vector3 across = Vector3.Cross(Vector3.up, travel).normalized * .075f;
-        int first = skidVertices.Count;
-        skidVertices.Add(previous - across);
-        skidVertices.Add(previous + across);
-        skidVertices.Add(current - across);
-        skidVertices.Add(current + across);
         var color = RubberVertex(strength);
-        for (int i = 0; i < 4; i++)
-            skidColors.Add(color);
-
-        skidTriangles.Add(first);
-        skidTriangles.Add(first + 2);
-        skidTriangles.Add(first + 1);
-        skidTriangles.Add(first + 1);
-        skidTriangles.Add(first + 2);
-        skidTriangles.Add(first + 3);
-        skidMeshDirty = true;
+        var pending = skidMarks.Pending;
+        pending.Add(new SkidVertex(previous - across, color));
+        pending.Add(new SkidVertex(previous + across, color));
+        pending.Add(new SkidVertex(current - across, color));
+        pending.Add(new SkidVertex(current + across, color));
     }
 
     private void PresentSessionSkids()
     {
-        if (!skidMeshDirty)
+        var layer = skidMarks;
+        if (layer.Pending.Count == 0)
             return;
 
-        if (sessionSkidMesh == null)
+        if (layer.Material == null)
         {
             var shader = Resources.Load<Shader>("Startup/TrackRubber");
-            if (shader == null)
+            if (shader == null || !shader.isSupported)
+            {
+                layer.Pending.Clear();
                 return;
+            }
 
-            const string label = "Session skid marks";
-            sessionSkidMesh = new Mesh { name = label, indexFormat = IndexFormat.UInt32 };
-            sessionSkidMesh.MarkDynamic();
-            roadMeshes.Add(sessionSkidMesh);
-            var overlay = CreateObject(label, transform);
-            overlay.AddComponent<MeshFilter>().sharedMesh = sessionSkidMesh;
-            var renderer = overlay.AddComponent<MeshRenderer>();
-            renderer.shadowCastingMode = ShadowCastingMode.Off;
-            renderer.receiveShadows = false;
-            var material = new Material(shader) { renderQueue = (int)RenderQueue.Transparent - 19 };
-            material.SetFloat(RubberBuildupProperty, 1f);
-            materials.Add(material);
-            renderer.sharedMaterial = material;
+            layer.Material = new Material(shader) { renderQueue = (int)RenderQueue.Transparent - 19 };
+            layer.Material.SetFloat(RubberBuildupProperty, 1f);
+            materials.Add(layer.Material);
         }
+        if (layer.Root == null)
+            layer.Root = CreateObject("Session skid marks", transform);
 
-        sessionSkidMesh.SetVertices(skidVertices);
-        sessionSkidMesh.SetColors(skidColors);
-        sessionSkidMesh.SetTriangles(skidTriangles, 0);
-        skidMeshDirty = false;
+        // Append just the new vertices. Full chunks stay visible but never need another upload.
+        int offset = 0;
+        while (offset < layer.Pending.Count)
+        {
+            if (layer.VertexCount == 0)
+            {
+                layer.Meshes.Add(CreateSkidMarkChunk(layer));
+                layer.Bounds = new Bounds(layer.Pending[offset].Position, Vector3.zero);
+            }
+
+            Mesh mesh = layer.Meshes[layer.Meshes.Count - 1];
+            int count = Mathf.Min(layer.Pending.Count - offset, SkidMeshVertexCapacity - layer.VertexCount);
+            mesh.SetVertexBufferData(layer.Pending, offset, layer.VertexCount, count, flags: SkidMeshUpdateFlags);
+            for (int i = offset; i < offset + count; i++)
+                layer.Bounds.Encapsulate(layer.Pending[i].Position);
+            offset += count;
+            layer.VertexCount += count;
+            mesh.SetSubMesh(0, new SubMeshDescriptor(0, layer.VertexCount / 4 * 6)
+            {
+                bounds = layer.Bounds,
+                vertexCount = layer.VertexCount
+            }, SkidMeshUpdateFlags);
+            mesh.bounds = layer.Bounds;
+            if (layer.VertexCount == SkidMeshVertexCapacity)
+            {
+                mesh.UploadMeshData(markNoLongerReadable: true);
+                layer.VertexCount = 0;
+            }
+        }
+        layer.Pending.Clear();
+    }
+
+    private static Mesh CreateSkidMarkChunk(SkidMarkLayer layer)
+    {
+        var mesh = new Mesh { name = layer.Root.name };
+        mesh.MarkDynamic();
+        mesh.SetVertexBufferParams(SkidMeshVertexCapacity, SkidVertexLayout);
+        mesh.SetIndexBufferParams(SkidMeshIndices.Length, IndexFormat.UInt16);
+        mesh.SetIndexBufferData(SkidMeshIndices, 0, 0, SkidMeshIndices.Length, SkidMeshUpdateFlags);
+        mesh.subMeshCount = 1;
+
+        var overlay = CreateObject("Skid marks", layer.Root.transform);
+        overlay.AddComponent<MeshFilter>().sharedMesh = mesh;
+        var renderer = overlay.AddComponent<MeshRenderer>();
+        renderer.shadowCastingMode = ShadowCastingMode.Off;
+        renderer.receiveShadows = false;
+        renderer.sharedMaterial = layer.Material;
+        return mesh;
     }
 
     private static Color32 RubberVertex(float strength) =>
@@ -7885,6 +7977,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             Destroy(bristolConcrete);
         if (bristolAsphalt != null)
             Destroy(bristolAsphalt);
+        ClearSkidMarkMeshes();
         foreach (var mesh in roadMeshes)
             Destroy(mesh);
         foreach (var material in materials)
