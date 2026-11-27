@@ -7666,18 +7666,24 @@ public sealed class StartupMenu : MonoBehaviour
         trackName.text = $"{track.Definition.name} - {session.name}";
         trackName.tooltip = trackName.text;
         var seriesName = trackScreen.Q<Label>("trackSeriesName");
-        if (developmentPracticeFromSchedule)
-            seriesName.text = careerSetup.SeriesName(developmentPracticeCareer);
-        else if (developmentPractice)
+        RacingSeries series;
+        if (developmentPractice && !developmentPracticeFromSchedule)
         {
             string model = playerCar?.modelResource;
-            var series = RacingSeries.Catalog.FirstOrDefault(item =>
-                item.carModel == model || item.ManufacturerChoices.Any(make => item.ModelFor(make) == model));
-            seriesName.text = series?.name ?? RacingSeries.ForId("nascar-cup").name;
+            series = RacingSeries.Catalog.FirstOrDefault(item =>
+                item.carModel == model || item.ManufacturerChoices.Any(make => item.ModelFor(make) == model))
+                ?? RacingSeries.ForId("nascar-cup");
+            seriesName.text = series.name;
         }
         else
-            seriesName.text = careerSetup.SeriesName(activeCareer);
+        {
+            var career = developmentPracticeFromSchedule ? developmentPracticeCareer : activeCareer;
+            series = career.SeriesRules;
+            seriesName.text = careerSetup.SeriesName(career);
+        }
         seriesName.tooltip = seriesName.text;
+        SetTrackHeaderLogo("trackVenueLogo", SeriesSettingsStore.LoadArtwork(track.Definition.logo));
+        SetTrackHeaderLogo("trackSeriesLogo", series.Logo);
         trackPreview.gameObject.SetActive(true);
         visitGarageButton.style.display = DisplayStyle.None;
         garageScreen.style.display = DisplayStyle.None;
@@ -7689,6 +7695,14 @@ public sealed class StartupMenu : MonoBehaviour
         scoringFlag.style.backgroundColor = session.kind == RaceSessionKind.Race ? Color.clear : StyleKeyword.Null;
         trackScreen.style.display = DisplayStyle.Flex;
         returnToGarageButton.Focus();
+    }
+
+    private void SetTrackHeaderLogo(string elementName, Texture2D artwork)
+    {
+        var logo = trackScreen.Q<Image>(elementName);
+        logo.image = artwork;
+        logo.scaleMode = ScaleMode.ScaleToFit;
+        logo.style.display = artwork == null ? DisplayStyle.None : DisplayStyle.Flex;
     }
 
     private Rect RaceImageRect()
