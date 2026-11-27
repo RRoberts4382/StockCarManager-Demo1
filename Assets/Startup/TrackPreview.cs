@@ -1651,7 +1651,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         }
         rubberSession = session;
         ResetSessionSkids();
-        BuildRubberOverlay();
+        rubberOverlayNeedsBuild = true;
         BuildTrackMarbles(session);
         UpdateRubberOverlay();
         if (bristolSun != null)
@@ -7131,6 +7131,8 @@ public sealed partial class TrackPreview : MonoBehaviour
     private Mesh rubberOverlayMesh;
     private MeshRenderer rubberOverlayRenderer;
     private Material rubberOverlayMaterial;
+    private bool rubberOverlayNeedsBuild;
+    internal bool RubberBuildupEnabled { get; private set; } = true;
     private static readonly int RubberBuildupProperty = Shader.PropertyToID("_Buildup");
     // Sample a smooth lateral fade with its peak on the preferred line.
     private static readonly float[] RubberStripeWeights = { 0f, .15625f, .5f, .84375f, 1f, .84375f, .5f, .15625f, 0f };
@@ -7147,8 +7149,28 @@ public sealed partial class TrackPreview : MonoBehaviour
         };
     }
 
+    internal void SetRubberBuildupEnabled(bool enabled)
+    {
+        if (RubberBuildupEnabled == enabled)
+            return;
+
+        RubberBuildupEnabled = enabled;
+        if (enabled)
+            UpdateRubberOverlay();
+        else if (rubberOverlayRenderer != null)
+            rubberOverlayRenderer.enabled = false;
+    }
+
     private void UpdateRubberOverlay()
     {
+        if (!RubberBuildupEnabled)
+            return;
+
+        if (rubberOverlayNeedsBuild)
+        {
+            rubberOverlayNeedsBuild = false;
+            BuildRubberOverlay();
+        }
         if (rubberOverlayRenderer == null) return;
         float amount = 0f;
         if (rubberSession != null && SessionRun != null)

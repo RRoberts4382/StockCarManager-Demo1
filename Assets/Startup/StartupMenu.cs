@@ -25,6 +25,7 @@ public sealed class StartupMenu : MonoBehaviour
     private const string PreferredLinePreference = "StockCarManager.Settings.PreferredLineVisible";
     private const string MarblesPreference = "StockCarManager.Settings.MarblesEnabled";
     private const string LooseCarSkidMarksPreference = "StockCarManager.Settings.LooseCarSkidMarksEnabled";
+    private const string RubberBuildupPreference = "StockCarManager.Settings.RubberBuildupEnabled";
     private const double CameraCycleIntervalSeconds = 8d;
     private static readonly TrackPreview.CameraAngle[] TrackCameraChoices =
     {
@@ -6883,6 +6884,13 @@ public sealed class StartupMenu : MonoBehaviour
                 PlayerPrefs.SetInt(LooseCarSkidMarksPreference, enabled ? 1 : 0);
                 PlayerPrefs.Save();
             });
+            menu.AddItem("Rubber Buildup", preview.RubberBuildupEnabled, () =>
+            {
+                bool enabled = !preview.RubberBuildupEnabled;
+                preview.SetRubberBuildupEnabled(enabled);
+                PlayerPrefs.SetInt(RubberBuildupPreference, enabled ? 1 : 0);
+                PlayerPrefs.Save();
+            });
         }
         if (preview?.SessionRun != null)
             menu.AddItem("Night Sky", preview.TrackSkyIsNight, ToggleTrackSky);
@@ -7615,6 +7623,7 @@ public sealed class StartupMenu : MonoBehaviour
             trackPreview.SetPreferredLineVisible(PlayerPrefs.GetInt(PreferredLinePreference, 1) != 0);
             trackPreview.SetMarblesEnabled(PlayerPrefs.GetInt(MarblesPreference, 1) != 0);
             trackPreview.SetLooseCarSkidMarksEnabled(PlayerPrefs.GetInt(LooseCarSkidMarksPreference, 1) != 0);
+            trackPreview.SetRubberBuildupEnabled(PlayerPrefs.GetInt(RubberBuildupPreference, 1) != 0);
             if (developmentPracticeFromSchedule)
                 trackPreview.InitializeSolo(track.Definition, ActiveSponsorNames(), playerCar, night);
             else
