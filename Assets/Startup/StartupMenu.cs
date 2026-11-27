@@ -3,6 +3,7 @@ using System.Linq;
 using System.Globalization;
 using System.IO;
 using UnityEngine;
+using UnityEngine.InputSystem;
 using UnityEngine.UIElements;
 
 public sealed class StartupMenu : MonoBehaviour
@@ -6204,6 +6205,15 @@ public sealed class StartupMenu : MonoBehaviour
         if (activeSession == null || trackPreview?.SessionRun == null)
             return;
 
+        if (!sessionInGarage && trackScreen.style.display == DisplayStyle.Flex && trackScreen.enabledInHierarchy &&
+            !PitSettingsOpen && !trackPreview.SessionComplete && Keyboard.current?.spaceKey.wasPressedThisFrame == true)
+        {
+            if (sessionPaused)
+                PlaySession();
+            else
+                PauseSession();
+        }
+
         if (garageVisitPending && trackPreview.PlayerParkedForGarage && !trackPreview.SessionComplete)
             OpenGarageAfterParking();
         else if (garageVisitPending && !sessionInGarage)
@@ -6891,7 +6901,8 @@ public sealed class StartupMenu : MonoBehaviour
         playSessionButton.SetEnabled(available && sessionPaused);
         pauseSessionButton.SetEnabled(available && !sessionPaused);
         playbackSpeedButton.SetEnabled(available);
-        playSessionButton.tooltip = $"Play at {sessionPlaybackSpeed}x";
+        playSessionButton.tooltip = $"Play at {sessionPlaybackSpeed}x (Spacebar)";
+        pauseSessionButton.tooltip = "Pause (Spacebar)";
         playbackSpeedButton.text = $"{sessionPlaybackSpeed}x \u25BE";
         playbackSpeedButton.tooltip = $"Playback speed \u00B7 {sessionPlaybackSpeed}x";
     }
