@@ -205,6 +205,8 @@ public sealed partial class TrackPreview : MonoBehaviour
     private float pitEntryTrackLane;
     private float pitExitTrackLane;
     private float formationExitLane, formationMergeLength;
+    private (float Distance, float Lane)[] greenFlagFormation;
+    private float greenFlagMergeEnd;
     private float pacePitEntryLane;
     private Pose pacePitEntryPose, cautionPaceExitPose;
     private float cautionPaceExitLane, cautionPaceMergeLength;
@@ -1575,6 +1577,8 @@ public sealed partial class TrackPreview : MonoBehaviour
         haulerGaragePhase = HaulerGaragePhase.OnPitRoute;
         lastHandlingSampleTime = 0d;
         raceReleased = false;
+        greenFlagFormation = null;
+        greenFlagMergeEnd = 0f;
         if (paceCar != null)
             Destroy(paceCar.gameObject);
         paceWheels = null;
@@ -2022,15 +2026,24 @@ public sealed partial class TrackPreview : MonoBehaviour
         cautionPaceSample = default;
         previousPaceSnapshotTime = double.NaN;
         stages.PaceTrafficSpeed = LimitCautionPaceTrafficSpeed;
-        bool releaseFormation = UsesOvalTraffic007;
+        bool releaseFormation = definition.majorStyle == "Oval" && !IgnorePreferredDrivingLine;
         float halfLane = releaseFormation ? FormationHalfLane : 0f;
+        if (releaseFormation)
+        {
+            greenFlagMergeEnd = FindGreenFlagMergeEnd();
+            greenFlagFormation = new (float Distance, float Lane)[cars.Length];
+        }
         for (int i = 0; i < cars.Length; i++)
         {
             var grid = raceStart.GridPosition(i, halfLane);
             sessionDistances[i] = grid.Distance;
             trafficCars[i] = pitTraffic.CreateTrackCar(grid.Distance);
             if (releaseFormation)
-                drivingLanes[i] = FormationTrackLane(grid.Distance, grid.Lane);
+            {
+                float formationLane = drivingLanesReady ? drivingLanes[i] : grid.Lane;
+                drivingLanes[i] = FormationTrackLane(grid.Distance, formationLane);
+                greenFlagFormation[i] = (grid.Distance, drivingLanes[i]);
+            }
         }
         if (releaseFormation)
             drivingLanesReady = true;
@@ -2726,10 +2739,13 @@ public sealed partial class TrackPreview : MonoBehaviour
         bool ovalTraffic = UsesOvalTraffic007;
         bool holdingCaution = ovalTraffic && stages?.ReducedFuelBurn == true;
         bool practiceYellow = practice?.State == SessionTrackState.Caution;
+        if (greenFlagFormation != null && (stages?.ControlsField == true || !FieldApproachingGreenFlagMergeEnd()))
+            greenFlagFormation = null;
+        bool greenFlagMerge = greenFlagFormation != null;
         // Drivers must clear each other when leaving the restart rows, even if
         // ordinary traffic interactions are disabled.
         bool protectRestartMerge = collisionsEnabled && !TrafficLaneChangesEnabled && stages?.ReleasingRestartLanes == true;
-        bool allowPassing = !protectRestartMerge && !practiceYellow && stages?.ReducedFuelBurn != true;
+        bool allowPassing = !greenFlagMerge && !protectRestartMerge && !practiceYellow && stages?.ReducedFuelBurn != true;
         bool forecastOvalPassing = ovalTraffic && allowPassing;
         bool canStabilizeLanes = practice == null || practice.State is SessionTrackState.TrackOpen or SessionTrackState.Caution;
         bool pacedLanes = BlendingStartLanes || TrackState is SessionTrackState.Pacing or SessionTrackState.StageComplete
@@ -2880,7 +2896,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         if (sweeping != null)
         {
             System.Array.Clear(preferredLineAdvance, 0, preferredLineAdvance.Length);
-            if (sweepingLineTracking != null && !IgnorePreferredDrivingLine && !practiceYellow && !holdingCaution &&
+            if ((sweepingLineTracking != null || greenFlagMerge) && !IgnorePreferredDrivingLine && !practiceYellow && !holdingCaution &&
                 stages?.ControlsField != true)
             {
                 for (int i = 0; i < cars.Length; i++)
@@ -2904,7 +2920,8 @@ public sealed partial class TrackPreview : MonoBehaviour
         float brakingLimit = LapSpeedProfile.MaximumBraking(definition);
         var draftLine = plateDraftLanes ? draft.InLine : null;
         var draftLeaders = DraftSpeedActive && behaviorModel is VehicleBehavior003 ? draft.CloseFollowLeaders : null;
-        bool respondToTraffic = TrafficLaneChangesEnabled || protectRestartMerge;
+        bool respondToTraffic = TrafficLaneChangesEnabled || protectRestartMerge ||
+            (greenFlagMerge && collisionsEnabled);
         var laneDraft = varyLanes ? draft : null;
         if (laneDraft != null)
             laneDraft.UpdateLaneVariation(lapLength, seconds, drivingDistances, drivingLanes, currentTrafficSpeeds,
@@ -2918,7 +2935,7 @@ public sealed partial class TrackPreview : MonoBehaviour
                 ? (passingLaneRanges, cornerApproaches, passForecast ??= ForecastOvalPass) : default;
             trafficBehavior.OvalPassCommitted = forecastOvalPassing ? recordOvalPassAttempt ??= RecordOvalPassAttempt : null;
             trafficBehavior.SnapshotLaneDecision = laneSamples != null ? recordLaneDecision ??= RecordSnapshotLaneDecision : null;
-            trafficBehavior.UsePreferredLineTraffic = forecastOvalPassing;
+            trafficBehavior.UsePreferredLineTraffic = forecastOvalPassing || greenFlagMerge;
             trafficBehavior.OvalPassingEase = forecastOvalPassing ? OvalPassingEase : 0f;
             trafficBehavior.TrackContactHalfWidths = ovalTraffic ? raceCarHalfWidths : null;
             try
@@ -4101,7 +4118,9 @@ public sealed partial class TrackPreview : MonoBehaviour
         {
             lane = PreferredLaneOffset(i, RoadWidths(distance).x,
                 useBottomLaneMerge ? float.PositiveInfinity : toMerge, racingLine(distance));
-            if (blendStart)
+            if (greenFlagFormation != null)
+                lane = GreenFlagLane(i, distance, lane);
+            else if (blendStart && greenFlagMergeEnd == 0f)
                 lane = Mathf.Lerp(gridLane, lane, SessionRun.Elapsed / 3f);
         }
         if (stages != null && (!ovalTraffic || stages.ReducedFuelBurn))
@@ -4489,7 +4508,8 @@ public sealed partial class TrackPreview : MonoBehaviour
         bool targetAtEnd = false)
     {
         float weight = sweepingLineTracking?.Invoke((before + after) * .5f) ?? 0f;
-        if (weight <= 0f || (traffic != null && (traffic.InPit || traffic.ApronEntryActive || traffic.ApronExitActive ||
+        bool blendingGreenFlag = greenFlagFormation != null && before < greenFlagMergeEnd;
+        if ((!blendingGreenFlag && weight <= 0f) || (traffic != null && (traffic.InPit || traffic.ApronEntryActive || traffic.ApronExitActive ||
             traffic.FlatTireLaneBlend > 0f || Mathf.Min(traffic.NextEntry - after, before - traffic.LastExit) < 15f)))
             return 0f;
 
@@ -4497,8 +4517,66 @@ public sealed partial class TrackPreview : MonoBehaviour
             float.PositiveInfinity, racingLine(distance));
         float startLane = Preferred(before);
         float endLane = Preferred(after);
+        if (blendingGreenFlag)
+        {
+            startLane = GreenFlagLane(i, before, startLane);
+            endLane = GreenFlagLane(i, after, endLane);
+            weight = 1f;
+        }
         return Mathf.Abs(target - (targetAtEnd ? endLane : startLane)) <= .02f
             ? (endLane - startLane) * weight : 0f;
+    }
+
+    private bool FieldApproachingGreenFlagMergeEnd()
+    {
+        for (int i = 0; i < cars.Length; i++)
+        {
+            var car = trafficCars[i];
+            if (!car.InPit && !crashes[i].Active && !SessionRun.Finished(i) &&
+                !SessionRun.Retired(i) && car.TrackDistance < greenFlagMergeEnd)
+                return true;
+        }
+        return false;
+    }
+
+    private float GreenFlagLane(int index, float distance, float preferredLane)
+    {
+        if (distance >= greenFlagMergeEnd)
+            return preferredLane;
+
+        var start = greenFlagFormation[index];
+        float t = Mathf.InverseLerp(start.Distance, greenFlagMergeEnd, distance);
+        // Zero lateral blend speed and acceleration at both ends.
+        float blend = t * t * t * (t * (6f * t - 15f) + 10f);
+        return Mathf.Lerp(start.Lane, preferredLane, blend);
+    }
+
+    private float FindGreenFlagMergeEnd()
+    {
+        float finish = raceStart.TimingStartLine;
+        if (customLayout == null)
+            return finish + Mathf.Repeat(straightLength - finish, lapLength);
+
+        var frontstretch = VehicleBehavior004.FrontstretchRange(definition, lapLength, distance =>
+        {
+            customLayout.Sample(Mathf.Repeat(distance, lapLength), out var heading, out _);
+            return heading;
+        });
+        float fromFinish = Mathf.Repeat(frontstretch.End * lapLength - finish, lapLength);
+        if (frontstretch.Start != frontstretch.End && fromFinish < .3f * lapLength)
+            return finish + fromFinish;
+
+        // Detect the first sustained corner just beyond the timing line on plain ovals.
+        var profile = lapSpeedProfile ?? new LapSpeedProfile(definition, speedModel is VehicleSpeed003);
+        float step = lapLength / 192f;
+        for (int i = 1; i <= 48; i++)
+        {
+            float station = finish + i * step;
+            if (profile.TireTurnWeightAt(station) >= .12f && profile.TireTurnWeightAt(station + 3f * step) >= .12f)
+                return station;
+        }
+
+        return finish + lapLength * .125f;
     }
 
     private void ConfigureFormationPitExit()
