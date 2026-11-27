@@ -34,6 +34,8 @@ internal sealed class TrackState001RaceStart
     internal float PacePitEntry => peelOffAt;
     public float TimingStartLine { get; }
     public float FormationProgress => progress;
+    internal float GreenDistance => greenAt;
+    internal float? OnTrackFieldLead => progress - firstRowOffset >= pit.RouteLength ? fieldLead : null;
 
     public float RacingSpeed(float targetSpeed, float secondsSinceGreen) =>
         Mathf.Lerp(PaceSpeed, targetSpeed, Mathf.Clamp01(secondsSinceGreen / 3f));
@@ -48,8 +50,10 @@ internal sealed class TrackState001RaceStart
         positionVariation = Mathf.Clamp((rowSpacing - VehicleCollision001.ContactLength - .15f) * .5f,
             0f, FormationPositionVariation);
         firstRowOffset = rowSpacing;
-        float lastRowOffset = rowSpacing * rows;
-        progress = pit.RoadStart + lastRowOffset + rowSpacing;
+        // Center the race grid on the through lane, with the pace car one row ahead.
+        float gridHalfLength = (rows - 1) * rowSpacing * .5f;
+        float pitRoadMidpoint = (pit.RoadStart + pit.RoadEnd) * .5f;
+        progress = pitRoadMidpoint + gridHalfLength + firstRowOffset;
         parkingDistance = pit.ParkingDistance;
 
         lightsOffAt = NextAtOrAfter(pit.ExitDistance, startLine, lapLength);

@@ -124,7 +124,7 @@ public sealed partial class TrackPreview
         if (old != null)
         {
             ConfigureOnboardCamera(index);
-            if (definition.id is IowaTrackId or PhoenixTrackId or RichmondTrackId or NorthWilkesboroTrackId or MichiganTrackId)
+            if (iowaVehicleLighting.ContainsKey(car))
                 CacheIowaVehicleLighting(car);
             else if (bristolSun != null)
                 AssignBristolLighting(next.Root);

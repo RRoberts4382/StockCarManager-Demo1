@@ -13,6 +13,11 @@ public sealed partial class TrackPreview
         const float infieldY = .02f;
         AddHaulerRows();
         var site = new IowaVehicleSite(transform);
+        if (soloTestSession)
+        {
+            AddIowaParkingLots(site, Array.Empty<Material>());
+            return;
+        }
         var parked = AddRecreationalVehicles();
         AddIowaParkingLots(site, parked.Surfaces);
         AddIowaCampDetails(site, parked.Spaces, parked.Surfaces);
@@ -54,6 +59,12 @@ public sealed partial class TrackPreview
                         child.gameObject.layer = PreviewLayer;
 
                     var livery = TeamLivery(number++);
+                    if (soloTestSession)
+                    {
+                        venueHaulers = new[] { hauler.transform };
+                        venueGuestHaulerPaint = new[] { livery };
+                        return;
+                    }
                     Color roofColor = Color.Lerp(livery.RoofAndSides, livery.HoodAndTrunk, .25f);
                     foreach (var renderer in hauler.GetComponentsInChildren<MeshRenderer>())
                     {
@@ -520,7 +531,7 @@ public sealed partial class TrackPreview
                         continue;
                     AddMark(stall - along * stallPitch * .5f);
                     AddMark(stall + along * stallPitch * .5f);
-                    if (random.Next(6) == 0)
+                    if (soloTestSession || random.Next(6) == 0)
                         continue;
                     int style = random.Next(3);
                     float length = style == 1 ? 2.34f : 2.19f;

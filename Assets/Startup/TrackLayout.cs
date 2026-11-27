@@ -12,6 +12,7 @@ public sealed class TrackLayout
     private readonly Vector3 sourceCenter;
     private readonly TrackLayoutPoint[] controls;
     private readonly float defaultWidth;
+    private readonly bool linearApronWidth;
     private readonly float lapLength;
     private readonly TrackBankingTransition[] bankingTransitions;
 
@@ -35,10 +36,11 @@ public sealed class TrackLayout
     }
 
     public TrackLayout(TrackLayoutPoint[] layout, float lapLength, float defaultWidth,
-        TrackBankingTransition[] bankingTransitions, bool smoothLayoutBanking)
+        TrackBankingTransition[] bankingTransitions, bool smoothLayoutBanking, bool linearApronWidth = false)
     {
         controls = layout;
         this.defaultWidth = defaultWidth;
+        this.linearApronWidth = linearApronWidth;
         this.lapLength = lapLength;
         this.bankingTransitions = bankingTransitions;
         points = new Vector3[layout.Length * SamplesPerSegment];
@@ -121,7 +123,8 @@ public sealed class TrackLayout
         return new Vector2(
             Mathf.SmoothStep(a.widthMeters > 0f ? a.widthMeters : defaultWidth,
                 b.widthMeters > 0f ? b.widthMeters : defaultWidth, blend),
-            Mathf.SmoothStep(a.apronWidthMeters, b.apronWidthMeters, blend));
+            linearApronWidth ? Mathf.Lerp(a.apronWidthMeters, b.apronWidthMeters, blend) :
+                Mathf.SmoothStep(a.apronWidthMeters, b.apronWidthMeters, blend));
     }
 
     private int Segment(float distance, out float t)

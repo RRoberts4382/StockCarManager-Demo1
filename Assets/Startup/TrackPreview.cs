@@ -28,6 +28,8 @@ public sealed partial class TrackPreview : MonoBehaviour
     internal const int NorthWilkesboroTrackId = 13;
     internal const int PhoenixTrackId = 9;
     private const int MichiganTrackId = 11;
+    private const int LasVegasTrackId = 26;
+    private const int BowmanGrayTrackId = 15;
     private const int NashvilleFairgroundsTrackId = 17;
     private const int PoconoTrackId = 18;
     internal const int BristolTrackId = 27;
@@ -713,7 +715,14 @@ public sealed partial class TrackPreview : MonoBehaviour
 
     public void Initialize(TrackDefinition track, int playerCarNumber) => Initialize(track, playerCarNumber, null);
 
-    internal void Initialize(TrackDefinition track, int playerCarNumber, string[] sponsorNames, TeamCar playerCar = null, bool night = false, IReadOnlyList<TeamCar> rivalCars = null)
+    internal void Initialize(TrackDefinition track, int playerCarNumber, string[] sponsorNames, TeamCar playerCar = null, bool night = false, IReadOnlyList<TeamCar> rivalCars = null) =>
+        InitializeTrack(track, playerCarNumber, sponsorNames, playerCar, night, rivalCars, track.SessionFieldSize(CarCount));
+
+    internal void InitializeSolo(TrackDefinition track, string[] sponsorNames, TeamCar playerCar, bool night) =>
+        InitializeTrack(track, playerCar.number, sponsorNames, playerCar, night, null, 1, soloTestSession: true);
+
+    private void InitializeTrack(TrackDefinition track, int playerCarNumber, string[] sponsorNames, TeamCar playerCar,
+        bool night, IReadOnlyList<TeamCar> rivalCars, int fieldSize, bool soloTestSession = false)
     {
         surfaceMaterial = Resources.Load<Material>("Startup/TrackSurface");
         if (surfaceMaterial == null)
@@ -724,7 +733,9 @@ public sealed partial class TrackPreview : MonoBehaviour
         }
 
         definition = track;
-        AllocateField(track.SessionFieldSize(CarCount));
+        this.soloTestSession = soloTestSession;
+        testInfieldOutline = null;
+        AllocateField(fieldSize);
         SupportsCarDetail = true;
         CarDetailIndex = SupportsCarDetail ? Mathf.Clamp(PlayerPrefs.GetInt("StockCarManager.Settings.CarLOD", 3), 1, 5) - 1 : 0;
         bool bristolNight = night && track.id == BristolTrackId;
@@ -738,7 +749,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         roadHalfWidth = track.widthMeters * 0.5f;
         if (track.layoutPoints?.Length > 0)
             customLayout = new TrackLayout(track.layoutPoints, lapLength, track.widthMeters,
-                track.bankingTransitions, track.smoothLayoutBanking);
+                track.bankingTransitions, track.smoothLayoutBanking, linearApronWidth: track.id == LasVegasTrackId);
         orbitOffset = new Vector3(0f, 62f, -39f) * Mathf.Max(1f, trackScale);
         wideViewSize = Mathf.Max(StartingViewSize, StartingViewSize * trackScale);
 
@@ -770,7 +781,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         sun.transform.localRotation = Quaternion.Euler(55f, -25f, 0f);
         sun.cullingMask = 1 << PreviewLayer;
         sun.intensity = 1.1f;
-        if (UsesDetailedPavement(track.id) || track.id == MichiganTrackId)
+        if (UsesDetailedPavement(track.id) || (track.id is MichiganTrackId or LasVegasTrackId))
         {
             sun.transform.localRotation = Quaternion.Euler(41f, -35f, 0f);
             sun.shadowStrength = 0.72f;
@@ -811,6 +822,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         importedTrackGeometry = customLayout != null && (track.id switch
         {
             MichiganTrackId => AddImportedTrackGeometry("MichiganSpeedway"),
+            LasVegasTrackId => AddImportedTrackGeometry("LasVegasSpeedway"),
             KansasTrackId => AddImportedTrackGeometry("KansasSpeedway"),
             MartinsvilleTrackId => AddImportedTrackGeometry("MartinsvilleSpeedway"),
             CotaTrackId => AddImportedTrackGeometry("CircuitOfTheAmericas"),
@@ -918,6 +930,8 @@ public sealed partial class TrackPreview : MonoBehaviour
             ApplyIowaNightLighting(TrackSkyIsNight);
         }
 
+        if (track.id == LasVegasTrackId && importedTrackGeometry && pitRoute != null)
+            AddLasVegasVenue();
         if (track.id == PhoenixTrackId && importedTrackGeometry && pitRoute != null)
             AddPhoenixVenue();
         if (track.id == RichmondTrackId && importedTrackGeometry && pitRoute != null)
@@ -928,8 +942,11 @@ public sealed partial class TrackPreview : MonoBehaviour
         {
             AddSharedTrackResponse();
             AddSharedPitPromenade();
-            AddSharedInfieldWallFans();
+            if (!soloTestSession)
+                AddSharedInfieldWallFans();
         }
+        if (soloTestSession)
+            HideSoloTestScenery();
         AddOutsideBillboards();
         if (bristolSun != null)
             AssignTrackLightingLayers();
@@ -1432,6 +1449,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             SetBristolAttendance(fullBristolStands ? RaceSessionKind.Race : simulation.Session.kind);
         if (definition.id == BristolTrackId && simulation.Event != null && parkedHaulers == null)
             ParkBristolHaulers(simulation);
+        EnsureSoloTeamHauler();
         PaintVenueHaulers(simulation);
         if (simulation.Event != null && teamPitBoxes == null && practiceStallPositions != null)
             AddTeamPitBoxes(simulation);
@@ -1549,11 +1567,11 @@ public sealed partial class TrackPreview : MonoBehaviour
 
         if (model is TrackState001 raceModel && session.kind == RaceSessionKind.Race && pitTraffic != null)
         {
-            raceStart = raceModel.StartRace(pitTraffic, slots, definition, simulationRandom);
             ConfigureFormationPitExit();
             ConfigurePacePitApproach();
             CreatePaceCar(usePaceTruck);
             ConfigureRichmondPaceBay();
+            raceStart = raceModel.StartRace(pitTraffic, slots, definition, simulationRandom);
             CreatePitSignal();
         }
 
@@ -1564,6 +1582,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         SetSessionSpeed(1);
         ResetCarLodBudget();
         SessionRun = new RaceSessionRun(session, lapLength, startLine, simulation, speedModel, simulationRandom, initialDistances: sessionDistances);
+        PrepareRaceStartFireworks(session);
         if (trackSkyMaterial != null)
         {
             float cloudSeed = Mathf.Repeat(session.weather.variationPhase, Mathf.PI * 2f) * 10000f;
@@ -1654,9 +1673,15 @@ public sealed partial class TrackPreview : MonoBehaviour
     internal static string RivalTeamForSlot(int slot) => RivalTeams[(slot - 1) / RivalCarsPerTeam];
     internal static string RivalNameForSlot(int slot) => RivalDrivers[slot - 1];
 
-    internal static SessionCarResult[] CreateTimingEntries(TeamCar playerCar, Career career)
+    internal static SessionCarResult[] CreateTimingEntries(TeamCar playerCar, Career career) =>
+        CreateTimingField(playerCar, career, CarCount);
+
+    internal static SessionCarResult[] CreateSoloTimingEntries(TeamCar playerCar, Career career) =>
+        CreateTimingField(playerCar, career, 1);
+
+    private static SessionCarResult[] CreateTimingField(TeamCar playerCar, Career career, int count)
     {
-        var entries = new SessionCarResult[CarCount];
+        var entries = new SessionCarResult[count];
         var numbers = GridNumbers(playerCar.number, career.rivalCars);
         for (int i = 0; i < entries.Length; i++)
         {
@@ -1846,6 +1871,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         }
 
         UpdateTrackSky();
+        PresentRaceStartFireworks();
         UpdateRubberOverlay();
         PresentSessionSkids();
         PositionCars();
@@ -1902,7 +1928,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         if (definition.id == PhoenixTrackId || UsesEarlyLowLanePitApproach)
             collisionStartLanes[0] = drivingLanes[0];
         float speed = SpeedAt(0, car.TrackDistance, out float preferredLineSpeedFactor);
-        float limitedSpeed = LimitNorthWilkesboroApronSpeed(car, speed);
+        float limitedSpeed = LimitApronExitSpeed(car, speed);
         qualifying.Advance(SessionRun, SessionStep, limitedSpeed,
             car.InPit ? 0f : lapSpeedProfile?.BrakingLimitAt(car.TrackDistance) ?? 0f,
             limitedSpeed < speed ? 1f : preferredLineSpeedFactor);
@@ -1935,6 +1961,7 @@ public sealed partial class TrackPreview : MonoBehaviour
     {
         float beforePacing = raceStart.FormationProgress;
         raceStart.Advance(SessionStep);
+        AdvanceRaceStartFireworks(SessionStep);
         float pacedMeters = raceStart.FormationProgress - beforePacing;
         if (pacedMeters > 0f)
         {
@@ -2135,7 +2162,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             stopAt = practice.ParkingTarget(index);
         else if (pitStops != null)
             stopAt = pitStops.StopTarget(index);
-        float approachSpeed = LimitNorthWilkesboroApronSpeed(car, freeSpeed);
+        float approachSpeed = LimitApronExitSpeed(car, freeSpeed);
         bool seekingPitLane = activeOnTrack && car.ApronEntryActive && pitStops?.IsRequested(index) == true &&
             !SessionRun.Finished(index) &&
             Mathf.Abs(drivingLanes[index] - PitApproachLane(index, car.TrackDistance, car.NextEntry)) > .25f;
@@ -3668,11 +3695,11 @@ public sealed partial class TrackPreview : MonoBehaviour
 
     private bool UsesAuthoredApronHandoffs =>
         definition.id is IowaTrackId or PhoenixTrackId or RichmondTrackId or NorthWilkesboroTrackId ||
-        definition.id == MichiganTrackId && importedTrackGeometry;
+        (definition.id is MichiganTrackId or LasVegasTrackId) && importedTrackGeometry;
     private bool UsesKansasLowLanePitRoute => definition.id == KansasTrackId && importedTrackGeometry;
     private bool UsesAuthoredLowLanePitRoute => UsesKansasLowLanePitRoute || definition.id == DarlingtonTrackId;
     private bool UsesEarlyLowLanePitApproach => UsesAuthoredLowLanePitRoute || definition.id == GatewayTrackId;
-    private bool UsesEarlyApronPitApproach => definition.id is MichiganTrackId or PoconoTrackId;
+    private bool UsesEarlyApronPitApproach => definition.id is MichiganTrackId or PoconoTrackId or LasVegasTrackId;
     private bool UsesSettledPlayerPitApproach => UsesAuthoredApronHandoffs ||
         UsesEarlyLowLanePitApproach || UsesEarlyApronPitApproach;
     private bool UsesSharedPitConnectorSurface => !importedTrackGeometry && definition.majorStyle == "Oval" &&
@@ -3705,6 +3732,14 @@ public sealed partial class TrackPreview : MonoBehaviour
     {
         float nominal = ApronLane(distance);
         float distanceFromHandoff = Mathf.Abs(distance - handoff);
+        if (definition.id == LasVegasTrackId && distance >= handoff)
+        {
+            var apronWidths = RoadWidths(distance);
+            // Move toward the stripe on the paved apron through Turns 1 and 2.
+            // The straight-window and traffic gap checks still govern crossing it.
+            float nearStripe = customLayout.InsideSign * (apronWidths.x * .5f + 2.75f);
+            return Mathf.SmoothStep(nominal, nearStripe, distanceFromHandoff / 360f);
+        }
         if (definition.id != PhoenixTrackId || distanceFromHandoff >= PhoenixPitApronTransition)
             return nominal;
 
@@ -3776,8 +3811,16 @@ public sealed partial class TrackPreview : MonoBehaviour
         FindApronStraight(car, mergeSearchStart);
     }
 
-    private float LimitNorthWilkesboroApronSpeed(TrackPitTraffic.Car car, float speed)
+    private float LimitApronExitSpeed(TrackPitTraffic.Car car, float speed)
     {
+        if (definition.id == LasVegasTrackId && !car.InPit)
+        {
+            PrepareApronExit(car);
+            // At full speed the wide apron crossing cannot fit on the backstretch.
+            // Hold 90 mph until the car completes a gap-checked merge.
+            return car.ApronExitActive ? Mathf.Min(speed, 90f * TrackDefinition.MetersPerMile / 3600f) : speed;
+        }
+
         if (definition.id != NorthWilkesboroTrackId)
             return speed;
 
@@ -4428,7 +4471,8 @@ public sealed partial class TrackPreview : MonoBehaviour
     private bool TryCautionPaceExitPose(float distance, out Pose pose, out float lane)
     {
         // Richmond's authored departure already includes its full track join.
-        if (stages?.HasPaceCar == true && !stages.PaceReturning && richmondPaceDeparture == null)
+        if (stages?.HasPaceCar == true && !stages.PaceReturning &&
+            (richmondPaceDeparture == null || pitTraffic.PaceBayParkingDistance.HasValue))
             return TryCautionPaceExitPose(distance, stages.PaceExitStation, out pose, out lane);
         pose = default;
         lane = 0f;
@@ -4534,8 +4578,19 @@ public sealed partial class TrackPreview : MonoBehaviour
     private float LimitCautionPaceTrafficSpeed(bool onPitRoad, float distance, float speed, float seconds)
     {
         if (seconds <= 0f || paceCar == null) return speed;
-        if (richmondPaceReturn != null && (onPitRoad || richmondPacePhase != RichmondPacePhase.Pacing))
-            return speed;
+        if (richmondPaceReturn != null)
+        {
+            if (pitTraffic.PaceBayParkingDistance.HasValue && onPitRoad && !stages.PaceReturning &&
+                (richmondPacePhase is RichmondPacePhase.Parked or RichmondPacePhase.Departing))
+            {
+                var route = richmondCautionDeparture;
+                float routeScale = route.Length / (paceBayPitJoin - pitTraffic.ParkingDistance);
+                return PaceBayClearSpeed(route, Mathf.Min(13f, speed * routeScale)) / routeScale;
+            }
+            if (richmondPacePhase != RichmondPacePhase.Pacing ||
+                onPitRoad && !pitTraffic.PaceBayParkingDistance.HasValue)
+                return speed;
+        }
 
         float requested = speed;
         bool fixedPath = onPitRoad || TryCautionPaceExitPose(distance, out _, out _) ||
@@ -4666,6 +4721,8 @@ public sealed partial class TrackPreview : MonoBehaviour
     private Vector3 CautionPacePitPoint(float distance)
     {
         distance = Mathf.Clamp(distance, 0f, pitTraffic.RouteLength);
+        if (pitTraffic.PaceBayParkingDistance.HasValue)
+            return SamplePacePitPoint(distance, 0f);
         float parking = Mathf.Clamp01(1f - Mathf.Abs(pitTraffic.ParkingDistance - distance) / 8f);
         return SamplePacePitPoint(distance, parking * (definition.pitRoad.widthMeters * .5f + 1.5f));
     }
@@ -5745,6 +5802,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         string orientationMarker = definition.id switch
         {
             MichiganTrackId => "Michigan import orientation",
+            LasVegasTrackId => "Las Vegas import orientation",
             NorthWilkesboroTrackId => "North Wilkesboro import orientation",
             _ => null
         };
@@ -5785,7 +5843,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             AddMichiganVenue();
             return;
         }
-        if ((trackId is PhoenixTrackId or RichmondTrackId or NorthWilkesboroTrackId) && importedTrackGeometry) return;
+        if ((trackId is PhoenixTrackId or RichmondTrackId or NorthWilkesboroTrackId or LasVegasTrackId) && importedTrackGeometry) return;
         if (trackId == IowaTrackId && customLayout != null)
         {
             AddIowaScenery();
@@ -6066,7 +6124,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         }
 
         parkedHaulers = CreateObject("Bristol parked haulers", transform);
-        int count = BristolBaysPerRow * 2;
+        int count = soloTestSession ? 1 : BristolBaysPerRow * 2;
         var paint = new MaterialPropertyBlock();
         var random = new System.Random();
         var font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
@@ -6090,6 +6148,8 @@ public sealed partial class TrackPreview : MonoBehaviour
             var livery = entry == null
                 ? (HoodAndTrunk: RandomHaulerPaint(random), RoofAndSides: RandomHaulerPaint(random))
                 : entry.car?.Paint ?? TeamLivery(entry.carNumber);
+            if (soloTestSession && entry?.teamPaint is { } teamPaint)
+                livery = teamPaint;
             Color roofColor = Color.Lerp(livery.RoofAndSides, livery.HoodAndTrunk, 0.35f);
             if (entry != null && trailer != null && font != null)
             {
@@ -6211,7 +6271,8 @@ public sealed partial class TrackPreview : MonoBehaviour
                 pitLengths[0], pitLengths[1], pitLengths[2], pit,
                 singleThroughLane: definition.id == GatewayTrackId,
                 recoverStoppedQueueOverlap: definition.majorStyle == "Oval" &&
-                    definition.id is not (BristolTrackId or RichmondTrackId or NorthWilkesboroTrackId));
+                    definition.id is not (BristolTrackId or RichmondTrackId or NorthWilkesboroTrackId),
+                allowCompactStallDeparture: definition.id == BowmanGrayTrackId);
             if (sharedConnectorSurface)
             {
                 DrawPitRibbon("Pit entrance", entrance, pit.widthMeters, pavement, entryHeight, roadStart,
@@ -6397,7 +6458,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         var paint = new MaterialPropertyBlock();
         int count = Mathf.Min(context.Cars.Count, practiceStallPositions.Length);
         var workStations = definition.id == IowaTrackId && count > 0 ? IowaPitWorkStations(count) : null;
-        bool detailedWork = workStations != null || (definition.id is PhoenixTrackId or RichmondTrackId or NorthWilkesboroTrackId) && count > 0;
+        bool detailedWork = workStations != null || (definition.id is PhoenixTrackId or RichmondTrackId or NorthWilkesboroTrackId or LasVegasTrackId) && count > 0;
         var workPaint = count > 0 ? IowaPitWorkMaterial(count) : null;
         var workConcrete = workStations != null ? IowaPitWorkConcrete() : null;
         for (int i = 0; i < count; i++)

@@ -15,6 +15,20 @@ public sealed partial class TrackPreview
 
     internal bool SupportsIowaVenueLighting => iowaVenueLights.Count > 0;
 
+    // The startup picker needs to know which venues install racing floodlights before creating a preview.
+    internal static bool CanRunNightTest(TrackDefinition track)
+    {
+        if (!(track?.layoutPoints?.Length > 0)) return false;
+        return track.id switch
+        {
+            BristolTrackId or MichiganTrackId => true,
+            IowaTrackId or LasVegasTrackId or NorthWilkesboroTrackId or PhoenixTrackId or RichmondTrackId =>
+                track.pitRoad?.enabled == true && track.pitRoad.points?.Length >= 2 &&
+                track.pitRoad.entrance?.Length >= 2 && track.pitRoad.exit?.Length >= 2,
+            _ => false
+        };
+    }
+
     private void RegisterIowaVenueLight(Light lamp, bool racing)
     {
         lamp.cullingMask = 1 << PreviewLayer;
@@ -35,7 +49,7 @@ public sealed partial class TrackPreview
 
     private void AssignTrackLightingLayers()
     {
-        if (definition.id is not (IowaTrackId or PhoenixTrackId or RichmondTrackId or NorthWilkesboroTrackId or MichiganTrackId))
+        if (definition.id is not (IowaTrackId or PhoenixTrackId or RichmondTrackId or NorthWilkesboroTrackId or MichiganTrackId or LasVegasTrackId))
         {
             AssignBristolLighting(transform);
             return;
@@ -111,7 +125,8 @@ public sealed partial class TrackPreview
             return;
 
         foreach (var renderer in vehicle.Renderers)
-            renderer.renderingLayerMask = BristolLightingLayer | zone;
+            if (renderer != null)
+                renderer.renderingLayerMask = BristolLightingLayer | zone;
         iowaVehicleLighting[car] = (vehicle.Renderers, zone);
     }
 }
