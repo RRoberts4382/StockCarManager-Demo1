@@ -28,6 +28,7 @@ public sealed partial class TrackPreview : MonoBehaviour
     internal const int NorthWilkesboroTrackId = 13;
     internal const int PhoenixTrackId = 9;
     private const int MichiganTrackId = 11;
+    private const int BowmanGrayTrackId = 15;
     private const int NashvilleFairgroundsTrackId = 17;
     private const int PoconoTrackId = 18;
     internal const int BristolTrackId = 27;
@@ -6211,7 +6212,8 @@ public sealed partial class TrackPreview : MonoBehaviour
                 pitLengths[0], pitLengths[1], pitLengths[2], pit,
                 singleThroughLane: definition.id == GatewayTrackId,
                 recoverStoppedQueueOverlap: definition.majorStyle == "Oval" &&
-                    definition.id is not (BristolTrackId or RichmondTrackId or NorthWilkesboroTrackId));
+                    definition.id is not (BristolTrackId or RichmondTrackId or NorthWilkesboroTrackId),
+                allowCompactStallDeparture: definition.id == BowmanGrayTrackId);
             if (sharedConnectorSurface)
             {
                 DrawPitRibbon("Pit entrance", entrance, pit.widthMeters, pavement, entryHeight, roadStart,

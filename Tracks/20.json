@@ -36,6 +36,7 @@
     "tireWear": 0.5,
     "ratingsAssigned": false
   },
+  "smoothLayoutBanking": true,
   "layoutPoints": [
     {
       "x": 384,

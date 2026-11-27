@@ -244,6 +244,7 @@ public sealed class StartupMenu : MonoBehaviour
         };
         developmentTrackPicker.Q<Button>("exitDevelopmentPractice").clicked += Quit;
         var practiceTrack = developmentTrackPicker.Q<DropdownField>("developmentTracks");
+        RevealSelectedTrackOnOpen(practiceTrack);
         var practiceCar = developmentTrackPicker.Q<DropdownField>("developmentCars");
         var startPractice = developmentTrackPicker.Q<Button>("startDevelopmentPractice");
         var startTestRace = developmentTrackPicker.Q<Button>("startDevelopmentRace");
@@ -711,6 +712,30 @@ public sealed class StartupMenu : MonoBehaviour
                 screen.style.display = DisplayStyle.Flex;
                 open();
             };
+        }
+    }
+
+    private static void RevealSelectedTrackOnOpen(DropdownField picker)
+    {
+        // The dropdown menu is attached to the panel, outside the picker hierarchy.
+        picker.panel?.visualTree.RegisterCallback<FocusInEvent>(OnMenuFocused, TrickleDown.TrickleDown);
+        picker.RegisterCallback<AttachToPanelEvent>(evt =>
+            evt.destinationPanel.visualTree.RegisterCallback<FocusInEvent>(OnMenuFocused, TrickleDown.TrickleDown));
+        picker.RegisterCallback<DetachFromPanelEvent>(evt =>
+            evt.originPanel.visualTree.UnregisterCallback<FocusInEvent>(OnMenuFocused, TrickleDown.TrickleDown));
+
+        void OnMenuFocused(FocusInEvent evt)
+        {
+            if (evt.target is not VisualElement focused)
+                return;
+
+            var list = focused as ScrollView ?? focused.GetFirstAncestorOfType<ScrollView>();
+            if (list?.contentContainer.userData is not GenericDropdownMenu menu || menu.targetElement != picker)
+                return;
+
+            int selected = picker.index;
+            if (selected >= 0 && selected < menu.contentContainer.childCount)
+                list.ScrollTo(menu.contentContainer[selected]);
         }
     }
 

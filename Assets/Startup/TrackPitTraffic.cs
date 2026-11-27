@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 internal sealed class TrackPitTraffic
 {
@@ -14,6 +14,7 @@ internal sealed class TrackPitTraffic
     private readonly float laneOffset;
     private readonly bool singleThroughLane;
     private readonly bool recoverStoppedQueueOverlap;
+    private readonly bool allowCompactStallDeparture;
     private readonly float singleFileApproachStart;
     private readonly float singleFileHoldDistance;
     private const float LaneSpacing = 2.6f;
@@ -318,11 +319,12 @@ internal sealed class TrackPitTraffic
 
     public TrackPitTraffic(float lapLength, float entryDistance, float exitDistance,
         float entryLength, float roadLength, float exitLength, TrackPitRoad road, bool singleThroughLane = false,
-        bool recoverStoppedQueueOverlap = false)
+        bool recoverStoppedQueueOverlap = false, bool allowCompactStallDeparture = false)
     {
         this.lapLength = lapLength;
         this.singleThroughLane = singleThroughLane;
         this.recoverStoppedQueueOverlap = recoverStoppedQueueOverlap;
+        this.allowCompactStallDeparture = allowCompactStallDeparture;
         this.entryDistance = entryDistance;
         bypassDistance = Mathf.Repeat(exitDistance - entryDistance, lapLength);
         speedLimit = road.speedLimitMph * MphToMetersPerSecond;
@@ -518,7 +520,8 @@ internal sealed class TrackPitTraffic
 
     internal static float ManeuverLane(float distance, float start, float length, float from, float to, bool arrival)
     {
-        if (!arrival) return Mathf.Lerp(from, to, Mathf.SmoothStep(0f, 1f, (distance - start) / length));
+        if (!arrival && length >= StandardStallDepartureLength)
+            return Mathf.Lerp(from, to, Mathf.SmoothStep(0f, 1f, (distance - start) / length));
         if (distance <= start) return from;
         if (distance >= start + length) return to;
         // Define the rear axle's S-curve, then recover the center from its tangent.
@@ -554,7 +557,8 @@ internal sealed class TrackPitTraffic
             car.DepartureBlockReason = null;
             // Choose the shortest clear rear-axle-compatible route. Long routes
             // can intersect the occupied stall behind.
-            foreach (float length in arrival ? StallArrivalLengths : ManeuverLengths)
+            float[] lengths = arrival ? StallArrivalLengths : allowCompactStallDeparture ? CompactDepartureLengths : ManeuverLengths;
+            foreach (float length in lengths)
             {
                 float start = arrival ? stopAt - length : car.PitDistance;
                 if (start < car.PitDistance - .01f) continue;
@@ -787,6 +791,9 @@ internal sealed class TrackPitTraffic
     internal const float StandardStallDepartureLength = 6f;
     private static readonly float[] ManeuverLengths = { StandardStallDepartureLength, 8f, 10f, 12f, 16f, 24f, 40f };
 
+    // Tight stalls can use a rear-axle curve after the standard routes are rejected.
+    private static readonly float[] CompactDepartureLengths = { StandardStallDepartureLength, 8f, 10f, 12f, 16f, 24f, 40f, 4.5f };
+
     internal float PreferredStallDepartureLane(int index, float station, float length) =>
         hasPassingLane && station + length < singleFileApproachStart && (index & 1) != 0 &&
         (!splitRoad || station <= backLeave)
@@ -884,7 +891,8 @@ internal sealed class TrackPitTraffic
     private bool ClearManeuver(Car car, float start, float length, float from, float to, bool arrival)
     {
         float previousLane = from, previousDistance = car.PitDistance, yaw = car.PitYaw;
-        int samples = Mathf.CeilToInt((start + length - previousDistance) / (arrival ? .05f : .2f));
+        bool tightTurn = arrival || length < StandardStallDepartureLength;
+        int samples = Mathf.CeilToInt((start + length - previousDistance) / (tightTurn ? .05f : .2f));
         float begin = previousDistance;
         for (int sample = 1; sample <= samples; sample++)
         {
