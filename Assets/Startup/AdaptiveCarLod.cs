@@ -29,6 +29,8 @@ public sealed partial class TrackPreview
     {
         public string Resource;
         public Transform Root, Body;
+        public Transform FallbackRearTires;
+        public Vector3 FallbackRearTiresCenter;
         public bool SupportsBodyTravel;
         public RaceWheelAnimation Wheels;
     }
@@ -38,6 +40,7 @@ public sealed partial class TrackPreview
         public string[] Resources;
         public Action<Transform, string, bool> Build;
         public CarVisual Current;
+        public Vector3 BodyYawPivot;
         // Keep one previous visual so returning to the last level is cheap.
         public CarVisual Previous;
         public int Level, CoverageLevel;
@@ -105,6 +108,8 @@ public sealed partial class TrackPreview
                     Root = root,
                     Body = body,
                     Wheels = wheels,
+                    FallbackRearTires = rearTires,
+                    FallbackRearTiresCenter = rearTires?.localPosition ?? Vector3.zero,
                     SupportsBodyTravel = wheels?.HasFourCorners == true || (frontTires != null && rearTires != null)
                 };
             }
@@ -129,6 +134,8 @@ public sealed partial class TrackPreview
         var old = state.Current;
         if (old != null)
             old.Root.gameObject.SetActive(false);
+        if (old == null)
+            state.BodyYawPivot = next.Wheels?.FrontAxleCenter ?? Vector3.forward * RearAxleHeading.CenterToRearAxle;
         next.Wheels?.CopyMotionFrom(old?.Wheels);
         PresentBodySuspension(index, next);
         next.Root.gameObject.SetActive(true);

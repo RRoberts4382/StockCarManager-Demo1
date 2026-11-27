@@ -7,6 +7,7 @@ internal sealed class RaceWheelAnimation
     private readonly Wheel[] wheels;
     private Vector3 previousPosition;
     private Quaternion previousRotation;
+    private Quaternion presentedRearYaw = Quaternion.identity;
     private bool initialized;
 
     private RaceWheelAnimation(Wheel[] wheels)
@@ -223,6 +224,17 @@ internal sealed class RaceWheelAnimation
                 wheel.PresentedAngle = wheel.Angle;
             }
         }
+    }
+
+    internal void PresentRearYaw(Pose yaw)
+    {
+        if (presentedRearYaw.Equals(yaw.rotation))
+            return;
+
+        presentedRearYaw = yaw.rotation;
+        foreach (var wheel in wheels)
+            if (!wheel.Front)
+                wheel.Steer.SetLocalPositionAndRotation(yaw.position + yaw.rotation * wheel.Center, yaw.rotation);
     }
 
     private static Bounds BoundsInCar(Transform car, MeshRenderer renderer)

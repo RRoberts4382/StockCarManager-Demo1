@@ -63,12 +63,88 @@ public sealed partial class TrackPreview
     private struct BodySuspension
     {
         public float CorneringLoad;
-        public float Heave;
+        public float Heave, Pitch;
         public bool Scraping;
+        public CornerYaw BodyYaw;
         public float Roll => Mathf.Lerp(UnloadedBodyRoll, LoadedBodyRoll, CorneringLoad);
+
+        public Pose LocalYawPose(Vector3 yawPivot)
+        {
+            Quaternion rotation = Quaternion.AngleAxis(BodyYaw.Degrees, Vector3.up);
+            return new Pose(yawPivot - rotation * yawPivot, rotation);
+        }
+
+        public Pose LocalBodyPose(Pose yaw) =>
+            new Pose(yaw.position + Vector3.up * Heave, yaw.rotation * Quaternion.Euler(Pitch, 0f, Roll));
+    }
+
+    private struct CornerYaw
+    {
+        private const float EntryThreshold = .12f;
+        private const float ExitThreshold = .055f;
+        private const float ChancePerPhase = .35f;
+        private const float MinimumDuration = .46f;
+        private const float MaximumDuration = 3.04f;
+        private const float MaximumStartDelay = .08f;
+        public const float ExitLookAhead = MaximumDuration + MaximumStartDelay;
+
+        private int turnDirection;
+        private bool exitConsidered;
+        private float amplitude, elapsed, duration;
+
+        private bool Active => elapsed < duration;
+        public float Degrees
+        {
+            get
+            {
+                if (!Active || elapsed <= 0f)
+                    return 0f;
+                float envelope = Mathf.Sin(Mathf.PI * elapsed / duration);
+                return amplitude * envelope * envelope;
+            }
+        }
+
+        public void Advance(float currentTurn, float turnAhead, float seconds, System.Random random)
+        {
+            if (Active)
+                elapsed = Mathf.Min(duration, elapsed + seconds);
+
+            // The lower exit threshold keeps shallow changes in curvature from retriggering an entry.
+            if (turnDirection * currentTurn <= ExitThreshold)
+            {
+                int nextDirection = Mathf.Abs(currentTurn) >= EntryThreshold ? (int)Mathf.Sign(currentTurn) : 0;
+                if (turnDirection != nextDirection)
+                {
+                    turnDirection = nextDirection;
+                    exitConsidered = false;
+                    if (turnDirection != 0 && !Active)
+                        TryStart(random);
+                }
+                return;
+            }
+
+            if (!exitConsidered && !Active && turnDirection * turnAhead <= ExitThreshold)
+            {
+                exitConsidered = true;
+                TryStart(random);
+            }
+        }
+
+        private void TryStart(System.Random random)
+        {
+            if (random.NextDouble() >= ChancePerPhase)
+                return;
+
+            // Left turns are negative, so the rear swings right around the front axle.
+            amplitude = turnDirection * Mathf.Lerp(1f, 5f, (float)random.NextDouble());
+            duration = Mathf.Lerp(MinimumDuration, MaximumDuration, (float)random.NextDouble());
+            elapsed = -MaximumStartDelay * (float)random.NextDouble();
+        }
     }
 
     private readonly BodySuspension[] bodySuspensions = new BodySuspension[CarCount];
+    // Decorative motion never consumes the race simulation's random sequence.
+    private readonly System.Random bodyYawRandom = new System.Random(Guid.NewGuid().GetHashCode());
     private ParticleSystem underbodySparks;
 
     private void ResetBodySuspension()
@@ -81,6 +157,7 @@ public sealed partial class TrackPreview
     {
         // Follow the changing load with the same time response at every playback speed.
         float rollResponse = 1f - Mathf.Exp(-SessionStep / .22f);
+        float pitchResponse = 1f - Mathf.Exp(-SessionStep / .14f);
         float minimumBumpSpeed = fullBumpCompressionSpeed * (30f / 55f);
         for (int i = 0; i < cars.Length; i++)
         {
@@ -97,6 +174,14 @@ public sealed partial class TrackPreview
                 (raceStart == null || raceReleased);
             float load = onTrack ? SessionRun.VisualCorneringLoadAt(distance, speed) : 0f;
             suspension.CorneringLoad = Mathf.Lerp(suspension.CorneringLoad, load, rollResponse);
+            bool underDriverControl = !crashes[i].Active && !SessionRun.Retired(i) && !SessionRun.Finished(i);
+            float pitch = underDriverControl ? PedalPitch(SessionRun.ThrottleInput(i), SessionRun.BrakeInput(i)) : 0f;
+            suspension.Pitch = Mathf.Lerp(suspension.Pitch, pitch, pitchResponse);
+
+            bool canYaw = onTrack && underDriverControl && speed > 8f;
+            float turn = canYaw ? SessionRun.TireHandlingTurnAt(distance) : 0f;
+            float turnAhead = canYaw ? SessionRun.TireHandlingTurnAt(distance + speed * CornerYaw.ExitLookAhead) : 0f;
+            suspension.BodyYaw.Advance(turn, turnAhead, SessionStep, bodyYawRandom);
             suspension.Heave = 0f;
 
             if (onTrack && speed > minimumBumpSpeed)
@@ -114,7 +199,8 @@ public sealed partial class TrackPreview
             if (!visual.SupportsBodyTravel)
                 continue;
 
-            var rotation = Quaternion.AngleAxis(suspension.Roll, Vector3.forward);
+            Pose yawPose = suspension.LocalYawPose(carVisualLods[i].BodyYawPivot);
+            Pose bodyPose = suspension.LocalBodyPose(yawPose);
             var vehicle = SessionRun.Vehicle(i);
             var setup = SessionRun.SetupForCar(i);
             float halfWidth = raceCarHalfWidths[i] * .76f;
@@ -129,9 +215,10 @@ public sealed partial class TrackPreview
                 float coldPressure = VehicleSpeed003.ColdPressure(setup, corner, vehicle?.GetTire(corner));
                 float pressureLoss = Mathf.Clamp01((1f - coldPressure / (right ? 46f : 28f)) / .35f);
                 // Probe the corners of the splitter and floor against the wheel contact plane.
-                var point = rotation * new Vector3(right ? halfWidth : -halfWidth, UnderbodyClearance, corner < 2 ? 1.10f : -.96f);
+                var point = bodyPose.position + bodyPose.rotation *
+                    new Vector3(right ? halfWidth : -halfWidth, UnderbodyClearance, corner < 2 ? 1.10f : -.96f);
                 float pressureDrop = .008f * pressureLoss * compressionWeight;
-                float clearance = point.y + suspension.Heave - pressureDrop;
+                float clearance = point.y - pressureDrop;
                 if (clearance >= lowestClearance)
                     continue;
 
@@ -156,6 +243,12 @@ public sealed partial class TrackPreview
                 EmitUnderbodySparks(cars[i], contact, speed, contactPressureLoss);
             }
         }
+    }
+
+    private static float PedalPitch(float throttle, float brake)
+    {
+        // Positive pitch about local right tips the nose down. Braking has the stronger response.
+        return 1.7f * brake - .65f * throttle * (1f - brake);
     }
 
     private float SampleTrackBumpHeave(float distance)
@@ -184,8 +277,15 @@ public sealed partial class TrackPreview
             return;
 
         var suspension = bodySuspensions[index];
-        visual.Body.SetLocalPositionAndRotation(Vector3.up * suspension.Heave,
-            Quaternion.AngleAxis(suspension.Roll, Vector3.forward));
+        Pose yaw = suspension.LocalYawPose(carVisualLods[index].BodyYawPivot);
+        Pose pose = suspension.LocalBodyPose(yaw);
+        visual.Body.SetLocalPositionAndRotation(pose.position, pose.rotation);
+
+        // Rear tires follow the yaw about the front axle while retaining their pavement height.
+        visual.Wheels?.PresentRearYaw(yaw);
+        if (visual.FallbackRearTires != null)
+            visual.FallbackRearTires.SetLocalPositionAndRotation(yaw.position + yaw.rotation * visual.FallbackRearTiresCenter,
+                yaw.rotation);
     }
 
     private void PresentBodySuspension()
