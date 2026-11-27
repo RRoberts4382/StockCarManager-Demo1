@@ -1652,6 +1652,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         rubberSession = session;
         ResetSessionSkids();
         BuildRubberOverlay();
+        BuildTrackMarbles(session);
         UpdateRubberOverlay();
         if (bristolSun != null)
             AssignTrackLightingLayers();
@@ -1928,6 +1929,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         PresentRaceStartFireworks();
         PresentGrandstandCameraFlashes(Time.deltaTime);
         UpdateRubberOverlay();
+        PresentMarbleDensity();
         PresentSessionSkids();
         PositionCars();
         paceWheels?.Present();
@@ -2075,6 +2077,8 @@ public sealed partial class TrackPreview : MonoBehaviour
         ConfigurePitField();
         SessionRun = new RaceSessionRun(simulation.Session, lapLength, raceStart.TimingStartLine,
             simulation, speedModel, simulationRandom, initialDistances: sessionDistances, finishOnCheckered: true);
+        if (marbleDensity != null)
+            SessionRun.TireRubberShed = DepositMarbles;
     }
 
     private void UpdateInitialPacingLanes(float seconds)
@@ -2211,6 +2215,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             (practice == null || practice.State is SessionTrackState.TrackOpen or SessionTrackState.Caution);
         if (!activeOnTrack)
             preferredLineSpeedFactor = 1f;
+        float surfaceGrip = MarbleGrip(MarbleLoadForCar(index, car?.TrackDistance ?? sessionDistances[index]));
         float cleanAirSpeed = float.NaN;
         if (!coastToTarget && braking <= 0f && activeOnTrack && DraftSpeedActive && !BlendingStartLanes &&
             stages?.ReleasingRestartLanes != true && draftEligible[index] &&
@@ -2222,7 +2227,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         }
         if (car == null || pitTraffic == null)
             return SessionRun.ConditionLimitedSpeedAndPace(index, freeSpeed, seconds, out trafficPaceSpeeds[index],
-                braking, activeOnTrack, paceSpeedCeiling, preferredLineSpeedFactor, cleanAirSpeed, coastToTarget);
+                braking, activeOnTrack, paceSpeedCeiling, preferredLineSpeedFactor, cleanAirSpeed, coastToTarget, surfaceGrip);
         float stopAt = float.PositiveInfinity;
         if (practice?.State == SessionTrackState.ReturnToPits)
             stopAt = practice.ParkingTarget(index);
@@ -2240,7 +2245,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             preferredLineSpeedFactor = 1f;
         }
         float limited = SessionRun.ConditionLimitedSpeedAndPace(index, target, seconds, out trafficPaceSpeeds[index],
-            braking, activeOnTrack, paceSpeedCeiling, preferredLineSpeedFactor, cleanAirSpeed, coastToTarget);
+            braking, activeOnTrack, paceSpeedCeiling, preferredLineSpeedFactor, cleanAirSpeed, coastToTarget, surfaceGrip);
         if (SessionRun.HasTerminalFailure(index))
             car.NextEntry = float.PositiveInfinity;
         return limited;
@@ -2379,7 +2384,7 @@ public sealed partial class TrackPreview : MonoBehaviour
     private CrashMotion[] crashes;
     private Pose?[] chasePoseBeforeYaw;
 
-    private enum CrashCause { Contact, Apron, FrontTireWear, RearTireWear }
+    private enum CrashCause { Contact, Apron, FrontTireWear, RearTireWear, Marbles }
 
     private struct CrashMotion
     {
@@ -2680,6 +2685,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             return crashes[index].Cause switch
             {
                 CrashCause.Apron => $"{car} spun on the apron",
+                CrashCause.Marbles => $"{car} spun in the marbles",
                 CrashCause.FrontTireWear => crashes[index].Straight.WallDistanceRemaining == 0f
                     ? $"{car} hit the wall after a front tire failed" : $"{car} ran off after a front tire failed",
                 CrashCause.RearTireWear => $"{car} spun after a rear tire failed",
@@ -3267,9 +3273,14 @@ public sealed partial class TrackPreview : MonoBehaviour
             for (int i = 0; i < cars.Length; i++)
             {
                 if (collisions.CrashImpulse(i) == 0f)
+                {
                     TryApronTurnWreck(i);
+                    TryMarbleSpin(i, seconds);
+                }
             }
         }
+        else if (marbleSlipTime != null)
+            System.Array.Clear(marbleSlipTime, 0, marbleSlipTime.Length);
         var laneSamples = snapshotLaneFrame?.cars;
         if (laneSamples != null)
         {
@@ -3584,7 +3595,8 @@ public sealed partial class TrackPreview : MonoBehaviour
 
     private float SpeedAt(int index, float distance, out float preferredLineSpeedFactor, bool includeDraft = true)
     {
-        preferredLineSpeedFactor = PreferredLineSpeedFactor(index, distance);
+        preferredLineSpeedFactor = PreferredLineSpeedFactor(index, distance) *
+            Mathf.Sqrt(MarbleGrip(MarbleLoadForCar(index, distance)));
         float speed = SetupAdjustedSpeedAt(index, distance, includeDraft ? DraftSpeedBoost(index, distance) : 0f);
         return speed * preferredLineSpeedFactor + trailingSpeedBoosts[index];
     }
@@ -3621,7 +3633,8 @@ public sealed partial class TrackPreview : MonoBehaviour
         float damageFactor = 1f - (SessionRun.Vehicle(index)?.Damage ?? 0f) / 100f;
         float lineFactor = OffLineSpeedFactorAt(index, distance, lane);
         float braking = (lapSpeedProfile?.BrakingLimitAt(distance) ?? 0f) * trafficBrakingFactors[index];
-        return (speed * lineFactor * damageFactor, braking);
+        float surfaceGrip = MarbleGrip(MarbleLoadAt(index, distance, lane));
+        return (speed * lineFactor * damageFactor * Mathf.Sqrt(surfaceGrip), braking * surfaceGrip);
     }
 
     private float DraftSpeedBoost(int index, float distance) => DraftSpeedBoost(index, distance, out _);
@@ -3746,7 +3759,8 @@ public sealed partial class TrackPreview : MonoBehaviour
         float extremeSlip = 0f;
         float weight = turn == 0f ? 0f : SessionRun.LooseSetupYawWeight(index, out extremeSlip);
         float existingSlip = Mathf.Clamp01(Mathf.Abs(tireYawAngles[index]) / 18f);
-        float target = maxExtraYaw * turn * weight * (1f - existingSlip);
+        float marbleYaw = maxExtraYaw * MarbleLoadForCar(index, distance);
+        float target = (maxExtraYaw * weight + marbleYaw) * turn * (1f - existingSlip);
         looseSetupYawAngles[index] = Mathf.MoveTowards(looseSetupYawAngles[index], target, yawRate * SessionStep);
         return extremeSlip * Mathf.Abs(turn);
     }

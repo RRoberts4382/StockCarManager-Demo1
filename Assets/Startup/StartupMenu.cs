@@ -23,6 +23,7 @@ public sealed class StartupMenu : MonoBehaviour
     private long? usedMaxPriceFilter;
     private const string TrackCameraAnglePreference = "StockCarManager.TrackCameraAngle";
     private const string PreferredLinePreference = "StockCarManager.Settings.PreferredLineVisible";
+    private const string MarblesPreference = "StockCarManager.Settings.MarblesEnabled";
     private const double CameraCycleIntervalSeconds = 8d;
     private static readonly TrackPreview.CameraAngle[] TrackCameraChoices =
     {
@@ -6860,6 +6861,18 @@ public sealed class StartupMenu : MonoBehaviour
         }
         else
             menu.AddDisabledItem("Preferred Line", false);
+        if (preview?.SupportsMarbles == true)
+        {
+            menu.AddItem("Marbles", preview.MarblesEnabled, () =>
+            {
+                bool enabled = !preview.MarblesEnabled;
+                preview.SetMarblesEnabled(enabled);
+                PlayerPrefs.SetInt(MarblesPreference, enabled ? 1 : 0);
+                PlayerPrefs.Save();
+            });
+        }
+        else
+            menu.AddDisabledItem("Marbles", false);
         if (preview?.SessionRun != null)
             menu.AddItem("Night Sky", preview.TrackSkyIsNight, ToggleTrackSky);
         if (developmentPractice && preview?.SupportsGrandstands == true)
@@ -7589,6 +7602,7 @@ public sealed class StartupMenu : MonoBehaviour
             trackPreview.SetCollisionsEnabled(true);
             trackPreview.TrafficLaneChangesEnabled = true;
             trackPreview.SetPreferredLineVisible(PlayerPrefs.GetInt(PreferredLinePreference, 1) != 0);
+            trackPreview.SetMarblesEnabled(PlayerPrefs.GetInt(MarblesPreference, 1) != 0);
             if (developmentPracticeFromSchedule)
                 trackPreview.InitializeSolo(track.Definition, ActiveSponsorNames(), playerCar, night);
             else

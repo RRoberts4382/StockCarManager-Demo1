@@ -157,6 +157,7 @@ internal sealed class RaceSessionRun
     private readonly bool recordContacts;
     private readonly double gallonsPerMeter;
     private readonly double tireWearPerMeter;
+    internal Action<float, float> TireRubberShed { get; set; }
     private readonly TireTemperatureModel tireTemperatures;
     private readonly CarSimulationContext simulationContext;
     private readonly Random failureRandom;
@@ -801,7 +802,7 @@ internal sealed class RaceSessionRun
 
     internal float ConditionLimitedSpeedAndPace(int index, float speed, float seconds, out float pace, float brakingLimit = 0f,
         bool allowMechanicalFailure = false, float? paceSpeedCeiling = null, float preferredLineSpeedFactor = 1f,
-        float cleanAirSpeed = float.NaN, bool coastToTarget = false)
+        float cleanAirSpeed = float.NaN, bool coastToTarget = false, float surfaceGrip = 1f)
     {
         pace = 0f;
         var car = cars[index];
@@ -834,8 +835,10 @@ internal sealed class RaceSessionRun
                 var setup = SetupForCar(index);
                 acceleration *= UnityEngine.Mathf.Min(1f, weightFactor * VehicleSpeed003.DistributionAccelerationFactor(setup, car.Result.Fuel));
                 brakingGrip = UnityEngine.Mathf.Min(1f, weightFactor * VehicleSpeed003.DistributionBrakingFactor(setup, car.Result.Fuel)) * Weather.GripFactor;
-                brakingLimit *= brakingGrip;
             }
+            acceleration *= surfaceGrip;
+            brakingGrip *= surfaceGrip;
+            brakingLimit *= brakingGrip;
             float damageFactor = 1f - damage / 100f;
             // A paced car should be able to hold the commanded speed if it is
             // below what the car can still achieve with its current damage.
@@ -1018,6 +1021,7 @@ internal sealed class RaceSessionRun
         const double referenceSpeed = 63.0;
         float wear = (float)(adjustedMeters * tireWearPerMeter * simulationContext.TireWearRate *
             (speedMetersPerSecond / referenceSpeed)) * weightWearFactor;
+        float shed = 0f;
         for (int indexOnCar = 0; indexOnCar < 4; indexOnCar++)
         {
             var tire = result.car.GetTire(indexOnCar);
@@ -1026,10 +1030,13 @@ internal sealed class RaceSessionRun
                 float tireWear = wear * TireWearFactor(index, indexOnCar, tire, fuelBeforeTravel);
                 float previousWear = tire.wear;
                 tire.wear = UnityEngine.Mathf.Clamp01(previousWear + tireWear);
+                shed += tire.wear - previousWear;
                 if (onTrack && previousWear < 1f && tire.wear >= 1f)
                     car.WornOutTireMask |= 1 << indexOnCar;
             }
         }
+        if (onTrack && !reducedBurn && shed > 0f)
+            TireRubberShed?.Invoke(TrackPosition(trackPosition - meters * .5d, lapLength), shed * .25f);
     }
 
     private float TireWearFactor(int index, int corner, CarTire tire, double fuel)
