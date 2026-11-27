@@ -626,6 +626,18 @@ public sealed partial class TrackPreview : MonoBehaviour
     internal int SelectedCarIndex => ViewAngle == CameraAngle.Leader
         ? (SessionRun?.IsRace == true ? SessionRun.RaceLeaderIndex() : 0)
         : followedCar == null ? 0 : Mathf.Max(0, System.Array.IndexOf(cars, followedCar));
+    internal int FocusedCarIndex
+    {
+        get
+        {
+            if (ViewAngle == CameraAngle.Player && followedCar == null)
+                return -1;
+
+            int index = SelectedCarIndex;
+            return cars[index] != null && cars[index].gameObject.activeSelf ? index : -1;
+        }
+    }
+
     internal float SteeringWheelAngle =>
         (raceWheels[SelectedCarIndex]?.FrontSteeringAngle ?? 0f) * SelectedCarType.steeringWheelRatio;
 

@@ -14,6 +14,7 @@ internal sealed class TrackSessionMap
     private readonly string[] markerNumbers = new string[TrackPreview.CarCount];
     private readonly Label paceMarker;
     private TrackPreview preview;
+    private int focusedCarIndex = -1;
     private Vector2[] inside;
     private Vector2[] outside;
     private Vector2[] apron;
@@ -62,6 +63,7 @@ internal sealed class TrackSessionMap
 
     public void SetPreview(TrackPreview trackPreview)
     {
+        HighlightCar(-1);
         preview = trackPreview;
         container.style.display = preview == null ? DisplayStyle.None : DisplayStyle.Flex;
         foreach (var marker in markers)
@@ -108,6 +110,7 @@ internal sealed class TrackSessionMap
         if (!TryGetProjection(out float scale, out Vector2 offset))
             return;
 
+        HighlightCar(preview.FocusedCarIndex);
         for (int i = 0; i < preview.MapCarCount; i++)
         {
             var marker = markers[i];
@@ -136,6 +139,23 @@ internal sealed class TrackSessionMap
                 ? new Color32(255, 215, 75, 255)
                 : new Color32(232, 238, 243, 255);
             paceMarker.style.backgroundColor = paceColor;
+        }
+    }
+
+    private void HighlightCar(int index)
+    {
+        if (focusedCarIndex == index)
+            return;
+
+        if (focusedCarIndex >= 0)
+            markers[focusedCarIndex].RemoveFromClassList("track-map-focused");
+
+        markers[0].BringToFront();
+        focusedCarIndex = index;
+        if (index >= 0)
+        {
+            markers[index].AddToClassList("track-map-focused");
+            markers[index].BringToFront();
         }
     }
 

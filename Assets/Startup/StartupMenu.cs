@@ -158,6 +158,7 @@ public sealed class StartupMenu : MonoBehaviour
     private VisualElement trackPitSettings;
     private bool trackStandingsExpanded = true;
     private int displayedTimingRevision = -1;
+    private int displayedFocusedCarIndex = -1;
     private float nextStandingsRefresh;
     private readonly Dictionary<SessionCarResult, string> scoringDriverNames = new Dictionary<SessionCarResult, string>();
     private float scoringStandingsWidth;
@@ -6262,7 +6263,6 @@ public sealed class StartupMenu : MonoBehaviour
         if (trackSnapshotDialog != null || trackScreen?.style.display != DisplayStyle.Flex)
             return;
 
-        trackSessionMap.UpdateCars();
         if (trackCameraSelection == TrackPreview.CameraAngle.Cycle && Time.unscaledTimeAsDouble >= nextTrackCameraCut)
         {
             ReleaseTrackPointer();
@@ -6270,6 +6270,7 @@ public sealed class StartupMenu : MonoBehaviour
             nextTrackCameraCut = Time.unscaledTimeAsDouble + CameraCycleIntervalSeconds;
             UpdateTrackCameraLabel();
         }
+        trackSessionMap.UpdateCars();
         if (trackPreview.ViewAngle == TrackPreview.CameraAngle.InCar)
         {
             int selected = trackPreview.SelectedCarIndex;
@@ -6418,12 +6419,15 @@ public sealed class StartupMenu : MonoBehaviour
         if (timing == null)
             return;
 
-        if (Time.unscaledTime < nextStandingsRefresh && timing.TimingRevision == displayedTimingRevision)
+        int focusedCarIndex = trackPreview.FocusedCarIndex;
+        if (Time.unscaledTime < nextStandingsRefresh && timing.TimingRevision == displayedTimingRevision &&
+            focusedCarIndex == displayedFocusedCarIndex)
             return;
 
         nextStandingsRefresh = Time.unscaledTime + 0.15f;
         bool changed = timing.TimingRevision != displayedTimingRevision;
         displayedTimingRevision = timing.TimingRevision;
+        displayedFocusedCarIndex = focusedCarIndex;
         UpdateScoringHeader(timing);
         if (!trackStandingsExpanded)
             return;
@@ -6433,6 +6437,8 @@ public sealed class StartupMenu : MonoBehaviour
             {
                 var cell = timingCells[positionIndex];
                 var result = (SessionCarResult)cell.Row.userData;
+                cell.Driver.EnableInClassList("timing-driver-focused",
+                    focusedCarIndex >= 0 && timing.IndexOfCar(result) == focusedCarIndex);
                 if (scoringColumn == ScoringColumn.Mph)
                     cell.Value.text = FormatScoringSpeed(result.InstantSpeed);
                 UpdateScoringPosition(cell.Position, result, positionIndex);
@@ -6610,6 +6616,8 @@ public sealed class StartupMenu : MonoBehaviour
             cell.Driver.text = scoringDriverNames.TryGetValue(result, out string displayName)
                 ? displayName : cell.Driver.tooltip;
         }
+        cell.Driver.EnableInClassList("timing-driver-focused",
+            carIndex >= 0 && carIndex == displayedFocusedCarIndex);
         cell.Value.text = scoringColumn switch
         {
             ScoringColumn.Mph => FormatScoringSpeed(result.InstantSpeed),
