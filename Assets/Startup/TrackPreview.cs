@@ -767,6 +767,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         simulationModel = CarSimulationModels.Default;
         simulation = new CarSimulationContext(track, null, null, System.Array.Empty<SessionCarResult>());
         lapLength = track.lengthMiles * TrackDefinition.MetersPerMile;
+        PrepareTrackBumps(track);
         float trackScale = lapLength / (60f + 38f * Mathf.PI);
         straightLength = track.OvalStraightLength;
         turnRadius = track.OvalTurnRadius;
@@ -1208,7 +1209,7 @@ public sealed partial class TrackPreview : MonoBehaviour
 
     private void ConfigureOnboardCamera(int index)
     {
-        var visual = carVisualLods[index].Current.Root;
+        var visual = carVisualLods[index].Current.Body;
         var anchors = visual.GetComponentsInChildren<Transform>(true);
         var hood = System.Array.Find(anchors, child => child.name == "HoodSponsor");
         Vector3 hoodOffset = hood == null ? new Vector3(0f, 0.8f, 0.975f) :
@@ -1346,10 +1347,8 @@ public sealed partial class TrackPreview : MonoBehaviour
         {
             var offsets = onboardCameraOffsets[SelectedCarIndex];
             Vector3 offset = ViewAngle == CameraAngle.Hood ? offsets.Hood : offsets.DriverEye;
-            var visual = carVisualLods[SelectedCarIndex].Current.Root;
-            cameraTransform.localPosition = subject.localPosition +
-                subject.localRotation * (visual.localPosition + visual.localRotation * offset);
-            cameraTransform.localRotation = subject.localRotation * visual.localRotation;
+            var body = carVisualLods[SelectedCarIndex].Current.Body;
+            cameraTransform.SetPositionAndRotation(body.TransformPoint(offset), body.rotation);
         }
         else if (subject != null && ViewAngle is CameraAngle.Chase or CameraAngle.RearChase)
         {
@@ -1635,6 +1634,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         SetSessionSpeed(1);
         ResetCarLodBudget();
         SessionRun = new RaceSessionRun(session, lapLength, startLine, simulation, speedModel, simulationRandom, initialDistances: sessionDistances);
+        ResetBodySuspension();
         PrepareRaceStartFireworks(session);
         PrepareGrandstandCameraFlashes(session.kind == RaceSessionKind.Race);
         if (trackSkyMaterial != null)
@@ -1843,6 +1843,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             tireSmoke?.Clear();
             engineSmoke?.Clear();
             playerFire?.Clear();
+            underbodySparks?.Clear(false);
         }
         UpdateRearViewRendering();
         if (visible)
@@ -1872,6 +1873,7 @@ public sealed partial class TrackPreview : MonoBehaviour
     {
         UpdateAdaptiveCarLods();
         PresentLooseSetupYaw();
+        PresentBodySuspension();
         UpdateScoringPylon();
         RenderIowaFlagStand();
         UpdateIowaSafetyLights();
@@ -1921,6 +1923,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             {
                 AdvanceSimulation(SessionRun.StepDuration(SessionStep));
                 PositionCars();
+                SampleBodySuspension();
                 SampleSessionSkids();
                 pendingSessionTime -= SessionStep;
                 snapshotTime += SessionStep;
@@ -1965,6 +1968,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             else
                 AdvancePracticeStep();
             PositionCars();
+            SampleBodySuspension();
             SampleSessionSkids();
             pendingSessionTime -= SessionStep;
             snapshotTime += SessionStep;
@@ -3862,7 +3866,6 @@ public sealed partial class TrackPreview : MonoBehaviour
         if (raceCamera == null || SessionRun == null)
             return;
 
-        bool updateOnboardPose = false;
         for (int i = 0; i < cars.Length; i++)
         {
             var visual = carVisualLods[i]?.Current;
@@ -3877,13 +3880,9 @@ public sealed partial class TrackPreview : MonoBehaviour
                 root.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
                 Vector3 axle = visual.Wheels?.FrontAxleCenter ?? Vector3.forward * RearAxleHeading.CenterToRearAxle;
                 RaceWheelAnimation.ApplyFrontAxleYaw(root, axle, yaw);
-                updateOnboardPose |= i == SelectedCarIndex;
             }
             visual.Wheels?.Present(yaw);
         }
-
-        if (updateOnboardPose && ViewAngle is (CameraAngle.Hood or CameraAngle.InCar))
-            ApplyCameraPose();
     }
 
     private float SampleLooseSetupYaw(int index, float distance, bool canYaw)

@@ -1146,6 +1146,15 @@ internal sealed class RaceSessionRun
     internal float DynamicCornerWeight(int index, int corner) =>
         dynamicLoads[index].Load(corner, SetupForCar(index), Fuel(index));
 
+    internal float VisualCorneringLoadAt(float distance, float speed)
+    {
+        if (speed < 15f || TireHandlingTurnAt(distance) == 0f)
+            return 0f;
+
+        float lateralG = UnityEngine.Mathf.Abs(tireTemperatures.CurvatureAt(distance)) * speed * speed / 9.80665f;
+        return UnityEngine.Mathf.SmoothStep(0f, 1f, UnityEngine.Mathf.InverseLerp(.25f, 1.4f, lateralG));
+    }
+
     internal float TireHandlingTurnAt(float distance)
     {
         float turnWeight = inputSpeedProfile.TireTurnWeightAt(distance);

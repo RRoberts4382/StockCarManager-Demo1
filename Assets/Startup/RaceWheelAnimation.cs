@@ -25,6 +25,9 @@ internal sealed class RaceWheelAnimation
     }
 
     internal Vector3 FrontAxleCenter { get; }
+    internal bool HasFourCorners =>
+        TireContact(true, -1f).HasValue && TireContact(true, 1f).HasValue &&
+        TireContact(false, -1f).HasValue && TireContact(false, 1f).HasValue;
 
     internal Vector3? TireContact(bool front, float side)
     {
@@ -45,7 +48,7 @@ internal sealed class RaceWheelAnimation
         car.SetLocalPositionAndRotation(pivot - yawed * frontAxle, yawed);
     }
 
-    public static RaceWheelAnimation Bind(Transform car)
+    public static RaceWheelAnimation Bind(Transform car, bool detachRearBrakes = false)
     {
         var renderers = car.GetComponentsInChildren<MeshRenderer>();
         var wheels = new List<Wheel>(4);
@@ -66,7 +69,7 @@ internal sealed class RaceWheelAnimation
             spin.SetParent(steer, false);
             renderer.transform.SetParent(spin, true);
 
-            if (front)
+            if (front || detachRearBrakes)
             {
                 string brakeName = renderer.name.Replace(".Wheel.", ".WheelBrake.");
                 var brake = Array.Find(renderers, item => item.name == brakeName);

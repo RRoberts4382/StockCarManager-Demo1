@@ -28,7 +28,8 @@ public sealed partial class TrackPreview
     private sealed class CarVisual
     {
         public string Resource;
-        public Transform Root;
+        public Transform Root, Body;
+        public bool SupportsBodyTravel;
         public RaceWheelAnimation Wheels;
     }
 
@@ -90,8 +91,22 @@ public sealed partial class TrackPreview
             var root = CreateObject("Car visuals", car).transform;
             try
             {
-                state.Build(root, resource, state.Current == null);
-                next = new CarVisual { Resource = resource, Root = root, Wheels = RaceWheelAnimation.Bind(root) };
+                var body = CreateObject("Sprung body", root).transform;
+                state.Build(body, resource, state.Current == null);
+                // Wheel pivots are attached to the unsprung root and continue to follow the track pose.
+                var wheels = RaceWheelAnimation.Bind(root, detachRearBrakes: true);
+                var frontTires = body.Find("Front tires");
+                var rearTires = body.Find("Rear tires");
+                frontTires?.SetParent(root, false);
+                rearTires?.SetParent(root, false);
+                next = new CarVisual
+                {
+                    Resource = resource,
+                    Root = root,
+                    Body = body,
+                    Wheels = wheels,
+                    SupportsBodyTravel = wheels?.HasFourCorners == true || (frontTires != null && rearTires != null)
+                };
             }
             catch
             {
@@ -115,6 +130,7 @@ public sealed partial class TrackPreview
         if (old != null)
             old.Root.gameObject.SetActive(false);
         next.Wheels?.CopyMotionFrom(old?.Wheels);
+        PresentBodySuspension(index, next);
         next.Root.gameObject.SetActive(true);
         state.Previous = old;
         state.Current = next;
