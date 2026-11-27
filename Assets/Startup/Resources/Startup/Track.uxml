@@ -6,7 +6,9 @@
         <ui:VisualElement name="raceViewport" class="race-viewport" />
         <ui:VisualElement class="header track-header ui-default-font">
             <ui:VisualElement class="track-title-row">
+                <ui:Image name="trackVenueLogo" picking-mode="Ignore" style="width: 72px; height: 32px; flex-shrink: 0; margin-right: 8px; display: none;" />
                 <ui:Label name="selectedTrackName" class="brand track-name" />
+                <ui:Image name="trackSeriesLogo" picking-mode="Ignore" style="width: 72px; height: 32px; flex-shrink: 0; margin-left: 8px; display: none;" />
                 <ui:Label name="trackSeriesName" class="brand track-name track-series-name" />
             </ui:VisualElement>
             <ui:VisualElement class="track-header-status">
