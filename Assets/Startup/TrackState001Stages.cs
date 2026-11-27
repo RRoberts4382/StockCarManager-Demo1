@@ -44,6 +44,9 @@ internal sealed class TrackState001Stages
     private TrackPitTraffic.Car pace;
     private bool paceMerged;
     private bool paceReturning;
+    private readonly float?[] paceWaveByLapOffsets;
+    private readonly float[] paceWaveByLaneBlend;
+    internal bool PaceWaveByActive { get; private set; }
     private bool doubleFile;
     private bool caughtUp;
     private readonly System.Collections.Generic.HashSet<TrackPitTraffic.Car> returningCars = new System.Collections.Generic.HashSet<TrackPitTraffic.Car>();
@@ -96,7 +99,7 @@ internal sealed class TrackState001Stages
     internal int PaceLeaderIndex => leader;
     internal bool DoubleFile => doubleFile;
     internal bool ReleasingRestartLanes { get; private set; }
-    public bool OneToGo => State == SessionTrackState.Caution && !restartHeld && paceMerged && paceDistance >= doubleFileAt;
+    public bool OneToGo => State == SessionTrackState.Caution && !restartHeld && caughtUp && paceMerged && paceDistance >= doubleFileAt;
     internal bool StageWhiteOverriddenByCaution { get; private set; }
     public bool LightsVisible => (IsCaution || earlyStageEnd.HasValue) && !paceReturning &&
         (!IsCaution || !paceMerged || paceDistance < doubleFileAt) && cautionTime % 0.5f < 0.25f;
@@ -117,6 +120,8 @@ internal sealed class TrackState001Stages
         this.scriptedCautions = scriptedCautions;
         this.widenRestartFormationFirst = widenRestartFormationFirst;
         ranks = new int[count];
+        paceWaveByLapOffsets = new float?[count];
+        paceWaveByLaneBlend = new float[count];
         cautionTailOrder = new int[count];
         pit.CautionTailExitClear = CanRejoinBehindCautionLine;
         lapOffsets = new float[count];
@@ -208,6 +213,9 @@ internal sealed class TrackState001Stages
         }
         else if (!paceReturning)
         {
+            if (PaceWaveByActive)
+                AdvancePaceWaveBy(cars, seconds);
+
             // Decide before the visual pit approach starts. A missed peel-off
             // gets another pit entry and a matching restart marker.
             float approachDistance = Mathf.Min(100f, lapLength * .45f);
@@ -283,6 +291,13 @@ internal sealed class TrackState001Stages
 
     public float CarSpeed(int index, TrackPitTraffic.Car[] cars, float raceSpeed, float seconds)
     {
+        if (IsCaution && paceWaveByLapOffsets[index].HasValue && !cars[index].InPit)
+        {
+            const float catchUpGain = 15f * TrackDefinition.MetersPerMile / 3600f;
+            speeds[index] = Mathf.Min(raceSpeed, CautionPaceSpeed + catchUpGain);
+            return speeds[index];
+        }
+
         if ((IsCaution || earlyStageEnd.HasValue) && index == freePassCar && freePassInProgress && !cars[index].InPit)
         {
             float gap = cars[leader].TrackDistance - FormationOffset(index) - cars[index].TrackDistance;
@@ -351,6 +366,11 @@ internal sealed class TrackState001Stages
     public void PreserveCautionOrder(TrackPitTraffic.Car[] cars, float[] stepSpeeds, float seconds)
     {
         if (!ReducedFuelBurn) return;
+        if (PaceWaveByActive && seconds > 0f && !cars[leader].InPit && !cars[leader].Retired)
+        {
+            float room = Mathf.Max(0f, paceDistance - cars[leader].TrackDistance - RowSpacing);
+            stepSpeeds[leader] = Mathf.Min(stepSpeeds[leader], paceSpeedThisStep + room / seconds);
+        }
         if (State != SessionTrackState.FinishUnderCaution && doubleFile && (!widenRestartFormationFirst || doubleFileSpacingBlend > 0f))
             return;
 
@@ -372,7 +392,7 @@ internal sealed class TrackState001Stages
         {
             var car = cars[i];
             if (cautionTailOrder[i] == 0 || car.InPit || car.Retired) continue;
-            if (paceMerged && !paceReturning)
+            if (paceMerged && !paceReturning && !paceWaveByLapOffsets[i].HasValue)
             {
                 float paceGap = Mathf.Repeat(paceDistance - car.TrackDistance, lapLength);
                 stepSpeeds[i] = Math.Min(stepSpeeds[i],
@@ -541,7 +561,11 @@ internal sealed class TrackState001Stages
             caughtUp = FormationBunched(cars, lead);
             PitOpen = caughtUp;
         }
-        bool fieldSingleFile = !freePassInProgress && freePassLaneBlend == 0f;
+        if (shortTrack && !caughtUp && paceMerged && !paceReturning && restartReady && lead >= doubleFileAt &&
+            (PaceWaveByActive || PaceCarHoldsBackCatchUp(cars, lead)))
+            QueuePaceWaveBy(cars, lead);
+
+        bool fieldSingleFile = !PaceWaveByActive && !freePassInProgress && freePassLaneBlend == 0f;
         for (int i = 0; i < cars.Length; i++)
         {
             if (!cars[i].InPit && !cars[i].Retired && (yielding[i] || yieldLane[i] > 0f))
@@ -573,9 +597,62 @@ internal sealed class TrackState001Stages
         }
     }
 
+    private bool PaceCarHoldsBackCatchUp(TrackPitTraffic.Car[] cars, float lead)
+    {
+        // A split group can be almost a lap behind in formation but physically just behind the pace car.
+        for (int i = 0; i < cars.Length; i++)
+            if (IsPaceWaveByCandidate(cars, i, lead, out float gapToPace) && gapToPace <= 2f * RowSpacing)
+                return true;
+        return false;
+    }
+
+    private bool IsPaceWaveByCandidate(TrackPitTraffic.Car[] cars, int index, float lead, out float gapToPace)
+    {
+        var car = cars[index];
+        gapToPace = Mathf.Repeat(paceDistance - car.TrackDistance, lapLength);
+        float formationGap = lead - FormationOffset(index) - car.TrackDistance;
+        return index != leader && CanWaveBy(car) && formationGap > 2f * RowSpacing &&
+            gapToPace < Mathf.Min(paceDistance - lead, lapLength * .5f);
+    }
+
+    private static bool CanWaveBy(TrackPitTraffic.Car car) =>
+        !car.InPit && !car.InGarage && !car.Retired && car.FlatTireLaneBlend <= 0f &&
+        !car.ApronEntryActive && !car.ApronExitActive;
+
+    private void QueuePaceWaveBy(TrackPitTraffic.Car[] cars, float lead)
+    {
+        for (int i = 0; i < cars.Length; i++)
+        {
+            if (paceWaveByLapOffsets[i].HasValue || !IsPaceWaveByCandidate(cars, i, lead, out float gapToPace))
+                continue;
+
+            // Follow the same physical pass even if the pace car and race car are on different scored laps.
+            paceWaveByLapOffsets[i] = paceDistance - cars[i].TrackDistance - gapToPace;
+            PaceWaveByActive = true;
+        }
+    }
+
+    private void AdvancePaceWaveBy(TrackPitTraffic.Car[] cars, float seconds)
+    {
+        PaceWaveByActive = false;
+        for (int i = 0; i < cars.Length; i++)
+        {
+            var car = cars[i];
+            if (paceWaveByLapOffsets[i] is float lapOffset &&
+                (!CanWaveBy(car) || car.TrackDistance >= paceDistance - lapOffset + 2f * RowSpacing))
+                paceWaveByLapOffsets[i] = null;
+
+            bool passing = paceWaveByLapOffsets[i].HasValue;
+            paceWaveByLaneBlend[i] = Mathf.MoveTowards(paceWaveByLaneBlend[i], passing ? 1f : 0f, seconds / 2f);
+            PaceWaveByActive |= passing || paceWaveByLaneBlend[i] > 0f;
+        }
+    }
+
+    internal float PaceWaveByLaneBlend(int index) => Mathf.SmoothStep(0f, 1f, paceWaveByLaneBlend[index]);
+
     private bool FormationBunched(TrackPitTraffic.Car[] cars, float lead)
     {
-        if (freePassInProgress) return false;
+        if (freePassInProgress || PaceWaveByActive) return false;
 
         int count = 0;
         for (int i = 0; i < cars.Length; i++)
@@ -673,6 +750,9 @@ internal sealed class TrackState001Stages
         pace = pit.CreateStalledCar(pit.ParkingDistance);
         paceMerged = false;
         paceReturning = false;
+        PaceWaveByActive = false;
+        Array.Clear(paceWaveByLapOffsets, 0, paceWaveByLapOffsets.Length);
+        Array.Clear(paceWaveByLaneBlend, 0, paceWaveByLaneBlend.Length);
         ScheduleRestart(lapAnchor);
     }
 

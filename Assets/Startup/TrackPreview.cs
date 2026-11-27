@@ -2951,7 +2951,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         var draftLine = plateDraftLanes ? draft.InLine : null;
         var draftLeaders = DraftSpeedActive && behaviorModel is VehicleBehavior003 ? draft.CloseFollowLeaders : null;
         bool respondToTraffic = TrafficLaneChangesEnabled || protectRestartMerge ||
-            (greenFlagMerge && collisionsEnabled);
+            (greenFlagMerge && collisionsEnabled) || stages?.PaceWaveByActive == true;
         var laneDraft = varyLanes ? draft : null;
         if (laneDraft != null)
             laneDraft.UpdateLaneVariation(lapLength, seconds, drivingDistances, drivingLanes, currentTrafficSpeeds,
@@ -4224,6 +4224,13 @@ public sealed partial class TrackPreview : MonoBehaviour
             }
             lane = Mathf.Lerp(mergeLane, lane, Mathf.SmoothStep(0f, 1f, Mathf.Max(0f, toMerge - 5f) / (mergeLength - 5f)));
         }
+        if (stages?.PaceWaveByActive == true)
+        {
+            float outside = -(customLayout?.InsideSign ?? -1f);
+            float halfWidth = RoadWidths(distance).x * .5f;
+            float passingLane = outside * Mathf.Clamp(halfWidth - 1.5f, 0f, 3.4f);
+            lane = Mathf.Lerp(lane, passingLane, stages.PaceWaveByLaneBlend(i));
+        }
         return lane;
     }
 
@@ -4873,6 +4880,9 @@ public sealed partial class TrackPreview : MonoBehaviour
                     (station, time) => SampleCautionPacePose(false, station, currentLane));
                 for (int side = -1; side <= 1; side += 2)
                 {
+                    if (stages.PaceWaveByActive && side != (customLayout?.InsideSign ?? -1f))
+                        continue;
+
                     float candidate = side * offset;
                     float clear = PacePathClearance(distance, lookAhead, speed,
                         (station, time) => SampleCautionPacePose(false, station,
