@@ -28,7 +28,10 @@ public sealed partial class TrackPreview
     private sealed class CarVisual
     {
         public string Resource;
-        public Transform Root;
+        public Transform Root, Body;
+        public Transform FallbackRearTires;
+        public Vector3 FallbackRearTiresCenter;
+        public bool SupportsBodyTravel;
         public RaceWheelAnimation Wheels;
     }
 
@@ -37,6 +40,7 @@ public sealed partial class TrackPreview
         public string[] Resources;
         public Action<Transform, string, bool> Build;
         public CarVisual Current;
+        public Vector3 BodyYawPivot;
         // Keep one previous visual so returning to the last level is cheap.
         public CarVisual Previous;
         public int Level, CoverageLevel;
@@ -90,8 +94,24 @@ public sealed partial class TrackPreview
             var root = CreateObject("Car visuals", car).transform;
             try
             {
-                state.Build(root, resource, state.Current == null);
-                next = new CarVisual { Resource = resource, Root = root, Wheels = RaceWheelAnimation.Bind(root) };
+                var body = CreateObject("Sprung body", root).transform;
+                state.Build(body, resource, state.Current == null);
+                // Wheel pivots are attached to the unsprung root and continue to follow the track pose.
+                var wheels = RaceWheelAnimation.Bind(root, detachRearBrakes: true);
+                var frontTires = body.Find("Front tires");
+                var rearTires = body.Find("Rear tires");
+                frontTires?.SetParent(root, false);
+                rearTires?.SetParent(root, false);
+                next = new CarVisual
+                {
+                    Resource = resource,
+                    Root = root,
+                    Body = body,
+                    Wheels = wheels,
+                    FallbackRearTires = rearTires,
+                    FallbackRearTiresCenter = rearTires?.localPosition ?? Vector3.zero,
+                    SupportsBodyTravel = wheels?.HasFourCorners == true || (frontTires != null && rearTires != null)
+                };
             }
             catch
             {
@@ -114,7 +134,10 @@ public sealed partial class TrackPreview
         var old = state.Current;
         if (old != null)
             old.Root.gameObject.SetActive(false);
+        if (old == null)
+            state.BodyYawPivot = next.Wheels?.FrontAxleCenter ?? Vector3.forward * RearAxleHeading.CenterToRearAxle;
         next.Wheels?.CopyMotionFrom(old?.Wheels);
+        PresentBodySuspension(index, next);
         next.Root.gameObject.SetActive(true);
         state.Previous = old;
         state.Current = next;
