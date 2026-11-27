@@ -133,7 +133,7 @@ internal sealed class VehicleSpeed003 : IVehicleSpeedModel
         return target * Mathf.Lerp(1.08f, 0.92f, roughness);
     }
 
-    private static SuspensionCornerSetup CornerSetup(Setup setup, int corner) =>
+    internal static SuspensionCornerSetup CornerSetup(Setup setup, int corner) =>
         corner == 0 ? setup?.leftFront : corner == 1 ? setup?.rightFront :
             corner == 2 ? setup?.leftRear : setup?.rightRear;
 
@@ -356,22 +356,45 @@ internal sealed class VehicleSpeed003 : IVehicleSpeedModel
         return 1f + heat + 2f * heat * heat;
     }
 
-    internal static float TireCornerSpeedFactor(Setup setup, TeamCar car)
+    internal static float TireCornerSpeedFactor(Setup setup, TeamCar car, out float worstWear)
     {
         float totalGrip = 0f;
         float worstGrip = 1f;
+        worstWear = 0f;
         for (int corner = 0; corner < 4; corner++)
         {
             var tire = car?.GetTire(corner);
             float temperature = TireTemperatureModel.Fahrenheit(tire?.temperature ?? 0f);
-            float grip = TireGripFactor(tire?.wear ?? 0f, temperature) * PressureGrip(setup, corner, tire);
+            float wear = tire?.wear ?? 0f;
+            float grip = TireGripFactor(wear, temperature) * PressureGrip(setup, corner, tire);
+            worstWear = Mathf.Max(worstWear, wear);
             totalGrip += grip;
             worstGrip = Mathf.Min(worstGrip, grip);
         }
         return Mathf.Sqrt((totalGrip / 4f + worstGrip) * 0.5f);
     }
 
-    internal static float CornerSetupSpeedFactor(TrackDefinition track, Setup setup, double fuelGallons)
+    internal static float NonPlateOvalTirePaceFactor(float worstWear)
+    {
+        // Calibrated to a 100-lap Bristol run. Scrub in quickly, lose pace
+        // gradually through the middle, then fall off more sharply on older tires.
+        float run = worstWear / .38f;
+        float initial = .04f * (1f - Mathf.Exp(-run / .08f));
+        float middle = .10f * run;
+        float late = .85f * run * run * run * run;
+        return 1f / (1f + Mathf.Min(initial + middle + late, .85f));
+    }
+
+    internal static bool UsesNonPlateOvalSetupTuning(TrackDefinition track) =>
+        track.majorStyle == "Oval" && !track.restrictorPlate;
+
+    internal static float NonPlateOvalSetupReference(TrackDefinition track) =>
+        // Use the Bristol comparison's reference and each other oval's nominal setup.
+        track.id == TrackPreview.BristolTrackId ? 1.046184f :
+        CornerSetupSpeedFactor(track, RivalSetup001.Create(track, string.Empty, nominal: true), SessionFuel.TankCapacity);
+
+    internal static float CornerSetupSpeedFactor(TrackDefinition track, Setup setup, double fuelGallons,
+        float ovalSetupReference = 0f)
     {
         float springDifference = 0f;
         for (int corner = 0; corner < 4; corner++)
@@ -381,10 +404,18 @@ internal sealed class VehicleSpeed003 : IVehicleSpeedModel
             springDifference += SpringError(SpringRate(setup, corner), target) -
                 SpringError(baseline, target);
         }
-        float springFactor = Mathf.Clamp(1f - springDifference * 0.025f, 0.88f, 1.03f);
+        float springCap = UsesNonPlateOvalSetupTuning(track) ? 1.06f : 1.03f;
+        float springFactor = Mathf.Clamp(1f - springDifference * 0.025f, 0.88f, springCap);
         float swayBarFactor = Mathf.Clamp(1f - SwayBarErrorDifference(track, setup) * 0.02f, 0.94f, 1.02f);
         float trackBarFactor = Mathf.Clamp(1f - TrackBarErrorDifference(track, setup) * 0.06f, 0.94f, 1.015f);
-        return springFactor * swayBarFactor * trackBarFactor * DistributionCornerFactor(track, setup, fuelGallons);
+        float factor = springFactor * swayBarFactor * trackBarFactor * DistributionCornerFactor(track, setup, fuelGallons);
+        if (ovalSetupReference > 0f)
+        {
+            // Bound the extra sensitivity for setups outside the calibrated field.
+            float relative = Mathf.Clamp(factor / ovalSetupReference, .95f, 1.015f);
+            factor *= Mathf.Pow(relative, 5f);
+        }
+        return factor;
     }
 
     // Plate cars stay on power. Setup, weight and weather set the sustainable

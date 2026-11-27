@@ -34,20 +34,39 @@ internal sealed class CarSimulationContext
         if (locking) EqualConditionTesting = false;
         if (EqualConditionTesting) return;
         rivalSetups = new Setup[Cars.Count];
+        var ovalBaselines = VehicleSpeed003.UsesNonPlateOvalSetupTuning(Track) ? new List<Setup>() : null;
         for (int i = 0; i < Cars.Count; i++)
         {
             var car = Cars[i].car;
             if (car == null) continue;
             bool player = includesPlayer && i == 0;
             var saved = Event?.EventSetup(car);
+            bool baseline = false;
             var setup = player ? PlayerSetup ?? car.SetupsFor(Track.id).LastOrDefault()?.setup ?? car.setup
-                : saved ?? RivalSetup001.ForTrack(car, Track);
+                : saved ?? RivalSetup001.ForTrack(car, Track, out baseline);
             if (Event?.SetupLocked == true && saved != null) setup = saved;
-            if (locking && Event != null && (!Event.SetupLocked || saved == null)) Event.CaptureEventSetup(car, setup);
-            if (player) PlayerSetup = locking ? RivalSetup001.Copy(setup) : setup;
-            else rivalSetups[i] = RivalSetup001.Copy(setup);
+            if (player)
+                PlayerSetup = locking ? RivalSetup001.Copy(setup) : setup;
+            else
+            {
+                rivalSetups[i] = RivalSetup001.Copy(setup);
+                if (baseline && ovalBaselines != null)
+                    ovalBaselines.Add(rivalSetups[i]);
+            }
         }
-        if (locking && Event != null) Event.setupLocked = true;
+
+        if (ovalBaselines != null)
+            RivalSetup001.WidenOvalBaselines(ovalBaselines);
+        if (locking && Event != null)
+        {
+            for (int i = 0; i < Cars.Count; i++)
+            {
+                var car = Cars[i].car;
+                if (car != null && (!Event.SetupLocked || Event.EventSetup(car) == null))
+                    Event.CaptureEventSetup(car, includesPlayer && i == 0 ? PlayerSetup : rivalSetups[i]);
+            }
+            Event.setupLocked = true;
+        }
     }
     internal Setup RivalSetup(int index) => rivalSetups?[index];
 

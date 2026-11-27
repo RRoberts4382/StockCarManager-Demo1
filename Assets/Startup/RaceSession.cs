@@ -162,6 +162,7 @@ internal sealed class RaceSessionRun
     private readonly CarSimulationContext simulationContext;
     private readonly Random failureRandom;
     private readonly bool usesSpringPerformance;
+    private readonly float ovalSetupReference;
     private readonly DynamicTireLoads[] dynamicLoads;
     private readonly float[] thermalSpeeds;
     private readonly float[] throttleInputs, pedalInputs, brakeInputs;
@@ -368,6 +369,8 @@ internal sealed class RaceSessionRun
         Weather = new SessionWeatherState(SessionWeatherForecast.Ensure(session, simulation.Track, simulation.Event), simulation.Track.surface, session.kind == RaceSessionKind.Practice);
         Weather.SetLocked(session.lockPracticeWeather);
         usesSpringPerformance = speedModel is VehicleSpeed003;
+        if (usesSpringPerformance && VehicleSpeed003.UsesNonPlateOvalSetupTuning(simulation.Track))
+            ovalSetupReference = VehicleSpeed003.NonPlateOvalSetupReference(simulation.Track);
         if (usesSpringPerformance) simulation.PrepareRivalSetups();
         tireTemperatures = new TireTemperatureModel(simulation.Track);
         dynamicLoads = Enumerable.Range(0, simulation.Cars.Count).Select(_ => new DynamicTireLoads()).ToArray();
@@ -1183,8 +1186,9 @@ internal sealed class RaceSessionRun
         var car = cars[index].Result.car;
         double fuel = Fuel(index);
         float turnWeight = inputSpeedProfile.TireTurnWeightAt(distance);
+        float worstWear = 0f;
         float tireFactor = turnWeight > 0f
-            ? UnityEngine.Mathf.Lerp(1f, VehicleSpeed003.TireCornerSpeedFactor(setup, car), turnWeight)
+            ? UnityEngine.Mathf.Lerp(1f, VehicleSpeed003.TireCornerSpeedFactor(setup, car, out worstWear), turnWeight)
             : 1f;
         if (track.restrictorPlate)
             return speed * VehicleSpeed003.RestrictorPlatePaceFactor(track, setup, fuel, Weather.GripFactor) * tireFactor;
@@ -1195,14 +1199,18 @@ internal sealed class RaceSessionRun
         float cornerLoad = UnityEngine.Mathf.SmoothStep(0f, 1f,
             UnityEngine.Mathf.InverseLerp(0.05f, 1.5f,
                 speed * speed * UnityEngine.Mathf.Abs(tireTemperatures.CurvatureAt(distance)) / 9.80665f));
-        float factor = VehicleSpeed003.CornerSetupSpeedFactor(track, setup, fuel) * tireFactor;
+        float factor = VehicleSpeed003.CornerSetupSpeedFactor(track, setup, fuel, ovalSetupReference) * tireFactor;
         factor *= VehicleSpeed003.ShockSpeedFactor(track, setup,
             tireTemperatures.ShockMotionAt(distance, speed));
         factor *= dynamicLoads[index].CornerSpeedFactor(setup, fuel);
         factor *= VehicleSpeed003.WeightCornerSpeedFactor(fuel) * UnityEngine.Mathf.Sqrt(Weather.GripFactor);
         // Unwind the cornering demand as the driver applies power in the final third.
         cornerLoad *= 1f-inputSpeedProfile.CornerExitAt(distance);
-        return speed * UnityEngine.Mathf.Lerp(straightFactor, factor, cornerLoad);
+        float pace = speed * UnityEngine.Mathf.Lerp(straightFactor, factor, cornerLoad);
+        // Carry the worn-tire pace loss through corner exit as cornering load unwinds.
+        if (ovalSetupReference > 0f && turnWeight > 0f)
+            pace *= UnityEngine.Mathf.Lerp(1f, VehicleSpeed003.NonPlateOvalTirePaceFactor(worstWear), turnWeight);
+        return pace;
     }
 
     public void AdvanceClock(float seconds, bool? raceLapUnderCaution = null)
