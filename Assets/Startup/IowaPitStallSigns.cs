@@ -17,7 +17,7 @@ public sealed partial class TrackPreview
         Vector3 right = Vector3.Cross(Vector3.up, forward);
         float wallSide = Mathf.Sign(Vector3.Dot(right, infield));
         const float footingMargin = .17f;
-        float wallBack = definition.pitRoad.widthMeters * .5f + PitWallThickness;
+        float wallBack = PitWorkWallBack;
         float poleX = Vector3.Dot(center - stall, right) + (wallBack + footingMargin) * wallSide;
 
         var sign = CreateObject($"Iowa pit stall sign No. {number}", parent);

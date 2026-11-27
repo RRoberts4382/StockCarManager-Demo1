@@ -10,6 +10,7 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
     internal delegate float PassForecast(int car, int blocker, float lane, float gap);
     internal (Vector2[] PassingLaneRanges, bool[] CornerApproaches, PassForecast ForecastPass) OvalPassingContext { get; set; }
     internal Action<int, int, int> OvalPassCommitted { get; set; }
+    internal Action<int, TrafficLaneDecision> SnapshotLaneDecision { get; set; }
     internal bool UsePreferredLineTraffic { get; set; }
     internal float OvalPassingEase { get; set; }
     internal float[] TrackContactHalfWidths { get; set; }
@@ -264,6 +265,34 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
         internal float LastLane;
     }
 
+    [Serializable]
+    internal struct TrafficLaneDecision
+    {
+        public bool recorded;
+        public float startLaneMeters;
+        public float baseTargetLaneMeters;
+        public float steeringTargetLaneMeters;
+        public float preferredPathAdvanceMeters;
+        public float steeringCorrectionMeters;
+        public float requestedLaneMeters;
+        public float clearanceLimitedLaneMeters;
+        public float finalLaneMeters;
+        public bool trafficRoomMeasured;
+        public float trafficRoomMeters;
+        public float openingRoomMeters;
+        public int trafficRoomNeighborIndex;
+        public bool trafficRoomLimited;
+        public bool waitingForRoom;
+        public bool sweptClearanceChecked;
+        public bool sweptClearanceAccepted;
+        public bool sweptRoadEdgeRejected;
+        public int sweptBlockerIndex;
+        public int leaderIndex;
+        public int passBlockerIndex;
+        public int passSide;
+        public bool returningToLine;
+    }
+
     private const float PassReturnBuffer = .35f;
     private const float PassingSpeedAdvantage = .65f;
     private const float PassingOpportunityDuration = .20f;
@@ -346,6 +375,7 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
             : PassingOpportunityDuration;
         float[] preferredAdvances = (this as VehicleBehavior004)?.PreferredLineAdvance;
         float[] fittedAdvances = UsePreferredLineTraffic ? preferredAdvances : null;
+        var snapshotLaneDecision = SnapshotLaneDecision;
         bool coordinateArc = respondToTraffic && startLanes != null && fittedAdvances != null;
         Span<int> laneOrder = coordinateArc ? stackalloc int[lanes.Length] : Span<int>.Empty;
         if (coordinateArc)
@@ -386,14 +416,35 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
             {
                 float heldOffset = canVaryLane ? laneDraft.AppliedLaneOffsets[i] : 0f;
                 float change = smoothChange ? LaneChangeStep(target + heldOffset - lane, previousLaneChangeSpeed, seconds) : 0f;
-                lanes[i] = smoothChange ? lane + change + (preferredAdvances?[i] ?? 0f)
+                float requested = smoothChange ? lane + change + (preferredAdvances?[i] ?? 0f)
                     : StepTowardPreferredLane(i, lane, target + heldOffset, seconds);
+                lanes[i] = requested;
                 if (canVaryLane)
                     ApplyLaneVariation(i, lapLength, seconds, distances, widths, onTrack, lanes, currentSpeeds, laneDraft, startLanes);
                 else if (laneDraft != null)
                     laneDraft.AppliedLaneOffsets[i] = 0f;
                 if (smoothChange)
                     SaveLaneMotion(change);
+                if (snapshotLaneDecision != null)
+                {
+                    float advance = preferredAdvances?[i] ?? 0f;
+                    snapshotLaneDecision(i, new TrafficLaneDecision
+                    {
+                        recorded = true,
+                        startLaneMeters = lane,
+                        baseTargetLaneMeters = targets[i],
+                        steeringTargetLaneMeters = target + heldOffset,
+                        preferredPathAdvanceMeters = advance,
+                        steeringCorrectionMeters = requested - lane - advance,
+                        requestedLaneMeters = requested,
+                        clearanceLimitedLaneMeters = requested,
+                        finalLaneMeters = lanes[i],
+                        trafficRoomNeighborIndex = -1,
+                        sweptBlockerIndex = -1,
+                        leaderIndex = -1,
+                        passBlockerIndex = -1,
+                    });
+                }
                 continue;
             }
 
@@ -570,8 +621,12 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
                 : Mathf.MoveTowards(lane, drivingTarget, MaximumLateralSpeed * seconds);
             if (recoveringInsideEdge && outwardArc)
                 next += fittedAdvance;
+            float requestedLane = next;
             float requestedStep = next - lane;
             bool nearTraffic = false;
+            int trafficRoomNeighbor = -1, sweptBlocker = -1;
+            float roomForSnapshot = 0f, openingForSnapshot = 0f;
+            bool sweptRoadEdgeRejected = false;
             if (stabilize && next != lane)
             {
                 float direction = Mathf.Sign(next - lane);
@@ -583,7 +638,13 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
                 float easeDistance = closeSpacing ? CloseTrafficEaseDistance : TrafficEaseDistance;
                 float parallelMargin = closeSpacing ? CloseParallelClearanceMargin : ParallelClearanceMargin;
                 float easingRoom = reserve + easeDistance;
-                float room = TrafficRoom(direction, easingRoom, parallelMargin, followOpeningGap, out float opening);
+                float room = TrafficRoom(direction, easingRoom, parallelMargin, followOpeningGap, out float opening,
+                    out trafficRoomNeighbor);
+                if (snapshotLaneDecision != null && trafficRoomNeighbor >= 0)
+                {
+                    roomForSnapshot = room;
+                    openingForSnapshot = opening;
+                }
                 float requestedMovement = Mathf.Abs(next - lane);
                 nearTraffic = room <= easingRoom || closeSpacing && room <= reserve + requestedMovement;
                 if (room <= reserve)
@@ -626,7 +687,8 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
             }
 
             // The existing swept check remains authoritative for the final movement.
-            bool safe = LaneClear(next, laneClearanceAhead, followingPreferred, recoveringInsideEdge: recoveringInsideEdge);
+            bool safe = LaneClear(next, laneClearanceAhead, followingPreferred, recoveringInsideEdge: recoveringInsideEdge,
+                recordSweptRejection: snapshotLaneDecision != null);
             if (safe)
                 lanes[i] = next;
 
@@ -641,6 +703,37 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
                 float usedMotion = !safe ? 0f : Mathf.Abs(requestedStep) <= .00001f ? 1f
                     : Mathf.Clamp01((next - lane) / requestedStep);
                 SaveLaneMotion(correction * usedMotion);
+            }
+
+            if (snapshotLaneDecision != null)
+            {
+                float advance = advanceWithLine ? preferredAdvances?[i] ?? 0f : recoveringInsideEdge && outwardArc ? fittedAdvance : 0f;
+                snapshotLaneDecision(i, new TrafficLaneDecision
+                {
+                    recorded = true,
+                    startLaneMeters = lane,
+                    baseTargetLaneMeters = targets[i],
+                    steeringTargetLaneMeters = drivingTarget,
+                    preferredPathAdvanceMeters = advance,
+                    steeringCorrectionMeters = requestedStep - advance,
+                    requestedLaneMeters = requestedLane,
+                    clearanceLimitedLaneMeters = next,
+                    finalLaneMeters = lanes[i],
+                    trafficRoomMeasured = trafficRoomNeighbor >= 0,
+                    trafficRoomMeters = roomForSnapshot,
+                    openingRoomMeters = openingForSnapshot,
+                    trafficRoomNeighborIndex = trafficRoomNeighbor,
+                    trafficRoomLimited = Mathf.Abs(next - requestedLane) > .00001f,
+                    waitingForRoom = control.WaitingForRoom,
+                    sweptClearanceChecked = true,
+                    sweptClearanceAccepted = safe,
+                    sweptRoadEdgeRejected = sweptRoadEdgeRejected,
+                    sweptBlockerIndex = sweptBlocker,
+                    leaderIndex = leader,
+                    passBlockerIndex = control.PassSide == 0 ? -1 : control.PassBlocker,
+                    passSide = control.PassSide,
+                    returningToLine = control.ReturningToLine,
+                });
             }
 
             void SaveLaneMotion(float correctionStep)
@@ -715,10 +808,12 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
                 ContactWidthBetween(i, other), comfortMargin, gap, side, currentSpeeds[i], currentSpeeds[other],
                 startLaneSpeeds?[i] ?? control.LateralSpeed, startLaneSpeeds?[other] ?? 0f, parallelMargin);
 
-            float TrafficRoom(float direction, float easingRoom, float parallelMargin, bool followOpeningGap, out float opening)
+            float TrafficRoom(float direction, float easingRoom, float parallelMargin, bool followOpeningGap,
+                out float opening, out int limitingNeighbor)
             {
                 float room = float.PositiveInfinity;
                 opening = 0f;
+                limitingNeighbor = -1;
                 for (int j = 0; j < lanes.Length; j++)
                 {
                     if (j == i || !onTrack[j])
@@ -745,13 +840,14 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
                     {
                         room = availableRoom;
                         opening = availableRoom - Mathf.Max(lateralRoom, easedRoom);
+                        limitingNeighbor = j;
                     }
                 }
                 return room;
             }
 
             bool LaneClear(float candidate, float ahead, bool followingPreferred = false, bool comfort = false,
-                float lateralBuffer = 0f, bool recoveringInsideEdge = false)
+                float lateralBuffer = 0f, bool recoveringInsideEdge = false, bool recordSweptRejection = false)
             {
                 float clearance = followingPreferred ? PreferredLaneEdgeClearance(i, candidate, inside) : PassEdgeClearance;
                 float edge = Mathf.Max(0f, widths[i] * .5f - clearance);
@@ -759,7 +855,11 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
                 // Allow a partial return and still check the entire move against traffic.
                 bool reducesInsideOverlap = recoveringInsideEdge && candidate * inside < lane * inside;
                 if (Mathf.Abs(candidate) > edge && !reducesInsideOverlap)
+                {
+                    if (recordSweptRejection)
+                        sweptRoadEdgeRejected = true;
                     return false;
+                }
                 for (int j = 0; j < lanes.Length; j++)
                 {
                     if (j == i || !onTrack[j])
@@ -778,7 +878,11 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
                     float required = comfort ? ComfortClearance(j, gap, before)
                         : ContactWidthBetween(i, j) + (stabilize ? 0f : comfortMargin);
                     if (separation < required + lateralBuffer && !escaping)
+                    {
+                        if (recordSweptRejection)
+                            sweptBlocker = j;
                         return false;
+                    }
                 }
                 return true;
             }

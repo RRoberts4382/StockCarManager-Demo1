@@ -153,9 +153,9 @@ public sealed partial class TrackPreview
 
         void AppendRoad(IowaTowPolyline trip, Vector3[] points)
         {
-            if (definition.id == NorthWilkesboroTrackId)
+            if (definition.id is NorthWilkesboroTrackId or DoverTrackId)
             {
-                // These markers already follow the sloped access pavement in three dimensions.
+                // These densely authored markers already follow the access pavement in three dimensions.
                 for (int i = 1; i < points.Length; i++)
                     trip.Add(points[i], Vector3.up);
                 return;

@@ -21,7 +21,7 @@ public sealed partial class TrackPreview
 
     private void ConfigureRichmondPaceBay()
     {
-        if (definition.id is not (RichmondTrackId or NorthWilkesboroTrackId or LasVegasTrackId) || !importedTrackGeometry)
+        if (definition.id is not (RichmondTrackId or NorthWilkesboroTrackId or LasVegasTrackId or DoverTrackId) || !importedTrackGeometry)
             return;
 
         richmondPaceReturn = null;
@@ -44,12 +44,12 @@ public sealed partial class TrackPreview
         inbound[^1] = richmondPaceBay;
         outbound[0] = richmondPaceBay;
 
-        if (definition.id == LasVegasTrackId)
+        if (definition.id is LasVegasTrackId or DoverTrackId)
         {
-            // This bay returns to pit road before its exit connector. Anchor each
-            // handoff to the imported pit spline and leave the normal exit in charge.
-            float entry = PitStation(inbound[0]);
-            paceBayPitJoin = PitStation(outbound[^1]);
+            // Both venues rejoin the imported pit route. Dover joins on the
+            // exit connector beyond the end of the through lane.
+            float entry = definition.id == DoverTrackId ? DoverPacePitStation(inbound[0]) : PitStation(inbound[0]);
+            paceBayPitJoin = definition.id == DoverTrackId ? DoverPacePitStation(outbound[^1]) : PitStation(outbound[^1]);
             var pitVehicle = new TrackPitTraffic.Car { InPit = true };
             inbound[0] = SampleTrafficPosition(pitVehicle, entry, 0f);
             outbound[^1] = SampleTrafficPosition(pitVehicle, paceBayPitJoin, 0f);

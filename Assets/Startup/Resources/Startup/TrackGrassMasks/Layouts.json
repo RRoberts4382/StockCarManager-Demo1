@@ -1,0 +1,85 @@
+{
+  "entries": [
+    {
+      "id": 5,
+      "minX": -304.0,
+      "minZ": -296.0,
+      "sizeX": 584.0,
+      "sizeZ": 512.0,
+      "signX": 1,
+      "signZ": 1
+    },
+    {
+      "id": 9,
+      "minX": -376.0,
+      "minZ": -272.0,
+      "sizeX": 784.0,
+      "sizeZ": 520.0,
+      "signX": 1,
+      "signZ": 1
+    },
+    {
+      "id": 11,
+      "minX": -672.0,
+      "minZ": -328.0,
+      "sizeX": 1344.0,
+      "sizeZ": 656.0,
+      "signX": 1,
+      "signZ": 1
+    },
+    {
+      "id": 13,
+      "minX": -232.0,
+      "minZ": -120.0,
+      "sizeX": 488.0,
+      "sizeZ": 376.0,
+      "signX": 1,
+      "signZ": 1
+    },
+    {
+      "id": 21,
+      "minX": -704.0,
+      "minZ": -288.0,
+      "sizeX": 1408.0,
+      "sizeZ": 584.0,
+      "signX": 1,
+      "signZ": 1
+    },
+    {
+      "id": 32,
+      "minX": -528.0,
+      "minZ": -232.0,
+      "sizeX": 1056.0,
+      "sizeZ": 424.0,
+      "signX": 1,
+      "signZ": 1
+    },
+    {
+      "id": 33,
+      "minX": -200.0,
+      "minZ": -80.0,
+      "sizeX": 400.0,
+      "sizeZ": 160.0,
+      "signX": 1,
+      "signZ": 1
+    },
+    {
+      "id": 35,
+      "minX": -296.0,
+      "minZ": -216.0,
+      "sizeX": 600.0,
+      "sizeZ": 352.0,
+      "signX": 1,
+      "signZ": 1
+    },
+    {
+      "id": 36,
+      "minX": -392.0,
+      "minZ": -208.0,
+      "sizeX": 752.0,
+      "sizeZ": 520.0,
+      "signX": 1,
+      "signZ": 1
+    }
+  ]
+}

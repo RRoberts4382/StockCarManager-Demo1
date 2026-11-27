@@ -31,7 +31,7 @@
                     <ui:Button name="returnToGarageButton" class="track-header-icon" tooltip="Leave and end the current session">
                         <ui:VisualElement class="track-icon-art" picking-mode="Ignore" />
                     </ui:Button>
-                    <ui:Button name="snapshotButton" class="track-header-icon" tooltip="Save track snapshot">
+                    <ui:Button name="snapshotButton" class="track-header-icon" tooltip="Pause and save a snapshot of the last 15 seconds">
                         <ui:VisualElement class="track-icon-art" picking-mode="Ignore" />
                     </ui:Button>
                     <ui:Button name="resetCameraButton" class="track-header-icon" tooltip="Reset the track camera">

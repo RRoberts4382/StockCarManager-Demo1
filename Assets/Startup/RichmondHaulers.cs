@@ -29,7 +29,7 @@ public sealed partial class TrackPreview
         var forward = authoredForward ?? (recovery != null
             ? Vector3.ProjectOnPlane(rowCenter.position - recovery.position, Vector3.up).normalized
             : rowCenter.forward);
-        var garageBays = definition.id is NorthWilkesboroTrackId or LasVegasTrackId
+        var garageBays = definition.id is NorthWilkesboroTrackId or LasVegasTrackId or DoverTrackId
             ? markers.Where(item => item.name.StartsWith(venue + " hauler garage bay ", StringComparison.Ordinal))
                 .ToDictionary(item => item.name, StringComparer.Ordinal)
             : null;
@@ -135,7 +135,7 @@ public sealed partial class TrackPreview
             .GroupBy(entry => (entry.playerEntry, Name: entry.teamName.Trim().ToUpperInvariant()))
             .Select(group => group.FirstOrDefault(entry => entry.teamPaint.HasValue || entry.car != null) ?? group.First())
             .ToArray() ?? Array.Empty<SessionCarResult>();
-        if (definition.id == NorthWilkesboroTrackId)
+        if (definition.id is NorthWilkesboroTrackId or DoverTrackId)
             teams = teams.OrderByDescending(entry => entry.playerEntry).ToArray();
         var paint = new MaterialPropertyBlock();
         for (int i = 0; i < venueHaulers.Length; i++)
