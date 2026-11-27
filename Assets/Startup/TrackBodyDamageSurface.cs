@@ -10,13 +10,17 @@ internal sealed partial class TrackBodyDamageSurface : MonoBehaviour
         internal MeshFilter Filter;
         internal Mesh Source, Deformed;
         internal Matrix4x4 ToMesh, NormalToMesh;
-        internal Vector3[] Rest, RestNormals, Points, Normals, MeshPoints, MeshNormals;
+        internal Bounds RestBounds;
+        internal Vector3[] Rest, RestNormals, DentPoints, DentNormals, MeshPoints, MeshNormals;
         internal int[] PaintTriangles, BumperTriangles;
         internal bool[] NerfBarMask, BumperMask;
-        internal bool Mirrored, Chassis;
+        internal bool Mirrored, Chassis, Artwork, IsDeformed;
+        internal Vector3[] Points => IsDeformed ? DentPoints : Rest;
+        internal Vector3[] Normals => IsDeformed ? DentNormals : RestNormals;
     }
 
     private readonly List<Surface> surfaces = new();
+    private readonly List<MeshFilter> innerSupports = new();
     private readonly List<Vector3> scuffPoints = new();
     private readonly List<Vector2> scuffUv = new();
     private readonly List<Color32> scuffColors = new();
@@ -24,37 +28,13 @@ internal sealed partial class TrackBodyDamageSurface : MonoBehaviour
     private Mesh scuffs;
     private MeshRenderer scuffRenderer;
     private int revision = -1;
-    private MeshRenderer rockerChassis;
 
-    internal void Bind(Material material, bool deformShell, bool modified, Material bodyPaint, Material hoodPaint)
+    internal void Bind(Material material, bool modified, Material bodyPaint, Material hoodPaint)
     {
         foreach (var renderer in GetComponentsInChildren<MeshRenderer>(true))
-        {
-            if (!deformShell)
-            {
-                BindContactSurface(renderer, modified, bodyPaint, hoodPaint);
-                continue;
-            }
-            if (renderer.name == "Chassis")
-            {
-                rockerChassis = renderer;
-                continue;
-            }
-            if (!IsBumperPanel(renderer.name) &&
-                renderer.name is not ("Fender" or "Door Panel" or "Quarter Panel" or "Body"))
-                continue;
+            BindContactSurface(renderer, modified, bodyPaint, hoodPaint);
 
-            // The model's original detail geometry and the coincident livery layer must move together.
-            bool painted = false;
-            foreach (Transform child in renderer.transform)
-            {
-                if (child.name != "Team Paint") continue;
-                painted |= BindMesh(child.GetComponent<MeshFilter>(), receiveScuffs: true);
-            }
-            BindMesh(renderer.GetComponent<MeshFilter>(), receiveScuffs: !painted);
-        }
-
-        if (deformShell) BindSideNumbers();
+        if (!modified) BindSideNumbers();
         if (material == null || surfaces.Count == 0) return;
         var overlay = new GameObject("Contact scuffs") { layer = gameObject.layer };
         overlay.transform.SetParent(transform, false);
@@ -68,8 +48,15 @@ internal sealed partial class TrackBodyDamageSurface : MonoBehaviour
         scuffRenderer.enabled = false;
     }
 
-    private static bool IsBumperPanel(string name) =>
-        name is "Front Bumper" or "Front Bumper Aero Ducts" or "Rear Bumper";
+    internal static bool IsInnerSideSupport(string name) =>
+        name is "Chassis" or "Cockpit" or "RaceTruck.InteriorShell" or "RaceTruck.Underbody" or
+            "LateModel.Interior" or "LateModel.Floor";
+
+    private static bool IsPaintLayer(string name) => name is "Team Paint" or "Template paint";
+
+    private static bool IsBodyPanel(string name) =>
+        name is "Front Bumper" or "Front Bumper Aero Ducts" or "Rear Bumper" or "Door Panel" or
+            "Fender" or "Fenders" or "Quarter Panel" or "Rear Quarter Panel" or "Side Skirts" or "Body";
 
     private void BindContactSurface(MeshRenderer renderer, bool modified, Material bodyPaint, Material hoodPaint)
     {
@@ -107,7 +94,18 @@ internal sealed partial class TrackBodyDamageSurface : MonoBehaviour
             return;
         }
 
-        if (renderer.name is "Chassis" or "Cockpit" or "Race number" or "Sponsor decal") return;
+        if (renderer.name is "Race number" or "Sponsor decal" or "Front tires" or "Rear tires" or "Cabin") return;
+        // The procedural fallback uses a painted chassis box as its body.
+        if (IsInnerSideSupport(renderer.name) && renderer.transform.parent != transform)
+        {
+            innerSupports.Add(filter);
+            foreach (Transform child in renderer.transform)
+                if (IsPaintLayer(child.name) && child.TryGetComponent<MeshFilter>(out var layer))
+                    innerSupports.Add(layer);
+            return;
+        }
+        if (IsPaintLayer(renderer.name) && IsInnerSideSupport(renderer.transform.parent.name)) return;
+
         var paintTriangles = new List<int>();
         var materials = renderer.sharedMaterials;
         for (int slot = 0; slot < materials.Length && slot < mesh.subMeshCount; slot++)
@@ -119,10 +117,17 @@ internal sealed partial class TrackBodyDamageSurface : MonoBehaviour
                 "ToyotaCamry_Body" or "ToyotaCamry_BodyRight" or "RaceTruck_BodyDetails" or "LateModel_Fascia")
                 paintTriangles.AddRange(mesh.GetTriangles(slot));
         }
+        bool hasPaintLayer = false;
+        foreach (Transform child in renderer.transform)
+            hasPaintLayer |= IsPaintLayer(child.name);
+
+        // Livery and detail layers use the same displacement as the shell underneath them.
         if (paintTriangles.Count > 0)
-            BindMesh(filter, receiveScuffs: true, markTriangles: paintTriangles.ToArray());
-        else if (IsBumperPanel(renderer.name))
-            // The original panel and a separate Team Paint layer have to deform together.
+        {
+            bool artwork = renderer.name is "RaceTruck.BodyDetails" or "FasciaArtwork";
+            BindMesh(filter, receiveScuffs: true, markTriangles: paintTriangles.ToArray(), artwork: artwork);
+        }
+        else if (IsBodyPanel(renderer.name) || hasPaintLayer)
             BindMesh(filter, receiveScuffs: false);
     }
 
@@ -133,33 +138,34 @@ internal sealed partial class TrackBodyDamageSurface : MonoBehaviour
     internal static bool IsModifiedBumper(Vector3 point) => Mathf.Abs(point.z) >= 1.06f &&
         point.y >= .14f && point.y <= .35f;
 
-    private bool BindMesh(MeshFilter filter, bool receiveScuffs, bool chassis = false, int[] markTriangles = null,
-        int[] bumperTriangles = null)
+    private void BindMesh(MeshFilter filter, bool receiveScuffs, bool chassis = false, int[] markTriangles = null,
+        int[] bumperTriangles = null, bool artwork = false)
     {
         var mesh = filter?.sharedMesh;
-        if (mesh == null || !mesh.isReadable || mesh.vertexCount == 0) return false;
+        if (mesh == null || !mesh.isReadable || mesh.vertexCount == 0) return;
         var toBody = transform.worldToLocalMatrix * filter.transform.localToWorldMatrix;
         var toMesh = toBody.inverse;
         Vector3[] points = mesh.vertices;
         Vector3[] normals = mesh.normals;
-        if (normals.Length != points.Length) return false;
+        if (normals.Length != points.Length) return;
+        Vector3 min = toBody.MultiplyPoint3x4(points[0]), max = min;
         for (int i = 0; i < points.Length; i++)
         {
             points[i] = toBody.MultiplyPoint3x4(points[i]);
+            min = Vector3.Min(min, points[i]);
+            max = Vector3.Max(max, points[i]);
             normals[i] = toMesh.transpose.MultiplyVector(normals[i]).normalized;
         }
         surfaces.Add(new Surface
         {
             Filter = filter, Source = mesh, ToMesh = toMesh, NormalToMesh = toBody.transpose,
-            Rest = points, RestNormals = normals, Points = new Vector3[points.Length], Normals = new Vector3[points.Length],
-            MeshPoints = new Vector3[points.Length], MeshNormals = new Vector3[points.Length],
+            Rest = points, RestNormals = normals, RestBounds = new Bounds((min + max) * .5f, max - min),
             PaintTriangles = receiveScuffs ? markTriangles ?? mesh.triangles : null,
             BumperTriangles = bumperTriangles,
             NerfBarMask = bumperTriangles == null ? null : PanelMask(points.Length, markTriangles),
             BumperMask = bumperTriangles == null ? null : PanelMask(points.Length, bumperTriangles),
-            Mirrored = toBody.determinant < 0f, Chassis = chassis
+            Mirrored = toBody.determinant < 0f, Chassis = chassis, Artwork = artwork
         });
-        return true;
     }
 
     private static bool[] PanelMask(int vertexCount, int[] triangles)
@@ -177,34 +183,25 @@ internal sealed partial class TrackBodyDamageSurface : MonoBehaviour
         scuffUv.Clear();
         scuffColors.Clear();
         scuffTriangles.Clear();
-        if (rockerChassis != null && HasSideDent(damage))
+        if (innerSupports.Count > 0 && HasSideDent(damage))
         {
-            foreach (Transform child in rockerChassis.transform)
-                if (child.name == "Team Paint") BindMesh(child.GetComponent<MeshFilter>(), receiveScuffs: false, chassis: true);
-            BindMesh(rockerChassis.GetComponent<MeshFilter>(), receiveScuffs: false, chassis: true);
-            rockerChassis = null;
+            foreach (var support in innerSupports)
+                BindMesh(support, receiveScuffs: false, chassis: true);
+            innerSupports.Clear();
         }
         foreach (var surface in surfaces)
         {
-            if (!damage.HasMarks)
-            {
-                surface.Filter.sharedMesh = surface.Source;
-                continue;
-            }
-            if (damage.HasDent)
+            if (damage.HasDent && HasDentAtSurface(surface, damage.Marks))
                 Deform(surface, damage.Marks);
-            else
-            {
-                surface.Filter.sharedMesh = surface.Source;
-                surface.Rest.CopyTo(surface.Points, 0);
-                surface.RestNormals.CopyTo(surface.Normals, 0);
-            }
-            if (scuffRenderer != null && surface.PaintTriangles != null)
+            else if (surface.IsDeformed)
+                RestoreSurface(surface);
+
+            if (damage.HasMarks && scuffRenderer != null && surface.PaintTriangles != null)
             {
                 foreach (var mark in damage.Marks)
-                    if (mark.Scuff > 0f) AddScuffs(surface, mark);
+                    if (mark.Scuff > 0f && mark.Reaches(surface.RestBounds)) AddScuffs(surface, mark);
                 foreach (var mark in damage.TireMarks)
-                    AddScuffs(surface, mark);
+                    if (mark.Reaches(surface.RestBounds)) AddScuffs(surface, mark);
             }
         }
 
@@ -226,10 +223,30 @@ internal sealed partial class TrackBodyDamageSurface : MonoBehaviour
         return false;
     }
 
+    private static bool HasDentAtSurface(Surface surface, TrackBodyDamage.Mark[] marks)
+    {
+        foreach (var mark in marks)
+            if (mark.Depth > 0f && (!surface.Chassis || mark.Outward.x != 0f) &&
+                mark.Reaches(surface.RestBounds, surface.Chassis))
+                return true;
+        return false;
+    }
+
+    private static void RestoreSurface(Surface surface)
+    {
+        surface.IsDeformed = false;
+        surface.Filter.sharedMesh = surface.Source;
+    }
+
     private static void Deform(Surface surface, TrackBodyDamage.Mark[] marks)
     {
+        int vertexCount = surface.Rest.Length;
+        surface.DentPoints ??= new Vector3[vertexCount];
+        surface.DentNormals ??= new Vector3[vertexCount];
+        surface.MeshPoints ??= new Vector3[vertexCount];
+        surface.MeshNormals ??= new Vector3[vertexCount];
         bool changed = false;
-        for (int i = 0; i < surface.Rest.Length; i++)
+        for (int i = 0; i < vertexCount; i++)
         {
             Vector3 rest = surface.Rest[i];
             Vector3 normal = surface.RestNormals[i];
@@ -240,7 +257,7 @@ internal sealed partial class TrackBodyDamageSurface : MonoBehaviour
                 bool bumper = mark.Outward.x == 0f;
                 if (surface.Chassis && bumper || surface.BumperMask != null &&
                     !(bumper ? surface.BumperMask[i] : surface.NerfBarMask[i])) continue;
-                // Tuck the upper rocker behind the dent. Its outer surface sits only millimeters behind the door.
+                // Tuck close inboard surfaces behind the same dent so they cannot poke through the shell.
                 float width = surface.Chassis ? mark.Width + .35f : mark.Width;
                 float height = surface.Chassis ? mark.Height + .18f : mark.Height;
                 float depth = (surface.Chassis ? mark.Depth + .095f : mark.Depth) * mark.SurfaceWeight(rest);
@@ -258,14 +275,14 @@ internal sealed partial class TrackBodyDamageSurface : MonoBehaviour
             }
             if (!surface.Chassis)
                 point.x = rest.x + Mathf.Clamp(point.x - rest.x, -.10f, .10f);
-            surface.Points[i] = point;
-            surface.Normals[i] = normal.normalized;
+            surface.DentPoints[i] = point;
+            surface.DentNormals[i] = normal.normalized;
             surface.MeshPoints[i] = surface.ToMesh.MultiplyPoint3x4(point);
             surface.MeshNormals[i] = surface.NormalToMesh.MultiplyVector(normal).normalized;
         }
         if (!changed)
         {
-            surface.Filter.sharedMesh = surface.Source;
+            RestoreSurface(surface);
             return;
         }
         if (surface.Deformed == null)
@@ -278,6 +295,7 @@ internal sealed partial class TrackBodyDamageSurface : MonoBehaviour
         surface.Deformed.normals = surface.MeshNormals;
         surface.Deformed.RecalculateBounds();
         surface.Filter.sharedMesh = surface.Deformed;
+        surface.IsDeformed = true;
     }
 
     private void AddScuffs(Surface surface, TrackBodyDamage.Mark mark)

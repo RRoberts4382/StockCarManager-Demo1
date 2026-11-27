@@ -35,8 +35,20 @@ internal sealed class TrackBodyDamage
             return new Vector2(u * cos - v * sin, u * sin + v * cos);
         }
 
-        internal bool OnPanelSide(Vector3 point) => Vector3.Dot(point, Outward) >
-            (TireRub ? Mathf.Abs(Center.x) * .64f : Outward.x == 0f ? 1.06f : .39f);
+        private float PanelSideLimit => TireRub ? Mathf.Abs(Center.x) * .64f : Outward.x == 0f ? 1.06f : .39f;
+
+        internal bool OnPanelSide(Vector3 point) => Vector3.Dot(point, Outward) > PanelSideLimit;
+
+        internal bool Reaches(Bounds bounds, bool innerSupport = false)
+        {
+            bool side = Outward.x != 0f;
+            Vector3 extent = bounds.extents;
+            Vector3 delta = bounds.center - Center;
+            return Vector3.Dot(bounds.center, Outward) + (side ? extent.x : extent.z) > PanelSideLimit &&
+                Mathf.Abs(delta.y) < extent.y + Height + (innerSupport ? .18f : 0f) &&
+                (side ? Mathf.Abs(delta.z) : Mathf.Abs(delta.x)) <
+                    (side ? extent.z : extent.x) + Width + (innerSupport ? .35f : 0f);
+        }
 
         internal float SurfaceWeight(Vector3 point)
         {
@@ -67,7 +79,8 @@ internal sealed class TrackBodyDamage
         Revision++;
     }
 
-    internal Vector3 Add(Vector2 otherOffset, bool side, float damage, bool modified = false, Vector2? panelContact = null)
+    internal Vector3 Add(Vector2 otherOffset, bool side, float damage, bool modified = false, Vector2? panelContact = null,
+        bool impala = false)
     {
         float scuff = Mathf.Lerp(.39f, .95f, Mathf.InverseLerp(.5f, 22f, damage));
         float depth = damage >= 6f ? Mathf.Lerp(.030f, .13f, Mathf.InverseLerp(6f, 32f, damage)) : 0f;
@@ -81,12 +94,18 @@ internal sealed class TrackBodyDamage
             float z = Mathf.Clamp(panelContact?.y ?? otherOffset.y * .52f, -1.10f, 1.00f);
             int section = z > .48f ? 0 : z < -.43f ? 2 : 1;
             slot = 2 + (sign < 0f ? 0 : 3) + section;
-            // The lower door also has support vertices on the lowest-detail short-track body.
+            // Center the dent low enough to reach the coarsest side-panel meshes.
             center = modified ? new Vector3(.64f * sign, .23f, z) :
                 new Vector3(.57f * sign, depth > 0f ? .27f : .33f, z);
             normal = Vector3.right * sign;
             width = Mathf.Lerp(.28f, .48f, Mathf.InverseLerp(2f, 26f, damage));
             height = modified ? .13f : .17f;
+            if (impala && section == 1 && depth > 0f)
+            {
+                // The lowest Impala LOD spans the door with large triangles and no vertices at its center.
+                width = .67f;
+                height = .30f;
+            }
         }
         else
         {
@@ -131,23 +150,16 @@ internal sealed class TrackBodyDamage
 
 public sealed partial class TrackPreview
 {
-    private const string PrototypeBodyResource = "ChevroletCupCamaroShortTrack";
     private readonly TrackBodyDamage[] carBodyDamage = new TrackBodyDamage[CarCount];
     private readonly bool[] bodyDamageDirty = new bool[CarCount];
     private Material bodyScuffMaterial;
     private ParticleSystem bodyContactSmoke, bodyContactSparks;
 
-    private static bool IsBodyDamagePrototype(int index, string resource) =>
-        index == 0 && resource != null && resource.StartsWith(PrototypeBodyResource, StringComparison.Ordinal);
-
     private static bool HasModifiedNerfBars(string resource) =>
         resource != null && resource.StartsWith("TourModified", StringComparison.Ordinal);
 
-    internal bool CanPreviewTireRub => SessionRun != null && carVisualLods[0]?.Current != null && trafficCars?[0]?.InGarage != true &&
+    internal bool CanPreviewContactDamage => SessionRun != null && carVisualLods[0]?.Current != null && trafficCars?[0]?.InGarage != true &&
         cars[0].gameObject.activeInHierarchy;
-    internal bool CanPreviewWallScrape => CanPreviewTireRub && IsBodyDamagePrototype(0, carVisualLods[0].Current.Resource);
-    internal bool CanPreviewBodyDamage => CanPreviewWallScrape ||
-        CanPreviewTireRub && HasModifiedNerfBars(carVisualLods[0].Current.Resource);
 
     private void ResetTrackBodyDamage()
     {
@@ -181,8 +193,7 @@ public sealed partial class TrackPreview
             }
             visual.DamageSurface = visual.Body.gameObject.AddComponent<TrackBodyDamageSurface>();
             var visuals = carVisualLods[index];
-            visual.DamageSurface.Bind(bodyScuffMaterial, IsBodyDamagePrototype(index, visual.Resource),
-                HasModifiedNerfBars(visual.Resource), visuals.BodyPaint, visuals.HoodPaint);
+            visual.DamageSurface.Bind(bodyScuffMaterial, HasModifiedNerfBars(visual.Resource), visuals.BodyPaint, visuals.HoodPaint);
         }
         visual.DamageSurface.Apply(damage);
     }
@@ -216,13 +227,14 @@ public sealed partial class TrackPreview
         float sideContactStation = panelContact?.y ?? offset.y * .52f;
         bool modified = HasModifiedNerfBars(visual?.Resource);
         bool nerfBar = modified && sideContactStation >= -.50f && sideContactStation <= .76f;
-        if (visual == null || side && !nerfBar && !IsBodyDamagePrototype(index, visual.Resource))
+        if (visual == null || side && modified && !nerfBar)
         {
             float halfWidth = raceCarHalfWidths[index] > 0f ? raceCarHalfWidths[index] : .58f;
             return new Vector3(Mathf.Sign(panelContact?.x ?? offset.x) * halfWidth, .33f, Mathf.Clamp(sideContactStation, -1.2f, 1.2f));
         }
         var state = carBodyDamage[index] ??= new TrackBodyDamage();
-        Vector3 contact = state.Add(offset, side, damage, modified, panelContact);
+        bool impala = visual.Resource?.StartsWith("Impala", StringComparison.Ordinal) == true;
+        Vector3 contact = state.Add(offset, side, damage, modified, panelContact, impala);
         bodyDamageDirty[index] = true;
         // The mesh work is deferred to presentation so collision and scoring do not wait on it.
         return cars[index].InverseTransformPoint(visual.Body.TransformPoint(contact));
@@ -275,20 +287,20 @@ public sealed partial class TrackPreview
 
     internal void PreviewWallScrape()
     {
-        if (CanPreviewWallScrape)
+        if (CanPreviewContactDamage)
             OnWallBodyImpact(0, new Vector2(1f, -1.65f), side: true, damage: 2.5f, speed: 24f);
     }
 
     internal void PreviewSideImpact()
     {
-        if (!CanPreviewBodyDamage) return;
+        if (!CanPreviewContactDamage) return;
         OnVehicleBodyImpact(new VehicleCollision001.BodyImpact(0, -1, new Vector2(-1f, .12f), default, true, true, 18f));
         PreviewTireDoughnut();
     }
 
     internal void PreviewTireDoughnut()
     {
-        if (!CanPreviewTireRub) return;
+        if (!CanPreviewContactDamage) return;
         // Place the simulated rival's sidewall on the player car beside the driver.
         float halfWidth = raceCarHalfWidths[0] > 0f ? raceCarHalfWidths[0] : .58f;
         RecordTireRub(0, new Vector3(-halfWidth, .23f, .06f), -1f, .22f, .7f);

@@ -6933,14 +6933,11 @@ public sealed class StartupMenu : MonoBehaviour
                 menu.AddItem("Trigger Player Mechanical Failure", false, preview.TriggerPlayerMechanicalFailure);
             else
                 menu.AddDisabledItem("Trigger Player Mechanical Failure", false);
-            if (developmentPractice && !sessionInGarage && !PitSettingsOpen)
+            if (developmentPractice && !sessionInGarage && !PitSettingsOpen && preview.CanPreviewContactDamage)
             {
-                if (preview.CanPreviewWallScrape)
-                    menu.AddItem("Preview Wall Scrape", false, preview.PreviewWallScrape);
-                if (preview.CanPreviewBodyDamage)
-                    menu.AddItem("Preview Car-to-Car Side Impact", false, preview.PreviewSideImpact);
-                if (preview.CanPreviewTireRub)
-                    menu.AddItem("Preview Tire Doughnut", false, preview.PreviewTireDoughnut);
+                menu.AddItem("Preview Wall Scrape", false, preview.PreviewWallScrape);
+                menu.AddItem("Preview Car-to-Car Side Impact", false, preview.PreviewSideImpact);
+                menu.AddItem("Preview Tire Doughnut", false, preview.PreviewTireDoughnut);
             }
         }
         menu.DropDown(trackSettingsButton.worldBound, trackSettingsButton, DropdownMenuSizeMode.Content);

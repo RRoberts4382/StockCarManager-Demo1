@@ -10,6 +10,8 @@ internal sealed partial class TrackBodyDamageSurface
         internal MeshRenderer Flat, Projected;
         internal Mesh Mesh;
         internal float Side;
+        internal Bounds BodyBounds;
+        internal bool NeedsProjection;
     }
 
     internal readonly struct NumberVertex
@@ -41,7 +43,14 @@ internal sealed partial class TrackBodyDamageSurface
             if (label.name != "Race number" || !label.TryGetComponent<MeshRenderer>(out var renderer)) continue;
             Vector3 outward = transform.InverseTransformDirection(-label.transform.forward);
             if (Mathf.Abs(outward.x) < .8f) continue;
-            sideNumbers.Add(new SideNumber { Text = label, Flat = renderer, Side = Mathf.Sign(outward.x) });
+            Matrix4x4 toBody = transform.worldToLocalMatrix * label.transform.localToWorldMatrix;
+            Bounds line = renderer.localBounds;
+            var bounds = new Bounds(toBody.MultiplyPoint3x4(line.center), Vector3.zero);
+            for (int x = -1; x <= 1; x += 2)
+                for (int y = -1; y <= 1; y += 2)
+                    bounds.Encapsulate(toBody.MultiplyPoint3x4(line.center +
+                        new Vector3(x * line.extents.x, y * line.extents.y, 0f)));
+            sideNumbers.Add(new SideNumber { Text = label, Flat = renderer, Side = Mathf.Sign(outward.x), BodyBounds = bounds });
         }
     }
 
@@ -70,22 +79,26 @@ internal sealed partial class TrackBodyDamageSurface
         numberDamage = damage;
         // Request both labels before reading any UVs, so an atlas rebuild cannot invalidate the first label.
         foreach (var number in sideNumbers)
-            if (HasDentOnSide(damage, number.Side) && number.Text.font != null)
+        {
+            number.NeedsProjection = HasDentUnderNumber(damage, number);
+            if (number.NeedsProjection && number.Text.font != null)
                 number.Text.font.RequestCharactersInTexture(number.Text.text, number.Text.fontSize, number.Text.fontStyle);
+        }
 
         foreach (var number in sideNumbers)
         {
-            bool projected = HasDentOnSide(damage, number.Side) && ProjectNumber(number);
+            bool projected = number.NeedsProjection && ProjectNumber(number);
             number.Flat.enabled = !projected;
             if (number.Projected != null) number.Projected.enabled = projected;
         }
         numberAtlasDirty = false;
     }
 
-    private static bool HasDentOnSide(TrackBodyDamage damage, float side)
+    private static bool HasDentUnderNumber(TrackBodyDamage damage, SideNumber number)
     {
         foreach (var mark in damage.Marks)
-            if (mark.Outward.x == side && mark.Depth > 0f) return true;
+            if (mark.Outward.x == number.Side && mark.Depth > 0f && mark.Reaches(number.BodyBounds))
+                return true;
         return false;
     }
 
@@ -122,7 +135,10 @@ internal sealed partial class TrackBodyDamageSurface
             foreach (var surface in surfaces)
             {
                 int[] triangles = surface.PaintTriangles;
-                if (triangles == null) continue;
+                if (triangles == null || surface.Artwork ||
+                    surface.RestBounds.max.y < number.BodyBounds.min.y || surface.RestBounds.min.y > number.BodyBounds.max.y ||
+                    surface.RestBounds.max.z < number.BodyBounds.min.z || surface.RestBounds.min.z > number.BodyBounds.max.z)
+                    continue;
                 for (int i = 0; i + 2 < triangles.Length; i += 3)
                 {
                     int a = triangles[i], b = triangles[i + (surface.Mirrored ? 2 : 1)], c = triangles[i + (surface.Mirrored ? 1 : 2)];
@@ -164,7 +180,7 @@ internal sealed partial class TrackBodyDamageSurface
         {
             var decal = new GameObject("Conforming side number") { layer = gameObject.layer };
             decal.transform.SetParent(transform, false);
-            number.Mesh = new Mesh { name = "Conforming side number" };
+            number.Mesh = new Mesh { name = "Conforming side number", indexFormat = IndexFormat.UInt32 };
             number.Mesh.MarkDynamic();
             decal.AddComponent<MeshFilter>().sharedMesh = number.Mesh;
             number.Projected = decal.AddComponent<MeshRenderer>();
