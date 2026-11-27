@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 // Track-specific rival baselines, not an extra speed multiplier. Versioned saved
@@ -32,10 +33,11 @@ internal static class RivalSetup001
         saved.setup = Copy(setup);
     }
     internal const string PresetName = "Rival baseline v1";
-    internal static Setup ForTrack(TeamCar car, TrackDefinition track)
+    internal static Setup ForTrack(TeamCar car, TrackDefinition track, out bool baseline)
     {
         car.trackSetups ??= new List<TrackSetup>();
         var best = car.trackSetups.Find(p => p != null && p.trackId == track.id && p.name == BestName && p.setup != null);
+        baseline = best == null;
         if (best != null) return Copy(best.setup);
         var saved = car.trackSetups.Find(p => p != null && p.trackId == track.id && p.name == PresetName && p.setup != null);
         if (saved != null) return Copy(saved.setup);
@@ -44,12 +46,64 @@ internal static class RivalSetup001
         return setup;
     }
 
-    internal static Setup Create(TrackDefinition track, string chassis)
+    internal static void WidenOvalBaselines(List<Setup> setups)
+    {
+        // Older presets may leave fields missing and rely on the speed model's defaults.
+        setups.RemoveAll(setup => setup?.coldTirePressures?.Length != 4 ||
+            setup.weightDistribution == null || setup.frontSwayBar == null || setup.rearTrackBar == null ||
+            !HasSpringAndShock(setup.leftFront) || !HasSpringAndShock(setup.rightFront) ||
+            !HasSpringAndShock(setup.leftRear) || !HasSpringAndShock(setup.rightRear));
+        if (setups.Count < 2)
+            return;
+
+        const float spread = 6f;
+        bool HasSpringAndShock(SuspensionCornerSetup corner) => corner?.spring != null && corner.shock != null;
+        void Widen(Func<Setup, float> read, Action<Setup, float> write, float min, float max)
+        {
+            float[] values = setups.Select(read).Where(float.IsFinite).OrderBy(value => value).ToArray();
+            if (values.Length < 2)
+                return;
+            int middle = values.Length / 2;
+            float center = (values[(values.Length - 1) / 2] + values[middle]) * .5f;
+            foreach (var setup in setups)
+            {
+                float value = read(setup);
+                if (float.IsFinite(value))
+                    write(setup, Mathf.Clamp(center + spread * (value - center), min, max));
+            }
+        }
+
+        for (int i = 0; i < 4; i++)
+        {
+            int corner = i;
+            Widen(s => s.coldTirePressures[corner], (s, v) => s.coldTirePressures[corner] = v, 10f, 60f);
+            Widen(s => VehicleSpeed003.CornerSetup(s, corner).spring.ratePoundsPerInch,
+                (s, v) => VehicleSpeed003.CornerSetup(s, corner).spring.ratePoundsPerInch = v, 100f, 2000f);
+            Widen(s => VehicleSpeed003.CornerSetup(s, corner).shock.compressionStiffness,
+                (s, v) => VehicleSpeed003.CornerSetup(s, corner).shock.compressionStiffness = v, 0f, 1f);
+            Widen(s => VehicleSpeed003.CornerSetup(s, corner).shock.reboundStiffness,
+                (s, v) => VehicleSpeed003.CornerSetup(s, corner).shock.reboundStiffness = v, 0f, 1f);
+        }
+        Widen(s => s.frontSwayBar.RatePoundsPerInch, (s, v) => s.frontSwayBar.ratePoundsPerInch = v, 275f, 5000f);
+        Widen(s => s.rearTrackBar.RightMountHeightAboveGroundInches,
+            (s, v) => s.rearTrackBar.rightMountHeightAboveGroundInches = v, 5f, 14f);
+        Widen(s => s.weightDistribution.frontPercent, (s, v) => s.weightDistribution.frontPercent = v,
+            WeightDistributionSetup.MinFront, WeightDistributionSetup.MaxFront);
+        Widen(s => s.weightDistribution.crossPercent, (s, v) => s.weightDistribution.crossPercent = v,
+            WeightDistributionSetup.MinCross, WeightDistributionSetup.MaxCross);
+        Widen(s => s.weightDistribution.leftPercent, (s, v) => s.weightDistribution.leftPercent = v,
+            WeightDistributionSetup.MinLeft, WeightDistributionSetup.MaxLeft);
+    }
+
+    internal static Setup Create(TrackDefinition track, string chassis, bool nominal = false)
     {
         uint state = 2166136261u;
         foreach (char c in track.id + ":" + chassis) state = unchecked((state ^ c) * 16777619u);
         float Variation(float amount)
         {
+            if (nominal)
+                return 0f;
+
             state = unchecked(state * 1664525u + 1013904223u);
             return ((state >> 8) / 16777215f * 2f - 1f) * amount;
         }

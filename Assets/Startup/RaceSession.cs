@@ -162,6 +162,7 @@ internal sealed class RaceSessionRun
     private readonly CarSimulationContext simulationContext;
     private readonly Random failureRandom;
     private readonly bool usesSpringPerformance;
+    private readonly float ovalSetupReference;
     private readonly DynamicTireLoads[] dynamicLoads;
     private readonly float[] thermalSpeeds;
     private readonly float[] throttleInputs, pedalInputs, brakeInputs;
@@ -368,6 +369,8 @@ internal sealed class RaceSessionRun
         Weather = new SessionWeatherState(SessionWeatherForecast.Ensure(session, simulation.Track, simulation.Event), simulation.Track.surface, session.kind == RaceSessionKind.Practice);
         Weather.SetLocked(session.lockPracticeWeather);
         usesSpringPerformance = speedModel is VehicleSpeed003;
+        if (usesSpringPerformance && VehicleSpeed003.UsesNonPlateOvalSetupTuning(simulation.Track))
+            ovalSetupReference = VehicleSpeed003.NonPlateOvalSetupReference(simulation.Track);
         if (usesSpringPerformance) simulation.PrepareRivalSetups();
         tireTemperatures = new TireTemperatureModel(simulation.Track);
         dynamicLoads = Enumerable.Range(0, simulation.Cars.Count).Select(_ => new DynamicTireLoads()).ToArray();
@@ -1195,7 +1198,7 @@ internal sealed class RaceSessionRun
         float cornerLoad = UnityEngine.Mathf.SmoothStep(0f, 1f,
             UnityEngine.Mathf.InverseLerp(0.05f, 1.5f,
                 speed * speed * UnityEngine.Mathf.Abs(tireTemperatures.CurvatureAt(distance)) / 9.80665f));
-        float factor = VehicleSpeed003.CornerSetupSpeedFactor(track, setup, fuel) * tireFactor;
+        float factor = VehicleSpeed003.CornerSetupSpeedFactor(track, setup, fuel, ovalSetupReference) * tireFactor;
         factor *= VehicleSpeed003.ShockSpeedFactor(track, setup,
             tireTemperatures.ShockMotionAt(distance, speed));
         factor *= dynamicLoads[index].CornerSpeedFactor(setup, fuel);
