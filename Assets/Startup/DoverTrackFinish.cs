@@ -43,6 +43,8 @@ public sealed partial class TrackPreview
             string name = renderer.name;
             if (name == "Racing surface")
                 renderer.sharedMaterial = concrete;
+            else if (name == "Concrete slab contraction seams")
+                renderer.enabled = false; // The racing surface shader draws these joints.
             else if (name == "Harness track")
                 renderer.sharedMaterial = harness;
             else if (name.StartsWith("Outside track wall", StringComparison.Ordinal))

@@ -108,6 +108,20 @@ Shader "StockCarManager/Dover Track Finish"
                     (1.0 - smoothstep(.05, .22, edge));
             }
 
+            float TransverseJoint(float station)
+            {
+                // Match the imported slab stations and keep the pattern continuous at the lap seam.
+                const float spacing = 1609.344 / 159.0;
+                const float halfWidth = .006;
+                float offset = abs(frac(station / spacing - .19 + .5) - .5) * spacing;
+                float footprint = max(fwidth(station), .001);
+                float halfPixel = .5 * footprint;
+                // Average the narrow line over the pixel footprint instead of broadening it.
+                float coverage = saturate((min(offset + halfPixel, halfWidth) -
+                    max(offset - halfPixel, -halfWidth)) / footprint);
+                return coverage * (1.0 - smoothstep(.025, .10, footprint));
+            }
+
             half4 Frag(Interpolators input) : SV_Target
             {
                 bool wall = _FinishKind > 1.5;
@@ -145,8 +159,8 @@ Shader "StockCarManager/Dover Track Finish"
                 }
                 else if (_FinishKind > .5)
                 {
-                    float joints = max(Joint(track.x, 6.1, .008), Joint(track.y + 1.2, 3.72, .009));
-                    albedo *= 1.0 - joints * .16;
+                    float joints = max(.05 * TransverseJoint(track.x), .16 * Joint(track.y + 1.2, 3.72, .009));
+                    albedo *= 1.0 - joints;
                     if (_UseGroove > .5)
                     {
                         float groove = SAMPLE_TEXTURE2D(_Groove, sampler_Groove, float2(frac(track.x / 1609.344), .5)).r;
