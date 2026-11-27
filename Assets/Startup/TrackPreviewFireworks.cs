@@ -58,6 +58,8 @@ public sealed partial class TrackPreview
     private int nextFireworkSite;
     private uint fireworkSeed;
 
+    internal bool RaceStartFireworksActive => fireworkSites != null && lastFireworkCueTime > 0f;
+
     private void PrepareRaceStartFireworks(RaceSession session)
     {
         fireworkSparks?.Clear(false);

@@ -150,6 +150,8 @@ public sealed class StartupMenu : MonoBehaviour
     private Button cycleTrackCameraButton;
     private Label trackCameraAngle;
     private TrackPreview.CameraAngle trackCameraSelection;
+    private bool raceStartFireworksWereActive;
+    private bool usingFireworksSpotter;
     private double nextTrackCameraCut;
     private const long TrackIconTooltipDelayMs = 350;
     private Label trackIconTooltip;
@@ -6273,7 +6275,9 @@ public sealed class StartupMenu : MonoBehaviour
         if (trackSnapshotDialog != null || trackScreen?.style.display != DisplayStyle.Flex)
             return;
 
-        if (trackCameraSelection == TrackPreview.CameraAngle.Cycle && Time.unscaledTimeAsDouble >= nextTrackCameraCut)
+        UpdateFireworksCamera();
+        if (!usingFireworksSpotter && trackCameraSelection == TrackPreview.CameraAngle.Cycle &&
+            Time.unscaledTimeAsDouble >= nextTrackCameraCut)
         {
             ReleaseTrackPointer();
             trackPreview.SetCameraAngle(NextAvailableCamera(trackPreview.ViewAngle, includeCycle: false));
@@ -6297,6 +6301,30 @@ public sealed class StartupMenu : MonoBehaviour
         }
         else
             cockpitSteeringCar = -1;
+    }
+
+    private void UpdateFireworksCamera()
+    {
+        bool active = trackPreview.RaceStartFireworksActive;
+        if (active == raceStartFireworksWereActive)
+            return;
+
+        raceStartFireworksWereActive = active;
+        if (active && trackPreview.ViewAngle == TrackPreview.CameraAngle.TV)
+        {
+            usingFireworksSpotter = true;
+            ReleaseTrackPointer();
+            trackPreview.SetCameraAngle(TrackPreview.CameraAngle.Spotter);
+            UpdateTrackCameraLabel();
+        }
+        else if (!active && usingFireworksSpotter)
+        {
+            usingFireworksSpotter = false;
+            ReleaseTrackPointer();
+            trackPreview.SetCameraAngle(TrackPreview.CameraAngle.TV);
+            nextTrackCameraCut = Time.unscaledTimeAsDouble + CameraCycleIntervalSeconds;
+            UpdateTrackCameraLabel();
+        }
     }
 
     private void UpdateDrivingReadouts()
@@ -7556,6 +7584,7 @@ public sealed class StartupMenu : MonoBehaviour
             scoringStandingsWidth = 0f;
             trackStandings.style.minWidth = StyleKeyword.Null;
             trackTimingRows.Clear();
+            raceStartFireworksWereActive = false;
             trackPreview = preview.AddComponent<TrackPreview>();
             trackPreview.SetCollisionsEnabled(true);
             trackPreview.TrafficLaneChangesEnabled = true;
@@ -7747,6 +7776,7 @@ public sealed class StartupMenu : MonoBehaviour
 
     private void ApplyTrackCameraSelection(TrackPreview.CameraAngle angle)
     {
+        usingFireworksSpotter = false;
         trackCameraSelection = IsTrackCameraAvailable(angle) ? angle : TrackPreview.CameraAngle.Player;
         if (trackCameraSelection == TrackPreview.CameraAngle.Cycle)
             nextTrackCameraCut = Time.unscaledTimeAsDouble + CameraCycleIntervalSeconds;
