@@ -1,5 +1,6 @@
 using System.Linq;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -105,7 +106,7 @@ public sealed partial class TrackPreview : MonoBehaviour
     private Transform cockpitGlassCar;
     private readonly List<MeshRenderer> hiddenCockpitGlass = new List<MeshRenderer>();
     internal CameraAngle ViewAngle { get; private set; }
-    internal bool CanZoom => ViewAngle is CameraAngle.Player or CameraAngle.Spotter;
+    internal bool CanZoom => ViewAngle is CameraAngle.Player or CameraAngle.Spotter or CameraAngle.TV;
     internal bool TrackSkyIsNight { get; private set; }
     internal bool SupportsRaceNightLighting => bristolFloodlightLens != null;
     internal bool CanUsePitBoxCamera => practiceStallPositions?.Length > 0;
@@ -205,6 +206,8 @@ public sealed partial class TrackPreview : MonoBehaviour
     private float pitEntryTrackLane;
     private float pitExitTrackLane;
     private float formationExitLane, formationMergeLength;
+    private (float Distance, float Lane)[] greenFlagFormation;
+    private float greenFlagMergeEnd;
     private float pacePitEntryLane;
     private Pose pacePitEntryPose, cautionPaceExitPose;
     private float cautionPaceExitLane, cautionPaceMergeLength;
@@ -615,7 +618,8 @@ public sealed partial class TrackPreview : MonoBehaviour
         (!raceReleased && raceStart?.OneToGo == true);
     internal int RaceStartCountdown => raceStart?.SecondsUntilRelease ?? 0;
     internal SessionTrackState? TrackState => stages?.State ?? raceStart?.State ?? qualifying?.State ?? practice?.State;
-    internal bool SessionComplete => stages != null ? RaceFieldParked() :
+    internal bool SessionComplete => DrivingComplete && (SessionRun?.IsRace != true || winnerBurnoutFinished);
+    private bool DrivingComplete => stages != null ? RaceFieldParked() :
         raceStart != null || !TrackState.HasValue ? SessionRun.Complete : TrackState == SessionTrackState.Complete;
     internal bool HasSessionPitRoad => pitTraffic != null;
     private Vector3 cameraFocus;
@@ -626,6 +630,18 @@ public sealed partial class TrackPreview : MonoBehaviour
     internal int SelectedCarIndex => ViewAngle == CameraAngle.Leader
         ? (SessionRun?.IsRace == true ? SessionRun.RaceLeaderIndex() : 0)
         : followedCar == null ? 0 : Mathf.Max(0, System.Array.IndexOf(cars, followedCar));
+    internal int FocusedCarIndex
+    {
+        get
+        {
+            if (ViewAngle == CameraAngle.Player && followedCar == null)
+                return -1;
+
+            int index = SelectedCarIndex;
+            return cars[index] != null && cars[index].gameObject.activeSelf ? index : -1;
+        }
+    }
+
     internal float SteeringWheelAngle =>
         (raceWheels[SelectedCarIndex]?.FrontSteeringAngle ?? 0f) * SelectedCarType.steeringWheelRatio;
 
@@ -1008,6 +1024,12 @@ public sealed partial class TrackPreview : MonoBehaviour
     public void Zoom(float wheelDelta, Vector2 anchor)
     {
         float scale = Mathf.Exp(wheelDelta * MouseWheelZoomRate);
+        if (ViewAngle == CameraAngle.TV)
+        {
+            tvFrameScale = Mathf.Clamp(tvFrameScale * scale, MinTvFrameScale, MaxTvFrameScale);
+            ApplyCameraPose();
+            return;
+        }
         if (ViewAngle == CameraAngle.Spotter)
         {
             ZoomSpotter(scale, new Vector2(anchor.x * raceCamera.aspect, anchor.y));
@@ -1183,12 +1205,12 @@ public sealed partial class TrackPreview : MonoBehaviour
 
     private void ConfigureOnboardCamera(int index)
     {
-        var car = cars[index];
-        var anchors = carVisualLods[index].Current.Root.GetComponentsInChildren<Transform>(true);
+        var visual = carVisualLods[index].Current.Root;
+        var anchors = visual.GetComponentsInChildren<Transform>(true);
         var hood = System.Array.Find(anchors, child => child.name == "HoodSponsor");
         Vector3 hoodOffset = hood == null ? new Vector3(0f, 0.8f, 0.975f) :
-            car.InverseTransformPoint(hood.position) + Vector3.up * 0.12f;
-        onboardCameraOffsets[index] = (hoodOffset, carTypes[index].inCarCamera.Resolve(car, anchors));
+            visual.InverseTransformPoint(hood.position) + Vector3.up * 0.12f;
+        onboardCameraOffsets[index] = (hoodOffset, carTypes[index].inCarCamera.Resolve(visual, anchors));
     }
 
     private void UpdateCockpitGlass()
@@ -1275,6 +1297,9 @@ public sealed partial class TrackPreview : MonoBehaviour
             spotterAimOffset = Quaternion.identity;
             raceCamera.fieldOfView = spotterZoomFieldOfView;
         }
+        if (ViewAngle == CameraAngle.TV)
+            tvFrameScale = DefaultTvFrameScale;
+
         if (ViewAngle != CameraAngle.Player)
         {
             ApplyCameraPose();
@@ -1307,14 +1332,21 @@ public sealed partial class TrackPreview : MonoBehaviour
     private void ApplyCameraPose()
     {
         var cameraTransform = raceCamera.transform;
+        if (winnerBurnoutActive && ViewAngle == CameraAngle.TV)
+        {
+            PresentWinnerBurnoutCamera(cameraTransform);
+            return;
+        }
         int leaderIndex = ViewAngle == CameraAngle.Leader ? SelectedCarIndex : 0;
         var subject = ViewAngle == CameraAngle.Leader ? cars[leaderIndex] : CameraSubject;
         if (subject != null && ViewAngle is CameraAngle.Hood or CameraAngle.InCar)
         {
             var offsets = onboardCameraOffsets[SelectedCarIndex];
             Vector3 offset = ViewAngle == CameraAngle.Hood ? offsets.Hood : offsets.DriverEye;
-            cameraTransform.localPosition = subject.localPosition + subject.localRotation * offset;
-            cameraTransform.localRotation = subject.localRotation;
+            var visual = carVisualLods[SelectedCarIndex].Current.Root;
+            cameraTransform.localPosition = subject.localPosition +
+                subject.localRotation * (visual.localPosition + visual.localRotation * offset);
+            cameraTransform.localRotation = subject.localRotation * visual.localRotation;
         }
         else if (subject != null && ViewAngle is CameraAngle.Chase or CameraAngle.RearChase)
         {
@@ -1342,7 +1374,8 @@ public sealed partial class TrackPreview : MonoBehaviour
             cameraTransform.localPosition = position;
             cameraTransform.localRotation = Quaternion.LookRotation(target - position);
             if (ViewAngle is CameraAngle.TV or CameraAngle.Leader)
-                raceCamera.fieldOfView = TvFieldOfView(Vector3.Distance(position, target));
+                raceCamera.fieldOfView = TvFieldOfView(Vector3.Distance(position, target),
+                    ViewAngle == CameraAngle.TV ? tvFrameScale : 1f);
             else if (ViewAngle == CameraAngle.Spotter)
                 cameraTransform.localRotation *= spotterAimOffset;
         }
@@ -1454,6 +1487,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         IVehicleBehaviorModel behaviorModel, int[] qualifyingOrder = null, bool usePaceTruck = false, bool fullBristolStands = false)
     {
         ResetIowaFlagStandTiming();
+        System.Array.Clear(looseSetupYawAngles, 0, looseSetupYawAngles.Length);
         ResetIowaWreckResponse();
         this.simulation = simulation;
         simulation.ResetLiveTrackConditions();
@@ -1563,6 +1597,9 @@ public sealed partial class TrackPreview : MonoBehaviour
         haulerGaragePhase = HaulerGaragePhase.OnPitRoute;
         lastHandlingSampleTime = 0d;
         raceReleased = false;
+        ResetWinnerBurnout();
+        greenFlagFormation = null;
+        greenFlagMergeEnd = 0f;
         if (paceCar != null)
             Destroy(paceCar.gameObject);
         paceWheels = null;
@@ -1596,6 +1633,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         ResetCarLodBudget();
         SessionRun = new RaceSessionRun(session, lapLength, startLine, simulation, speedModel, simulationRandom, initialDistances: sessionDistances);
         PrepareRaceStartFireworks(session);
+        PrepareGrandstandCameraFlashes(session.kind == RaceSessionKind.Race);
         if (trackSkyMaterial != null)
         {
             float cloudSeed = Mathf.Repeat(session.weather.variationPhase, Mathf.PI * 2f) * 10000f;
@@ -1613,7 +1651,8 @@ public sealed partial class TrackPreview : MonoBehaviour
         }
         rubberSession = session;
         ResetSessionSkids();
-        BuildRubberOverlay();
+        rubberOverlayNeedsBuild = true;
+        BuildTrackMarbles(session);
         UpdateRubberOverlay();
         if (bristolSun != null)
             AssignTrackLightingLayers();
@@ -1828,6 +1867,7 @@ public sealed partial class TrackPreview : MonoBehaviour
     private void LateUpdate()
     {
         UpdateAdaptiveCarLods();
+        PresentLooseSetupYaw();
         UpdateScoringPylon();
         RenderIowaFlagStand();
         UpdateIowaSafetyLights();
@@ -1855,6 +1895,8 @@ public sealed partial class TrackPreview : MonoBehaviour
         engineSmoke?.Simulate(Time.deltaTime, false, false, false);
         AdvancePlayerFire(Time.deltaTime);
         AnimateIowaFans(Time.deltaTime);
+        if (UpdateWinnerBurnout(Time.deltaTime))
+            return;
 
         if (SessionRun == null)
         {
@@ -1885,11 +1927,11 @@ public sealed partial class TrackPreview : MonoBehaviour
 
         UpdateTrackSky();
         PresentRaceStartFireworks();
+        PresentGrandstandCameraFlashes(Time.deltaTime);
         UpdateRubberOverlay();
+        PresentMarbleDensity();
         PresentSessionSkids();
         PositionCars();
-        foreach (var wheels in raceWheels)
-            wheels?.Present();
         paceWheels?.Present();
         if (ViewAngle != CameraAngle.Player || followedCar != null)
             ApplyCameraPose();
@@ -1910,7 +1952,7 @@ public sealed partial class TrackPreview : MonoBehaviour
 
         pendingSessionTime = System.Math.Min(pendingSessionTime + (double)Time.deltaTime * sessionSpeed, 5d);
         var stepBudget = System.Diagnostics.Stopwatch.StartNew();
-        while (pendingSessionTime >= SessionStep && !SessionComplete && stepBudget.Elapsed.TotalMilliseconds < 12d)
+        while (pendingSessionTime >= SessionStep && !DrivingComplete && stepBudget.Elapsed.TotalMilliseconds < 12d)
         {
             if (raceStart != null)
                 AdvanceRaceStartStep();
@@ -2010,15 +2052,24 @@ public sealed partial class TrackPreview : MonoBehaviour
         cautionPaceSample = default;
         previousPaceSnapshotTime = double.NaN;
         stages.PaceTrafficSpeed = LimitCautionPaceTrafficSpeed;
-        bool releaseFormation = UsesOvalTraffic007;
+        bool releaseFormation = definition.majorStyle == "Oval" && !IgnorePreferredDrivingLine;
         float halfLane = releaseFormation ? FormationHalfLane : 0f;
+        if (releaseFormation)
+        {
+            greenFlagMergeEnd = FindGreenFlagMergeEnd();
+            greenFlagFormation = new (float Distance, float Lane)[cars.Length];
+        }
         for (int i = 0; i < cars.Length; i++)
         {
             var grid = raceStart.GridPosition(i, halfLane);
             sessionDistances[i] = grid.Distance;
             trafficCars[i] = pitTraffic.CreateTrackCar(grid.Distance);
             if (releaseFormation)
-                drivingLanes[i] = FormationTrackLane(grid.Distance, grid.Lane);
+            {
+                float formationLane = drivingLanesReady ? drivingLanes[i] : grid.Lane;
+                drivingLanes[i] = FormationTrackLane(grid.Distance, formationLane);
+                greenFlagFormation[i] = (grid.Distance, drivingLanes[i]);
+            }
         }
         if (releaseFormation)
             drivingLanesReady = true;
@@ -2026,6 +2077,8 @@ public sealed partial class TrackPreview : MonoBehaviour
         ConfigurePitField();
         SessionRun = new RaceSessionRun(simulation.Session, lapLength, raceStart.TimingStartLine,
             simulation, speedModel, simulationRandom, initialDistances: sessionDistances, finishOnCheckered: true);
+        if (marbleDensity != null)
+            SessionRun.TireRubberShed = DepositMarbles;
     }
 
     private void UpdateInitialPacingLanes(float seconds)
@@ -2066,9 +2119,13 @@ public sealed partial class TrackPreview : MonoBehaviour
 
         for (int i = 0; i < trafficCars.Length; i++)
         {
-            if (i == 0 && NorthWilkesboroParkedForGarage)
+            if (i == winnerBurnoutCar || i == 0 && NorthWilkesboroParkedForGarage)
                 continue;
-            if (!SessionRun.Retired(i) && (!trafficCars[i].InPit || trafficCars[i].PitDistance != practiceStallDistances[i]))
+            var car = trafficCars[i];
+            // Pit cleanup can remove a finisher without changing their scored result.
+            if (SessionRun.Retired(i) || (car.InGarage && car.Retired))
+                continue;
+            if (!car.InPit || car.PitDistance != practiceStallDistances[i])
                 return false;
         }
         return true;
@@ -2158,6 +2215,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             (practice == null || practice.State is SessionTrackState.TrackOpen or SessionTrackState.Caution);
         if (!activeOnTrack)
             preferredLineSpeedFactor = 1f;
+        float surfaceGrip = MarbleGrip(MarbleLoadForCar(index, car?.TrackDistance ?? sessionDistances[index]));
         float cleanAirSpeed = float.NaN;
         if (!coastToTarget && braking <= 0f && activeOnTrack && DraftSpeedActive && !BlendingStartLanes &&
             stages?.ReleasingRestartLanes != true && draftEligible[index] &&
@@ -2169,7 +2227,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         }
         if (car == null || pitTraffic == null)
             return SessionRun.ConditionLimitedSpeedAndPace(index, freeSpeed, seconds, out trafficPaceSpeeds[index],
-                braking, activeOnTrack, paceSpeedCeiling, preferredLineSpeedFactor, cleanAirSpeed, coastToTarget);
+                braking, activeOnTrack, paceSpeedCeiling, preferredLineSpeedFactor, cleanAirSpeed, coastToTarget, surfaceGrip);
         float stopAt = float.PositiveInfinity;
         if (practice?.State == SessionTrackState.ReturnToPits)
             stopAt = practice.ParkingTarget(index);
@@ -2187,7 +2245,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             preferredLineSpeedFactor = 1f;
         }
         float limited = SessionRun.ConditionLimitedSpeedAndPace(index, target, seconds, out trafficPaceSpeeds[index],
-            braking, activeOnTrack, paceSpeedCeiling, preferredLineSpeedFactor, cleanAirSpeed, coastToTarget);
+            braking, activeOnTrack, paceSpeedCeiling, preferredLineSpeedFactor, cleanAirSpeed, coastToTarget, surfaceGrip);
         if (SessionRun.HasTerminalFailure(index))
             car.NextEntry = float.PositiveInfinity;
         return limited;
@@ -2326,7 +2384,7 @@ public sealed partial class TrackPreview : MonoBehaviour
     private CrashMotion[] crashes;
     private Pose?[] chasePoseBeforeYaw;
 
-    private enum CrashCause { Contact, Apron, FrontTireWear, RearTireWear }
+    private enum CrashCause { Contact, Apron, FrontTireWear, RearTireWear, Marbles }
 
     private struct CrashMotion
     {
@@ -2350,6 +2408,7 @@ public sealed partial class TrackPreview : MonoBehaviour
     private float[] collisionTireEndLanes;
     private float[] collisionTireOffsets;
     private float[] tireYawAngles;
+    private readonly float[] looseSetupYawAngles = new float[CarCount];
 
     private float[] currentTrafficSpeeds;
     private float[] trafficBrakingFactors;
@@ -2382,6 +2441,7 @@ public sealed partial class TrackPreview : MonoBehaviour
                     pitStops.PlanRivalRaceStop(SessionRun, i, pitWindow, stages.CanEnterPits(i, trafficCars[i]));
         }
         pitTraffic?.BeginStep((SessionRun?.Elapsed ?? previousElapsed) + seconds);
+        SelectWinnerBurnoutCar();
         UpdateDraftSpeed(seconds);
         for (int i = 0; i < cars.Length; i++)
         {
@@ -2389,7 +2449,9 @@ public sealed partial class TrackPreview : MonoBehaviour
             if (SessionRun?.Finished(i) == true)
             {
                 stepSpeeds[i] = stages != null && !SessionRun.Retired(i) && !trafficCars[i].InGarage
-                    ? stages.FinishedCarSpeed(trafficCars[i], seconds, practiceStallDistances[i])
+                    ? i == winnerBurnoutCar
+                        ? pitTraffic.PlannedSpeed(trafficCars[i], 18f, float.PositiveInfinity, seconds)
+                        : stages.FinishedCarSpeed(trafficCars[i], seconds, practiceStallDistances[i])
                     : 0f;
                 continue;
             }
@@ -2439,7 +2501,10 @@ public sealed partial class TrackPreview : MonoBehaviour
                 {
                     var finishedCar = trafficCars[i];
                     double beforeParking = finishedCar.Odometer;
-                    stages.AdvanceFinishedCar(finishedCar, seconds, stepSpeeds[i], practiceStallDistances[i]);
+                    if (i == winnerBurnoutCar)
+                        pitTraffic.Advance(finishedCar, seconds, stepSpeeds[i]);
+                    else
+                        stages.AdvanceFinishedCar(finishedCar, seconds, stepSpeeds[i], practiceStallDistances[i]);
                     SessionRun.RecordTravel(i, finishedCar.Odometer - beforeParking,
                         (finishedCar.Odometer - beforeParking) / seconds, finishedCar.PreciseTrackDistance, reducedBurn: true, onTrack: !finishedCar.InPit);
                 }
@@ -2620,6 +2685,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             return crashes[index].Cause switch
             {
                 CrashCause.Apron => $"{car} spun on the apron",
+                CrashCause.Marbles => $"{car} spun in the marbles",
                 CrashCause.FrontTireWear => crashes[index].Straight.WallDistanceRemaining == 0f
                     ? $"{car} hit the wall after a front tire failed" : $"{car} ran off after a front tire failed",
                 CrashCause.RearTireWear => $"{car} spun after a rear tire failed",
@@ -2714,10 +2780,13 @@ public sealed partial class TrackPreview : MonoBehaviour
         bool ovalTraffic = UsesOvalTraffic007;
         bool holdingCaution = ovalTraffic && stages?.ReducedFuelBurn == true;
         bool practiceYellow = practice?.State == SessionTrackState.Caution;
+        if (greenFlagFormation != null && (stages?.ControlsField == true || !FieldApproachingGreenFlagMergeEnd()))
+            greenFlagFormation = null;
+        bool greenFlagMerge = greenFlagFormation != null;
         // Drivers must clear each other when leaving the restart rows, even if
         // ordinary traffic interactions are disabled.
         bool protectRestartMerge = collisionsEnabled && !TrafficLaneChangesEnabled && stages?.ReleasingRestartLanes == true;
-        bool allowPassing = !protectRestartMerge && !practiceYellow && stages?.ReducedFuelBurn != true;
+        bool allowPassing = !greenFlagMerge && !protectRestartMerge && !practiceYellow && stages?.ReducedFuelBurn != true;
         bool forecastOvalPassing = ovalTraffic && allowPassing;
         bool canStabilizeLanes = practice == null || practice.State is SessionTrackState.TrackOpen or SessionTrackState.Caution;
         bool pacedLanes = BlendingStartLanes || TrackState is SessionTrackState.Pacing or SessionTrackState.StageComplete
@@ -2868,7 +2937,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         if (sweeping != null)
         {
             System.Array.Clear(preferredLineAdvance, 0, preferredLineAdvance.Length);
-            if (sweepingLineTracking != null && !IgnorePreferredDrivingLine && !practiceYellow && !holdingCaution &&
+            if ((sweepingLineTracking != null || greenFlagMerge) && !IgnorePreferredDrivingLine && !practiceYellow && !holdingCaution &&
                 stages?.ControlsField != true)
             {
                 for (int i = 0; i < cars.Length; i++)
@@ -2892,7 +2961,8 @@ public sealed partial class TrackPreview : MonoBehaviour
         float brakingLimit = LapSpeedProfile.MaximumBraking(definition);
         var draftLine = plateDraftLanes ? draft.InLine : null;
         var draftLeaders = DraftSpeedActive && behaviorModel is VehicleBehavior003 ? draft.CloseFollowLeaders : null;
-        bool respondToTraffic = TrafficLaneChangesEnabled || protectRestartMerge;
+        bool respondToTraffic = TrafficLaneChangesEnabled || protectRestartMerge ||
+            (greenFlagMerge && collisionsEnabled) || stages?.PaceWaveByActive == true;
         var laneDraft = varyLanes ? draft : null;
         if (laneDraft != null)
             laneDraft.UpdateLaneVariation(lapLength, seconds, drivingDistances, drivingLanes, currentTrafficSpeeds,
@@ -2906,7 +2976,7 @@ public sealed partial class TrackPreview : MonoBehaviour
                 ? (passingLaneRanges, cornerApproaches, passForecast ??= ForecastOvalPass) : default;
             trafficBehavior.OvalPassCommitted = forecastOvalPassing ? recordOvalPassAttempt ??= RecordOvalPassAttempt : null;
             trafficBehavior.SnapshotLaneDecision = laneSamples != null ? recordLaneDecision ??= RecordSnapshotLaneDecision : null;
-            trafficBehavior.UsePreferredLineTraffic = forecastOvalPassing;
+            trafficBehavior.UsePreferredLineTraffic = forecastOvalPassing || greenFlagMerge;
             trafficBehavior.OvalPassingEase = forecastOvalPassing ? OvalPassingEase : 0f;
             trafficBehavior.TrackContactHalfWidths = ovalTraffic ? raceCarHalfWidths : null;
             try
@@ -3203,9 +3273,14 @@ public sealed partial class TrackPreview : MonoBehaviour
             for (int i = 0; i < cars.Length; i++)
             {
                 if (collisions.CrashImpulse(i) == 0f)
+                {
                     TryApronTurnWreck(i);
+                    TryMarbleSpin(i, seconds);
+                }
             }
         }
+        else if (marbleSlipTime != null)
+            System.Array.Clear(marbleSlipTime, 0, marbleSlipTime.Length);
         var laneSamples = snapshotLaneFrame?.cars;
         if (laneSamples != null)
         {
@@ -3520,7 +3595,8 @@ public sealed partial class TrackPreview : MonoBehaviour
 
     private float SpeedAt(int index, float distance, out float preferredLineSpeedFactor, bool includeDraft = true)
     {
-        preferredLineSpeedFactor = PreferredLineSpeedFactor(index, distance);
+        preferredLineSpeedFactor = PreferredLineSpeedFactor(index, distance) *
+            Mathf.Sqrt(MarbleGrip(MarbleLoadForCar(index, distance)));
         float speed = SetupAdjustedSpeedAt(index, distance, includeDraft ? DraftSpeedBoost(index, distance) : 0f);
         return speed * preferredLineSpeedFactor + trailingSpeedBoosts[index];
     }
@@ -3557,7 +3633,8 @@ public sealed partial class TrackPreview : MonoBehaviour
         float damageFactor = 1f - (SessionRun.Vehicle(index)?.Damage ?? 0f) / 100f;
         float lineFactor = OffLineSpeedFactorAt(index, distance, lane);
         float braking = (lapSpeedProfile?.BrakingLimitAt(distance) ?? 0f) * trafficBrakingFactors[index];
-        return (speed * lineFactor * damageFactor, braking);
+        float surfaceGrip = MarbleGrip(MarbleLoadAt(index, distance, lane));
+        return (speed * lineFactor * damageFactor * Mathf.Sqrt(surfaceGrip), braking * surfaceGrip);
     }
 
     private float DraftSpeedBoost(int index, float distance) => DraftSpeedBoost(index, distance, out _);
@@ -3599,11 +3676,7 @@ public sealed partial class TrackPreview : MonoBehaviour
     private float TireAdjustedLane(int index, float distance, float lane, TrackPitTraffic.Car traffic, out float yawDegrees)
     {
         yawDegrees = 0f;
-        if (SessionRun == null || !cars[index].gameObject.activeSelf || iowaRecoveredCars[index].HasValue ||
-            crashes[index].Active || SessionRun.Retired(index) || SessionRun.Finished(index) ||
-            traffic?.ApronEntryActive == true || traffic?.ApronExitActive == true ||
-            (traffic?.FlatTireLaneBlend ?? 0f) > 0f || SessionRun.FlatTireMask(index) != 0 ||
-            TrackState is not (null or SessionTrackState.TrackOpen or SessionTrackState.WhiteFlag))
+        if (!CanApplyTireHandling(index, traffic))
             return lane;
 
         return TireHandlingLaneAt(index, distance, lane, out yawDegrees);
@@ -3612,9 +3685,7 @@ public sealed partial class TrackPreview : MonoBehaviour
     private float TireHandlingLaneAt(int index, float distance, float lane, out float yawDegrees)
     {
         yawDegrees = 0f;
-        float turn = SessionRun.TireHandlingTurnAt(distance);
-        float speed = SessionRun.CurrentSpeed(index);
-        float turningLoad = turn * Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(12f, 32f, speed));
+        float turningLoad = TireCorneringLoad(index, distance);
         if (turningLoad == 0f)
             return lane;
 
@@ -3630,6 +3701,68 @@ public sealed partial class TrackPreview : MonoBehaviour
         float halfWidth = raceCarHalfWidths[index] > 0f ? raceCarHalfWidths[index] : VehicleCollision001.ContactWidth * .5f;
         float room = Mathf.Max(0f, RoadWidths(distance).x * .5f - halfWidth - lane * outward);
         return lane + outward * Mathf.Min(room, 2.4f * Mathf.Abs(turningLoad) * frontSlip);
+    }
+
+    private bool CanApplyTireHandling(int index, TrackPitTraffic.Car traffic) =>
+        SessionRun != null && cars[index].gameObject.activeSelf && !iowaRecoveredCars[index].HasValue &&
+        !crashes[index].Active && !SessionRun.Retired(index) && !SessionRun.Finished(index) &&
+        traffic?.ApronEntryActive != true && traffic?.ApronExitActive != true &&
+        (traffic?.FlatTireLaneBlend ?? 0f) == 0f && SessionRun.FlatTireMask(index) == 0 &&
+        TrackState is (null or SessionTrackState.TrackOpen or SessionTrackState.WhiteFlag);
+
+    private float TireCorneringLoad(int index, float distance)
+    {
+        float speed = SessionRun.CurrentSpeed(index);
+        return SessionRun.TireHandlingTurnAt(distance) * Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(12f, 32f, speed));
+    }
+
+    private void PresentLooseSetupYaw()
+    {
+        if (raceCamera == null || SessionRun == null)
+            return;
+
+        bool updateOnboardPose = false;
+        for (int i = 0; i < cars.Length; i++)
+        {
+            var visual = carVisualLods[i]?.Current;
+            if (visual == null)
+                continue;
+
+            float yaw = looseSetupYawAngles[i];
+            var root = visual.Root;
+            if (yaw != 0f || root.localRotation != Quaternion.identity)
+            {
+                // The simulated car and its skid and collision poses stay on the existing tire-slip path.
+                root.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
+                Vector3 axle = visual.Wheels?.FrontAxleCenter ?? Vector3.forward * RearAxleHeading.CenterToRearAxle;
+                RaceWheelAnimation.ApplyFrontAxleYaw(root, axle, yaw);
+                updateOnboardPose |= i == SelectedCarIndex;
+            }
+            visual.Wheels?.Present(yaw);
+        }
+
+        if (updateOnboardPose && ViewAngle is (CameraAngle.Hood or CameraAngle.InCar))
+            ApplyCameraPose();
+    }
+
+    private float SampleLooseSetupYaw(int index, float distance, bool canYaw)
+    {
+        const float maxExtraYaw = 5f;
+        const float yawRate = 24f;
+        if (!canYaw)
+        {
+            looseSetupYawAngles[index] = 0f;
+            return 0f;
+        }
+
+        float turn = TireCorneringLoad(index, distance);
+        float extremeSlip = 0f;
+        float weight = turn == 0f ? 0f : SessionRun.LooseSetupYawWeight(index, out extremeSlip);
+        float existingSlip = Mathf.Clamp01(Mathf.Abs(tireYawAngles[index]) / 18f);
+        float marbleYaw = maxExtraYaw * MarbleLoadForCar(index, distance);
+        float target = (maxExtraYaw * weight + marbleYaw) * turn * (1f - existingSlip);
+        looseSetupYawAngles[index] = Mathf.MoveTowards(looseSetupYawAngles[index], target, yawRate * SessionStep);
+        return extremeSlip * Mathf.Abs(turn);
     }
 
     private static float AxleTireSlip(TeamCar car, int firstTire)
@@ -4089,7 +4222,9 @@ public sealed partial class TrackPreview : MonoBehaviour
         {
             lane = PreferredLaneOffset(i, RoadWidths(distance).x,
                 useBottomLaneMerge ? float.PositiveInfinity : toMerge, racingLine(distance));
-            if (blendStart)
+            if (greenFlagFormation != null)
+                lane = GreenFlagLane(i, distance, lane);
+            else if (blendStart && greenFlagMergeEnd == 0f)
                 lane = Mathf.Lerp(gridLane, lane, SessionRun.Elapsed / 3f);
         }
         if (stages != null && (!ovalTraffic || stages.ReducedFuelBurn))
@@ -4107,6 +4242,13 @@ public sealed partial class TrackPreview : MonoBehaviour
                         bristolBackExitTrackDistance / lapLength * 360f)) < 1f ? bristolBackExitLane : pitExitTrackLane);
             }
             lane = Mathf.Lerp(mergeLane, lane, Mathf.SmoothStep(0f, 1f, Mathf.Max(0f, toMerge - 5f) / (mergeLength - 5f)));
+        }
+        if (stages?.PaceWaveByActive == true)
+        {
+            float outside = -(customLayout?.InsideSign ?? -1f);
+            float halfWidth = RoadWidths(distance).x * .5f;
+            float passingLane = outside * Mathf.Clamp(halfWidth - 1.5f, 0f, 3.4f);
+            lane = Mathf.Lerp(lane, passingLane, stages.PaceWaveByLaneBlend(i));
         }
         return lane;
     }
@@ -4477,7 +4619,8 @@ public sealed partial class TrackPreview : MonoBehaviour
         bool targetAtEnd = false)
     {
         float weight = sweepingLineTracking?.Invoke((before + after) * .5f) ?? 0f;
-        if (weight <= 0f || (traffic != null && (traffic.InPit || traffic.ApronEntryActive || traffic.ApronExitActive ||
+        bool blendingGreenFlag = greenFlagFormation != null && before < greenFlagMergeEnd;
+        if ((!blendingGreenFlag && weight <= 0f) || (traffic != null && (traffic.InPit || traffic.ApronEntryActive || traffic.ApronExitActive ||
             traffic.FlatTireLaneBlend > 0f || Mathf.Min(traffic.NextEntry - after, before - traffic.LastExit) < 15f)))
             return 0f;
 
@@ -4485,8 +4628,66 @@ public sealed partial class TrackPreview : MonoBehaviour
             float.PositiveInfinity, racingLine(distance));
         float startLane = Preferred(before);
         float endLane = Preferred(after);
+        if (blendingGreenFlag)
+        {
+            startLane = GreenFlagLane(i, before, startLane);
+            endLane = GreenFlagLane(i, after, endLane);
+            weight = 1f;
+        }
         return Mathf.Abs(target - (targetAtEnd ? endLane : startLane)) <= .02f
             ? (endLane - startLane) * weight : 0f;
+    }
+
+    private bool FieldApproachingGreenFlagMergeEnd()
+    {
+        for (int i = 0; i < cars.Length; i++)
+        {
+            var car = trafficCars[i];
+            if (!car.InPit && !crashes[i].Active && !SessionRun.Finished(i) &&
+                !SessionRun.Retired(i) && car.TrackDistance < greenFlagMergeEnd)
+                return true;
+        }
+        return false;
+    }
+
+    private float GreenFlagLane(int index, float distance, float preferredLane)
+    {
+        if (distance >= greenFlagMergeEnd)
+            return preferredLane;
+
+        var start = greenFlagFormation[index];
+        float t = Mathf.InverseLerp(start.Distance, greenFlagMergeEnd, distance);
+        // Zero lateral blend speed and acceleration at both ends.
+        float blend = t * t * t * (t * (6f * t - 15f) + 10f);
+        return Mathf.Lerp(start.Lane, preferredLane, blend);
+    }
+
+    private float FindGreenFlagMergeEnd()
+    {
+        float finish = raceStart.TimingStartLine;
+        if (customLayout == null)
+            return finish + Mathf.Repeat(straightLength - finish, lapLength);
+
+        var frontstretch = VehicleBehavior004.FrontstretchRange(definition, lapLength, distance =>
+        {
+            customLayout.Sample(Mathf.Repeat(distance, lapLength), out var heading, out _);
+            return heading;
+        });
+        float fromFinish = Mathf.Repeat(frontstretch.End * lapLength - finish, lapLength);
+        if (frontstretch.Start != frontstretch.End && fromFinish < .3f * lapLength)
+            return finish + fromFinish;
+
+        // Detect the first sustained corner just beyond the timing line on plain ovals.
+        var profile = lapSpeedProfile ?? new LapSpeedProfile(definition, speedModel is VehicleSpeed003);
+        float step = lapLength / 192f;
+        for (int i = 1; i <= 48; i++)
+        {
+            float station = finish + i * step;
+            if (profile.TireTurnWeightAt(station) >= .12f && profile.TireTurnWeightAt(station + 3f * step) >= .12f)
+                return station;
+        }
+
+        return finish + lapLength * .125f;
     }
 
     private void ConfigureFormationPitExit()
@@ -4698,6 +4899,9 @@ public sealed partial class TrackPreview : MonoBehaviour
                     (station, time) => SampleCautionPacePose(false, station, currentLane));
                 for (int side = -1; side <= 1; side += 2)
                 {
+                    if (stages.PaceWaveByActive && side != (customLayout?.InsideSign ?? -1f))
+                        continue;
+
                     float candidate = side * offset;
                     float clear = PacePathClearance(distance, lookAhead, speed,
                         (station, time) => SampleCautionPacePose(false, station,
@@ -6123,7 +6327,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             var surface = TrackPoint(distance, 0f, out _, out _);
             var rim = surface + outside * 54f;
             rim.y = 37f;
-            AddFixture("Grandstand floodlight", rim, surface - outside * 32f, 6f, 2.8f, 240f, 8280f, 106f);
+            AddFixture("Grandstand floodlight", rim, surface - outside * 32f, 6f, 2.8f, 240f, 5800f, 106f);
         }
 
         foreach (int turnStart in new[] { 13, 45 })
@@ -6136,7 +6340,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             var surface = TrackPoint(distance, 0f, out _, out _);
             var basePosition = surface + inside * (turnStart == 13 ? 17f : 21f);
             basePosition.y = 0f;
-            AddFixture("Inside turn floodlight", basePosition, surface, 2.4f, 0.65f, 39f, 470f, 92f);
+            AddFixture("Inside turn floodlight", basePosition, surface, 2.4f, 0.65f, 39f, 330f, 92f);
         }
 
         void AddFixture(string name, Vector3 basePosition, Vector3 aim, float height, float width,
@@ -6927,8 +7131,11 @@ public sealed partial class TrackPreview : MonoBehaviour
     private Mesh rubberOverlayMesh;
     private MeshRenderer rubberOverlayRenderer;
     private Material rubberOverlayMaterial;
+    private bool rubberOverlayNeedsBuild;
+    internal bool RubberBuildupEnabled { get; private set; } = true;
     private static readonly int RubberBuildupProperty = Shader.PropertyToID("_Buildup");
-    private static readonly float[] RubberStripeWeights = { 0f, .72f, 1f, .72f, 0f };
+    // Sample a smooth lateral fade with its peak on the preferred line.
+    private static readonly float[] RubberStripeWeights = { 0f, .15625f, .5f, .84375f, 1f, .84375f, .5f, .15625f, 0f };
 
     internal static float RubberBuildup(RaceSessionKind kind, float practiceFraction, int leaderLaps)
     {
@@ -6942,8 +7149,28 @@ public sealed partial class TrackPreview : MonoBehaviour
         };
     }
 
+    internal void SetRubberBuildupEnabled(bool enabled)
+    {
+        if (RubberBuildupEnabled == enabled)
+            return;
+
+        RubberBuildupEnabled = enabled;
+        if (enabled)
+            UpdateRubberOverlay();
+        else if (rubberOverlayRenderer != null)
+            rubberOverlayRenderer.enabled = false;
+    }
+
     private void UpdateRubberOverlay()
     {
+        if (!RubberBuildupEnabled)
+            return;
+
+        if (rubberOverlayNeedsBuild)
+        {
+            rubberOverlayNeedsBuild = false;
+            BuildRubberOverlay();
+        }
         if (rubberOverlayRenderer == null) return;
         float amount = 0f;
         if (rubberSession != null && SessionRun != null)
@@ -6990,7 +7217,9 @@ public sealed partial class TrackPreview : MonoBehaviour
             float bend = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(1.5f, 16f, Vector3.Angle(before, after)));
             float halfWidth = RoadWidths(station).x * .5f;
             float preferred = PreferredLaneOffset(0, halfWidth * 2f, float.PositiveInfinity, racingLine(station));
-            float stripeHalfWidth = Mathf.Min(1.7f, halfWidth * .4f);
+            float straightHalfWidth = Mathf.Min(1.7f, halfWidth * .4f);
+            float cornerHalfWidth = Mathf.Min(3.2f, halfWidth * .7f);
+            float stripeHalfWidth = Mathf.Lerp(straightHalfWidth, cornerHalfWidth, bend);
             // Fade to zero at both painted edges, including where the apron starts.
             const float edgeInset = .04f;
             float trackEdge = halfWidth - edgeInset;
@@ -7000,13 +7229,13 @@ public sealed partial class TrackPreview : MonoBehaviour
             int row = vertices.Count;
             for (int side = 0; side < RubberStripeWeights.Length; side++)
             {
-                float offset = (side - 2) * .5f;
+                float offset = 2f * side / (RubberStripeWeights.Length - 1) - 1f;
                 float lane = offset < 0f ? Mathf.Lerp(center, left, -offset) : Mathf.Lerp(center, right, offset);
                 Vector3 surface = TrackPoint(station, lane, out _, out var up);
                 vertices.Add(surface + up * .055f);
                 colors.Add(RubberVertex(.72f * bend * RubberStripeWeights[side]));
             }
-            if (i > 0) JoinRubberRows(triangles, row, RubberStripeWeights.Length);
+            if (i > 0) JoinRubberRows(triangles, row, RubberStripeWeights.Length, RubberStripeWeights.Length);
         }
 
         AddPitDepartureRubber(vertices, colors, triangles);
@@ -7079,22 +7308,94 @@ public sealed partial class TrackPreview : MonoBehaviour
         }
     }
 
-    private Mesh sessionSkidMesh;
-    private readonly List<Vector3> skidVertices = new();
-    private readonly List<Color32> skidColors = new();
-    private readonly List<int> skidTriangles = new();
-    private Vector3?[,] previousSkidContacts;
-    private bool skidMeshDirty;
+    private const float SkidDarknessScale = .55f;
+    private const float MaximumSkidDarkness = .38f;
+    private const int LooseSkidLayer = 3;
+    private const int SkidMeshSegmentCapacity = 8192;
+    private const int SkidMeshVertexCapacity = 4 * SkidMeshSegmentCapacity;
+    private const MeshUpdateFlags SkidMeshUpdateFlags =
+        MeshUpdateFlags.DontRecalculateBounds | MeshUpdateFlags.DontValidateIndices;
+    private static readonly VertexAttributeDescriptor[] SkidVertexLayout =
+    {
+        new(VertexAttribute.Position, VertexAttributeFormat.Float32, 3),
+        new(VertexAttribute.Color, VertexAttributeFormat.UNorm8, 4)
+    };
+    private static readonly ushort[] SkidMeshIndices = BuildSkidMeshIndices();
+    private readonly SkidMarkLayer[] skidMarkLayers = { new(), new(), new(), new() };
+    private (Vector3 Position, bool Loose)?[,] previousSkidContacts;
+    internal bool LooseCarSkidMarksEnabled { get; private set; } = true;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private readonly struct SkidVertex
+    {
+        internal readonly Vector3 Position;
+        internal readonly Color32 Color;
+
+        internal SkidVertex(Vector3 position, Color32 color)
+        {
+            Position = position;
+            Color = color;
+        }
+    }
+
+    private sealed class SkidMarkLayer
+    {
+        internal readonly List<SkidVertex> Pending = new();
+        internal readonly List<Mesh> Meshes = new();
+        internal GameObject Root;
+        internal Material Material;
+        internal Bounds Bounds;
+        internal int VertexCount;
+    }
+
+    private static ushort[] BuildSkidMeshIndices()
+    {
+        var indices = new ushort[6 * SkidMeshSegmentCapacity];
+        for (int segment = 0; segment < SkidMeshSegmentCapacity; segment++)
+        {
+            int vertex = 4 * segment;
+            int index = 6 * segment;
+            indices[index] = (ushort)vertex;
+            indices[index + 1] = (ushort)(vertex + 2);
+            indices[index + 2] = (ushort)(vertex + 1);
+            indices[index + 3] = (ushort)(vertex + 1);
+            indices[index + 4] = (ushort)(vertex + 2);
+            indices[index + 5] = (ushort)(vertex + 3);
+        }
+        return indices;
+    }
+
+    internal void SetLooseCarSkidMarksEnabled(bool enabled)
+    {
+        LooseCarSkidMarksEnabled = enabled;
+        var root = skidMarkLayers[LooseSkidLayer].Root;
+        if (root != null)
+            root.SetActive(enabled);
+    }
 
     private void ResetSessionSkids()
     {
         ResetTrackSmoke();
-        skidVertices.Clear();
-        skidColors.Clear();
-        skidTriangles.Clear();
-        sessionSkidMesh?.Clear();
-        previousSkidContacts = new Vector3?[cars.Length, 4];
-        skidMeshDirty = false;
+        ClearSkidMarkMeshes();
+        previousSkidContacts = new (Vector3 Position, bool Loose)?[cars.Length, 4];
+    }
+
+    private void ClearSkidMarkMeshes()
+    {
+        foreach (var layer in skidMarkLayers)
+        {
+            if (layer.Root != null)
+            {
+                layer.Root.SetActive(false);
+                Destroy(layer.Root);
+                layer.Root = null;
+            }
+            foreach (var mesh in layer.Meshes)
+                Destroy(mesh);
+            layer.Meshes.Clear();
+            layer.Pending.Clear();
+            layer.VertexCount = 0;
+        }
     }
 
     private void SampleSessionSkids()
@@ -7115,29 +7416,41 @@ public sealed partial class TrackPreview : MonoBehaviour
             bool spinning = onPavement && crashes[i].Active;
             bool lockup = onPavement && !SessionRun.Finished(i) && !SessionRun.Retired(i) &&
                 SessionRun.EmergencyBrakeLockup(i);
-            SampleTrackSmoke(i, traffic, spinning, lockup, emitSmoke);
-            // Full strength at 20 degrees of handling yaw, proportional below that.
-            float yawStrength = onPavement ? .61f * Mathf.Clamp01(Mathf.Abs(tireYawAngles[i]) / 20f) : 0f;
             float station = traffic?.TrackDistance ?? sessionDistances[i];
+            float extremeSlip = SampleLooseSetupYaw(i, station, onPavement && CanApplyTireHandling(i, traffic));
+            SampleTrackSmoke(i, traffic, spinning, lockup, emitSmoke, extremeSlip);
+            // Keep tire-wear marks separate so the loose-setup visibility toggle only affects loose marks.
+            float yawStrength = onPavement ? .61f * Mathf.Clamp01(Mathf.Abs(tireYawAngles[i]) / 20f) : 0f;
+            float looseStrength = LooseCarSkidMarksEnabled ? .07f * extremeSlip : 0f;
             for (int tire = 0; tire < 4; tire++)
             {
                 bool front = tire < 2;
                 float strength = spinning ? .64f : front ? (lockup ? .61f : 0f) : yawStrength;
-                Vector3? contact = strength > 0f ? SkidTireContact(i, station, front, tire % 2 == 0 ? -1f : 1f) : null;
-                Vector3? previous = previousSkidContacts[i, tire];
-                previousSkidContacts[i, tire] = contact;
-                if (contact.HasValue && previous.HasValue)
-                    AddSkidSegment(previous.Value, contact.Value, strength);
+                bool loose = !front && looseStrength > strength;
+                if (loose)
+                    strength = looseStrength;
+                float setupYaw = loose ? looseSetupYawAngles[i] : 0f;
+                Vector3? contact = strength > 0f
+                    ? SkidTireContact(i, station, front, tire % 2 == 0 ? -1f : 1f, setupYaw) : null;
+                var previous = previousSkidContacts[i, tire];
+                previousSkidContacts[i, tire] = contact.HasValue ? (contact.Value, loose) : null;
+                if (contact.HasValue && previous.HasValue && previous.Value.Loose == loose)
+                    AddSkidSegment(previous.Value.Position, contact.Value, strength, loose);
             }
         }
     }
 
-    private Vector3? SkidTireContact(int index, float station, bool front, float side)
+    private Vector3? SkidTireContact(int index, float station, bool front, float side, float setupYaw = 0f)
     {
         var car = cars[index];
         float axle = RearAxleHeading.CenterToRearAxle * (front ? 1f : -1f);
         Vector3 localContact = raceWheels[index]?.TireContact(front, side) ??
             new Vector3(side * FormationHalfWheelTrack, 0f, axle);
+        if (setupYaw != 0f)
+        {
+            Vector3 pivot = raceWheels[index]?.FrontAxleCenter ?? Vector3.forward * RearAxleHeading.CenterToRearAxle;
+            localContact = pivot + Quaternion.AngleAxis(setupYaw, Vector3.up) * (localContact - pivot);
+        }
         Vector3 tire = car.localPosition + car.localRotation * localContact;
         Vector3 datum = TrackPoint(station, 0f, out var tangent, out _);
         Vector3 horizontal = Vector3.ProjectOnPlane(tangent, Vector3.up).normalized;
@@ -7155,67 +7468,109 @@ public sealed partial class TrackPreview : MonoBehaviour
         return tire;
     }
 
-    private void AddSkidSegment(Vector3 previous, Vector3 current, float strength)
+    private void AddSkidSegment(Vector3 previous, Vector3 current, float strength, bool loose = false)
     {
         Vector3 travel = current - previous;
         if (travel.sqrMagnitude < .000001f || travel.sqrMagnitude > 100f)
             return;
 
-        Vector3 across = Vector3.Cross(Vector3.up, travel).normalized * .075f;
-        int first = skidVertices.Count;
-        skidVertices.Add(previous - across);
-        skidVertices.Add(previous + across);
-        skidVertices.Add(current - across);
-        skidVertices.Add(current + across);
-        var color = RubberVertex(strength);
-        for (int i = 0; i < 4; i++)
-            skidColors.Add(color);
+        var color = RubberVertex(Mathf.Min(strength * SkidDarknessScale, MaximumSkidDarkness));
+        if (color.a == 0)
+            return;
 
-        skidTriangles.Add(first);
-        skidTriangles.Add(first + 2);
-        skidTriangles.Add(first + 1);
-        skidTriangles.Add(first + 1);
-        skidTriangles.Add(first + 2);
-        skidTriangles.Add(first + 3);
-        skidMeshDirty = true;
+        Vector3 across = Vector3.Cross(Vector3.up, travel).normalized * .075f;
+        // Give visible lockup and spin marks priority over faint marks at an overlap.
+        int layer = loose ? LooseSkidLayer : strength >= .32f ? 0 : strength >= .10f ? 1 : 2;
+        var pending = skidMarkLayers[layer].Pending;
+        pending.Add(new SkidVertex(previous - across, color));
+        pending.Add(new SkidVertex(previous + across, color));
+        pending.Add(new SkidVertex(current - across, color));
+        pending.Add(new SkidVertex(current + across, color));
     }
 
     private void PresentSessionSkids()
     {
-        if (!skidMeshDirty)
+        const int firstSkidQueue = (int)RenderQueue.Transparent - 17;
+        for (int layer = 0; layer < LooseSkidLayer; layer++)
+            PresentSkidMarks(skidMarkLayers[layer], "Session skid marks", firstSkidQueue + layer);
+        if (LooseCarSkidMarksEnabled)
+            PresentSkidMarks(skidMarkLayers[LooseSkidLayer], "Loose car skid marks", firstSkidQueue + LooseSkidLayer);
+    }
+
+    private void PresentSkidMarks(SkidMarkLayer layer, string label, int renderQueue)
+    {
+        if (layer.Pending.Count == 0)
             return;
 
-        if (sessionSkidMesh == null)
+        if (layer.Material == null)
         {
-            var shader = Resources.Load<Shader>("Startup/TrackRubber");
-            if (shader == null)
+            var shader = Resources.Load<Shader>("Startup/TrackSkidMark");
+            if (shader == null || !shader.isSupported)
+            {
+                layer.Pending.Clear();
                 return;
+            }
 
-            const string label = "Session skid marks";
-            sessionSkidMesh = new Mesh { name = label, indexFormat = IndexFormat.UInt32 };
-            sessionSkidMesh.MarkDynamic();
-            roadMeshes.Add(sessionSkidMesh);
-            var overlay = CreateObject(label, transform);
-            overlay.AddComponent<MeshFilter>().sharedMesh = sessionSkidMesh;
-            var renderer = overlay.AddComponent<MeshRenderer>();
-            renderer.shadowCastingMode = ShadowCastingMode.Off;
-            renderer.receiveShadows = false;
-            var material = new Material(shader) { renderQueue = (int)RenderQueue.Transparent - 19 };
-            material.SetFloat(RubberBuildupProperty, 1f);
-            materials.Add(material);
-            renderer.sharedMaterial = material;
+            layer.Material = new Material(shader) { renderQueue = renderQueue };
+            materials.Add(layer.Material);
         }
+        if (layer.Root == null)
+            layer.Root = CreateObject(label, transform);
 
-        sessionSkidMesh.SetVertices(skidVertices);
-        sessionSkidMesh.SetColors(skidColors);
-        sessionSkidMesh.SetTriangles(skidTriangles, 0);
-        skidMeshDirty = false;
+        // Append just the new vertices. Full chunks stay visible but never need another upload.
+        int offset = 0;
+        while (offset < layer.Pending.Count)
+        {
+            if (layer.VertexCount == 0)
+            {
+                layer.Meshes.Add(CreateSkidMarkChunk(layer));
+                layer.Bounds = new Bounds(layer.Pending[offset].Position, Vector3.zero);
+            }
+
+            Mesh mesh = layer.Meshes[layer.Meshes.Count - 1];
+            int count = Mathf.Min(layer.Pending.Count - offset, SkidMeshVertexCapacity - layer.VertexCount);
+            mesh.SetVertexBufferData(layer.Pending, offset, layer.VertexCount, count, flags: SkidMeshUpdateFlags);
+            for (int i = offset; i < offset + count; i++)
+                layer.Bounds.Encapsulate(layer.Pending[i].Position);
+            offset += count;
+            layer.VertexCount += count;
+            mesh.SetSubMesh(0, new SubMeshDescriptor(0, layer.VertexCount / 4 * 6)
+            {
+                bounds = layer.Bounds,
+                vertexCount = layer.VertexCount
+            }, SkidMeshUpdateFlags);
+            mesh.bounds = layer.Bounds;
+            if (layer.VertexCount == SkidMeshVertexCapacity)
+            {
+                mesh.UploadMeshData(markNoLongerReadable: true);
+                layer.VertexCount = 0;
+            }
+        }
+        layer.Pending.Clear();
+    }
+
+    private static Mesh CreateSkidMarkChunk(SkidMarkLayer layer)
+    {
+        var mesh = new Mesh { name = layer.Root.name };
+        mesh.MarkDynamic();
+        mesh.SetVertexBufferParams(SkidMeshVertexCapacity, SkidVertexLayout);
+        mesh.SetIndexBufferParams(SkidMeshIndices.Length, IndexFormat.UInt16);
+        mesh.SetIndexBufferData(SkidMeshIndices, 0, 0, SkidMeshIndices.Length, SkidMeshUpdateFlags);
+        mesh.subMeshCount = 1;
+
+        var overlay = CreateObject("Skid marks", layer.Root.transform);
+        overlay.AddComponent<MeshFilter>().sharedMesh = mesh;
+        var renderer = overlay.AddComponent<MeshRenderer>();
+        renderer.shadowCastingMode = ShadowCastingMode.Off;
+        renderer.receiveShadows = false;
+        renderer.sharedMaterial = layer.Material;
+        return mesh;
     }
 
     private static Color32 RubberVertex(float strength) =>
         new Color32(255, 255, 255, (byte)Mathf.RoundToInt(Mathf.Clamp01(strength) * 255f));
 
-    private static void JoinRubberRows(List<int> triangles, int row, int width, int stride = 5)
+    private static void JoinRubberRows(List<int> triangles, int row, int width, int stride)
     {
         for (int i = 0; i < width - 1; i++)
         {
@@ -7688,6 +8043,7 @@ public sealed partial class TrackPreview : MonoBehaviour
             Destroy(bristolConcrete);
         if (bristolAsphalt != null)
             Destroy(bristolAsphalt);
+        ClearSkidMarkMeshes();
         foreach (var mesh in roadMeshes)
             Destroy(mesh);
         foreach (var material in materials)

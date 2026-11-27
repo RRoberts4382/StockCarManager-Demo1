@@ -4,6 +4,10 @@ public sealed partial class TrackPreview
 {
     private const float TvShotMeters = 410f;
     private const float TvFrameHeightMeters = 14f;
+    private const float DefaultTvFrameScale = 1.15f;
+    private const float MinTvFrameScale = .25f;
+    private const float MaxTvFrameScale = 2f;
+    private float tvFrameScale = DefaultTvFrameScale;
     private float tvFirstStation;
     private float tvCameraSpacing;
 
@@ -56,6 +60,7 @@ public sealed partial class TrackPreview
         return sessionDistances?[index] ?? elapsed * CarSpeed(index) + lapLength * index / cars.Length;
     }
 
-    private static float TvFieldOfView(float distance) =>
-        Mathf.Clamp(2f * Mathf.Atan(TvFrameHeightMeters * .5f / Mathf.Max(.1f, distance)) * Mathf.Rad2Deg, 1f, 75f);
+    private static float TvFieldOfView(float distance, float frameScale) =>
+        Mathf.Clamp(2f * Mathf.Atan(TvFrameHeightMeters * frameScale * .5f / Mathf.Max(.1f, distance)) *
+            Mathf.Rad2Deg, 1f, 75f);
 }

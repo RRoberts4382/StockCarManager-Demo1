@@ -157,6 +157,7 @@ internal sealed class RaceSessionRun
     private readonly bool recordContacts;
     private readonly double gallonsPerMeter;
     private readonly double tireWearPerMeter;
+    internal Action<float, float> TireRubberShed { get; set; }
     private readonly TireTemperatureModel tireTemperatures;
     private readonly CarSimulationContext simulationContext;
     private readonly Random failureRandom;
@@ -801,7 +802,7 @@ internal sealed class RaceSessionRun
 
     internal float ConditionLimitedSpeedAndPace(int index, float speed, float seconds, out float pace, float brakingLimit = 0f,
         bool allowMechanicalFailure = false, float? paceSpeedCeiling = null, float preferredLineSpeedFactor = 1f,
-        float cleanAirSpeed = float.NaN, bool coastToTarget = false)
+        float cleanAirSpeed = float.NaN, bool coastToTarget = false, float surfaceGrip = 1f)
     {
         pace = 0f;
         var car = cars[index];
@@ -834,8 +835,10 @@ internal sealed class RaceSessionRun
                 var setup = SetupForCar(index);
                 acceleration *= UnityEngine.Mathf.Min(1f, weightFactor * VehicleSpeed003.DistributionAccelerationFactor(setup, car.Result.Fuel));
                 brakingGrip = UnityEngine.Mathf.Min(1f, weightFactor * VehicleSpeed003.DistributionBrakingFactor(setup, car.Result.Fuel)) * Weather.GripFactor;
-                brakingLimit *= brakingGrip;
             }
+            acceleration *= surfaceGrip;
+            brakingGrip *= surfaceGrip;
+            brakingLimit *= brakingGrip;
             float damageFactor = 1f - damage / 100f;
             // A paced car should be able to hold the commanded speed if it is
             // below what the car can still achieve with its current damage.
@@ -1018,6 +1021,7 @@ internal sealed class RaceSessionRun
         const double referenceSpeed = 63.0;
         float wear = (float)(adjustedMeters * tireWearPerMeter * simulationContext.TireWearRate *
             (speedMetersPerSecond / referenceSpeed)) * weightWearFactor;
+        float shed = 0f;
         for (int indexOnCar = 0; indexOnCar < 4; indexOnCar++)
         {
             var tire = result.car.GetTire(indexOnCar);
@@ -1026,10 +1030,13 @@ internal sealed class RaceSessionRun
                 float tireWear = wear * TireWearFactor(index, indexOnCar, tire, fuelBeforeTravel);
                 float previousWear = tire.wear;
                 tire.wear = UnityEngine.Mathf.Clamp01(previousWear + tireWear);
+                shed += tire.wear - previousWear;
                 if (onTrack && previousWear < 1f && tire.wear >= 1f)
                     car.WornOutTireMask |= 1 << indexOnCar;
             }
         }
+        if (onTrack && !reducedBurn && shed > 0f)
+            TireRubberShed?.Invoke(TrackPosition(trackPosition - meters * .5d, lapLength), shed * .25f);
     }
 
     private float TireWearFactor(int index, int corner, CarTire tire, double fuel)
@@ -1102,9 +1109,29 @@ internal sealed class RaceSessionRun
             return false;
         phase = tireTemperatures.HandlingPhaseAt(thermalDistances[index]);
         if (phase < 0) return false;
-        balance = VehicleSpeed003.HandlingBalance(SetupForCar(index), Vehicle(index), dynamicLoads[index],
-            Fuel(index), out tireContribution, out loadContribution);
+        balance = HandlingBalanceAt(index, out tireContribution, out loadContribution);
         return true;
+    }
+
+    private float HandlingBalanceAt(int index, out float tireContribution, out float loadContribution) =>
+        VehicleSpeed003.HandlingBalance(SetupForCar(index), Vehicle(index), dynamicLoads[index],
+            Fuel(index), out tireContribution, out loadContribution);
+
+    internal float LooseSetupYawWeight(int index, out float extremeSlip)
+    {
+        extremeSlip = 0f;
+        if (!usesSpringPerformance || !thermalOnTrack[index])
+            return 0f;
+
+        float corneringLoad = UnityEngine.Mathf.InverseLerp(.35f, 1f, Math.Abs(dynamicLoads[index].LateralG));
+        if (corneringLoad <= 0f)
+            return 0f;
+
+        float balance = HandlingBalanceAt(index, out _, out _);
+        float looseness = UnityEngine.Mathf.InverseLerp(2f, 10f, -balance);
+        extremeSlip = UnityEngine.Mathf.SmoothStep(0f, 1f,
+            UnityEngine.Mathf.InverseLerp(10f, 17f, -balance)) * corneringLoad;
+        return UnityEngine.Mathf.SmoothStep(0f, 1f, looseness) * corneringLoad;
     }
 
     internal float DynamicCornerWeight(int index, int corner) =>
@@ -1312,10 +1339,30 @@ internal sealed class RaceSessionRun
     public IEnumerable<SessionCarResult> FastestLaps() =>
         cars.Select(car => car.Result).OrderBy(result => result.FastestLap).ThenBy(result => result.carNumber);
 
+    private (bool Retired, int Laps, float FinishTime) RaceResultKey(CarTiming car) =>
+        (car.Retired, finishOnCheckered || car.Retired ? -car.Result.CompletedLaps : 0, car.FinishTime);
+
+    internal int FinishedWinnerIndex()
+    {
+        if (!IsRace || (float.IsPositiveInfinity(checkeredTime) && !Complete))
+            return -1;
+
+        int winner = -1;
+        if (frozenOrder != null)
+            winner = Array.IndexOf(frozenOrder, 0);
+        else
+            for (int i = 0; i < cars.Length; i++)
+                if (cars[i].Finished && !cars[i].Retired &&
+                    (winner < 0 || RaceResultKey(cars[i]).CompareTo(RaceResultKey(cars[winner])) < 0))
+                    winner = i;
+
+        return winner >= 0 && cars[winner].Finished && !cars[winner].Retired ? winner : -1;
+    }
+
     public List<SessionCarResult> Results()
     {
         var ordered = session.kind == RaceSessionKind.Race
-            ? cars.OrderBy(car => car.Retired).ThenByDescending(car => finishOnCheckered || car.Retired ? car.Result.CompletedLaps : 0).ThenBy(car => car.FinishTime)
+            ? cars.OrderBy(RaceResultKey)
             : cars.OrderBy(car => car.Result.FastestLap);
         var results = frozenOrder == null ? ordered.Select(car => car.Result).ToList() :
             Enumerable.Range(0, cars.Length).OrderBy(index => frozenOrder[index]).Select(index => cars[index].Result).ToList();

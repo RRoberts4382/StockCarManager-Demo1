@@ -197,14 +197,22 @@ internal sealed class RaceWheelAnimation
         }
     }
 
-    public void Present()
+    internal void SpinBurnoutTires(float seconds)
+    {
+        foreach (var wheel in wheels)
+            if (!wheel.Front)
+                wheel.Angle = Mathf.Repeat(wheel.Angle + 2200f * seconds, 360f);
+    }
+
+    public void Present(float visualBodyYaw = 0f)
     {
         foreach (var wheel in wheels)
         {
-            if (wheel.Front && wheel.SteeringAngle != wheel.PresentedSteering)
+            float steering = wheel.SteeringAngle - visualBodyYaw;
+            if (wheel.Front && steering != wheel.PresentedSteering)
             {
-                wheel.Steer.localRotation = Quaternion.Euler(0f, wheel.SteeringAngle, 0f);
-                wheel.PresentedSteering = wheel.SteeringAngle;
+                wheel.Steer.localRotation = Quaternion.Euler(0f, steering, 0f);
+                wheel.PresentedSteering = steering;
             }
             if (wheel.Angle != wheel.PresentedAngle)
             {

@@ -1617,6 +1617,9 @@
     background-color: #ffaf63;
     color: #141a22;
 }
+.track-map-car.track-map-focused {
+    border-color: #ffd700;
+}
 .track-pit-controls {
     display: none;
     flex-shrink: 0;
@@ -1686,6 +1689,9 @@
     padding-left: 6px;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+.timing-row > .timing-driver-name.timing-driver-focused {
+    color: #009bdd;
 }
 .timing-gap {
     width: 58px;

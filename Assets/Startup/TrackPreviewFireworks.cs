@@ -58,6 +58,100 @@ public sealed partial class TrackPreview
     private int nextFireworkSite;
     private uint fireworkSeed;
 
+    internal bool RaceStartFireworksActive => fireworkSites != null && lastFireworkCueTime > 0f;
+
+    private ParticleSystem grandstandFlashes;
+    private readonly List<(float Time, Vector3 Position, float Size)> grandstandFlashCues = new();
+    private int nextGrandstandFlash;
+    private float grandstandFlashClock;
+
+    private void PrepareGrandstandCameraFlashes(bool isRace)
+    {
+        grandstandFlashes?.Clear(false);
+        grandstandFlashCues.Clear();
+        nextGrandstandFlash = 0;
+        grandstandFlashClock = 0f;
+        if (!isRace || grandstandScenery == null || !LoadFireworkMaterial())
+            return;
+
+        var random = new System.Random();
+        if (grandstandScenery.TryGetComponent<GrandstandAttendance>(out var attendance) && attendance.SeatCount > 0)
+        {
+            for (int i = 0; i < 64; i++)
+                AddCue(attendance.CameraFlashPosition(random.Next(attendance.SeatCount)));
+        }
+        else if (bristolCrowd != null)
+        {
+            foreach (var filter in bristolCrowd.GetComponentsInChildren<MeshFilter>())
+            {
+                var mesh = filter.sharedMesh;
+                if (mesh == null || !mesh.isReadable || mesh.vertexCount == 0)
+                    continue;
+
+                var vertices = mesh.vertices;
+                for (int i = 0; i < 32; i++)
+                    AddCue(filter.transform.TransformPoint(vertices[random.Next(vertices.Length)]) + Vector3.up * .25f);
+            }
+        }
+
+        grandstandFlashCues.Sort(static (a, b) => a.Time.CompareTo(b.Time));
+
+        void AddCue(Vector3 position)
+        {
+            // Bias the flashes toward the green flag, with a short tail of scattered flashes.
+            float delay = (float)random.NextDouble();
+            grandstandFlashCues.Add((2.4f * delay * delay, position, .55f + .65f * (float)random.NextDouble()));
+        }
+    }
+
+    private void PresentGrandstandCameraFlashes(float seconds)
+    {
+        if (grandstandFlashCues.Count == 0 || (raceStart != null && !raceReleased))
+            return;
+
+        grandstandFlashClock += seconds;
+        if (grandstandFlashes != null && grandstandFlashes.particleCount > 0)
+            grandstandFlashes.Simulate(seconds, false, false, false);
+
+        while (nextGrandstandFlash < grandstandFlashCues.Count &&
+            grandstandFlashCues[nextGrandstandFlash].Time <= grandstandFlashClock)
+        {
+            var cue = grandstandFlashCues[nextGrandstandFlash++];
+            if (!GrandstandsVisible)
+                continue;
+
+            if (grandstandFlashes == null)
+                grandstandFlashes = CreateTrackSparkEmitter("Grandstand camera flashes", grandstandScenery.transform,
+                    128, 0f, ParticleSystemRenderMode.Billboard);
+
+            grandstandFlashes.Emit(new ParticleSystem.EmitParams
+            {
+                position = cue.Position,
+                velocity = Vector3.zero,
+                startColor = new Color32(255, 250, 236, 255),
+                startSize = cue.Size,
+                startLifetime = .12f
+            }, 1);
+        }
+
+        if (nextGrandstandFlash == grandstandFlashCues.Count && grandstandFlashes?.particleCount is null or 0)
+            grandstandFlashCues.Clear();
+    }
+
+    private bool LoadFireworkMaterial()
+    {
+        if (fireworkMaterial != null)
+            return true;
+
+        var shader = Resources.Load<Shader>("Startup/TrackFireworks");
+        if (shader == null || !shader.isSupported)
+            return false;
+
+        fireworkMaterial = new Material(shader);
+        materials.Add(fireworkMaterial);
+        return true;
+    }
+
     private void PrepareRaceStartFireworks(RaceSession session)
     {
         fireworkSparks?.Clear(false);
@@ -71,19 +165,18 @@ public sealed partial class TrackPreview
             !SessionRun.Weather.IsNight || lapLength <= 0f)
             return;
 
-        if (fireworkMaterial == null)
-        {
-            var shader = Resources.Load<Shader>("Startup/TrackFireworks");
-            if (shader == null || !shader.isSupported)
-                return;
-            fireworkMaterial = new Material(shader);
-            materials.Add(fireworkMaterial);
-        }
+        if (!LoadFireworkMaterial())
+            return;
 
         var (first, last) = LocateFireworksBackstretch();
         // Choose the final complete pass along this backstretch before the initial green.
         float lapOffset = lapLength * Mathf.Floor((raceStart.GreenDistance - last) / lapLength);
         var obstacles = new OutsideBillboardObstacles(transform, cars);
+        fireworkSites = FindFireworkSites(first, last, lapOffset, obstacles);
+    }
+
+    private FireworkSite[] FindFireworkSites(float first, float last, float lapOffset, OutsideBillboardObstacles obstacles)
+    {
         var sites = new List<FireworkSite>(FireworkSiteCount);
         for (int i = 0; i < FireworkSiteCount; i++)
         {
@@ -104,8 +197,7 @@ public sealed partial class TrackPreview
                 break;
             }
         }
-        if (sites.Count > 0)
-            fireworkSites = sites.ToArray();
+        return sites.Count > 0 ? sites.ToArray() : null;
     }
 
     private (float First, float Last) LocateFireworksBackstretch()
@@ -203,6 +295,17 @@ public sealed partial class TrackPreview
         if (fireworkSites == null || fireworkClock <= fireworkVisualClock)
             return;
 
+        PresentFireworkCues();
+        if ((nextFireworkSite >= fireworkSites.Length || raceReleased) &&
+            fireworkClock - lastFireworkCueTime > FireworkBurstLifetime + .15f)
+            fireworkSites = null;
+    }
+
+    private void PresentFireworkCues()
+    {
+        if (fireworkClock <= fireworkVisualClock)
+            return;
+
         int consumed = 0;
         while (consumed < fireworkCues.Count && fireworkCues[consumed].Time <= fireworkClock)
         {
@@ -219,27 +322,34 @@ public sealed partial class TrackPreview
         if (fireworkSparks != null && (consumed > 0 || fireworkSparks.particleCount > 0))
             fireworkSparks.Simulate(fireworkClock - fireworkVisualClock, false, false, false);
         fireworkVisualClock = fireworkClock;
-        if ((nextFireworkSite >= fireworkSites.Length || raceReleased) &&
-            fireworkClock - lastFireworkCueTime > FireworkBurstLifetime + .15f)
-            fireworkSites = null;
     }
 
     private void CreateFireworkSparks()
     {
-        var emitter = CreateObject("Backstretch fireworks", transform);
+        fireworkSparks = CreateTrackSparkEmitter("Backstretch fireworks", transform,
+            2048, FireworkSparkGravity, ParticleSystemRenderMode.Stretch);
+        var renderer = fireworkSparks.GetComponent<ParticleSystemRenderer>();
+        renderer.lengthScale = 1.4f;
+        renderer.velocityScale = .055f;
+    }
+
+    private ParticleSystem CreateTrackSparkEmitter(string name, Transform parent, int capacity, float gravity,
+        ParticleSystemRenderMode renderMode)
+    {
+        var emitter = CreateObject(name, parent);
         emitter.SetActive(false);
-        fireworkSparks = emitter.AddComponent<ParticleSystem>();
-        var main = fireworkSparks.main;
+        var sparks = emitter.AddComponent<ParticleSystem>();
+        var main = sparks.main;
         main.playOnAwake = false;
         main.simulationSpace = ParticleSystemSimulationSpace.World;
         main.cullingMode = ParticleSystemCullingMode.AlwaysSimulate;
-        main.maxParticles = 2048;
-        main.gravityModifier = FireworkSparkGravity;
-        var emission = fireworkSparks.emission;
+        main.maxParticles = capacity;
+        main.gravityModifier = gravity;
+        var emission = sparks.emission;
         emission.enabled = false;
-        var shape = fireworkSparks.shape;
+        var shape = sparks.shape;
         shape.enabled = false;
-        var fade = fireworkSparks.colorOverLifetime;
+        var fade = sparks.colorOverLifetime;
         fade.enabled = true;
         fade.color = new Gradient
         {
@@ -249,12 +359,11 @@ public sealed partial class TrackPreview
         };
         var renderer = emitter.GetComponent<ParticleSystemRenderer>();
         renderer.sharedMaterial = fireworkMaterial;
-        renderer.renderMode = ParticleSystemRenderMode.Stretch;
-        renderer.lengthScale = 1.4f;
-        renderer.velocityScale = .055f;
+        renderer.renderMode = renderMode;
         renderer.shadowCastingMode = ShadowCastingMode.Off;
         renderer.receiveShadows = false;
         emitter.SetActive(true);
+        return sparks;
     }
 
     private void EmitFireworkCue(FireworkCue cue)

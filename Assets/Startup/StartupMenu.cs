@@ -3,6 +3,7 @@ using System.Linq;
 using System.Globalization;
 using System.IO;
 using UnityEngine;
+using UnityEngine.InputSystem;
 using UnityEngine.UIElements;
 
 public sealed class StartupMenu : MonoBehaviour
@@ -22,6 +23,9 @@ public sealed class StartupMenu : MonoBehaviour
     private long? usedMaxPriceFilter;
     private const string TrackCameraAnglePreference = "StockCarManager.TrackCameraAngle";
     private const string PreferredLinePreference = "StockCarManager.Settings.PreferredLineVisible";
+    private const string MarblesPreference = "StockCarManager.Settings.MarblesEnabled";
+    private const string LooseCarSkidMarksPreference = "StockCarManager.Settings.LooseCarSkidMarksEnabled";
+    private const string RubberBuildupPreference = "StockCarManager.Settings.RubberBuildupEnabled";
     private const double CameraCycleIntervalSeconds = 8d;
     private static readonly TrackPreview.CameraAngle[] TrackCameraChoices =
     {
@@ -149,6 +153,8 @@ public sealed class StartupMenu : MonoBehaviour
     private Button cycleTrackCameraButton;
     private Label trackCameraAngle;
     private TrackPreview.CameraAngle trackCameraSelection;
+    private bool raceStartFireworksWereActive;
+    private bool usingFireworksSpotter;
     private double nextTrackCameraCut;
     private const long TrackIconTooltipDelayMs = 350;
     private Label trackIconTooltip;
@@ -158,6 +164,7 @@ public sealed class StartupMenu : MonoBehaviour
     private VisualElement trackPitSettings;
     private bool trackStandingsExpanded = true;
     private int displayedTimingRevision = -1;
+    private int displayedFocusedCarIndex = -1;
     private float nextStandingsRefresh;
     private readonly Dictionary<SessionCarResult, string> scoringDriverNames = new Dictionary<SessionCarResult, string>();
     private float scoringStandingsWidth;
@@ -6203,6 +6210,15 @@ public sealed class StartupMenu : MonoBehaviour
         if (activeSession == null || trackPreview?.SessionRun == null)
             return;
 
+        if (!sessionInGarage && trackScreen.style.display == DisplayStyle.Flex && trackScreen.enabledInHierarchy &&
+            !PitSettingsOpen && !trackPreview.SessionComplete && Keyboard.current?.spaceKey.wasPressedThisFrame == true)
+        {
+            if (sessionPaused)
+                PlaySession();
+            else
+                PauseSession();
+        }
+
         if (garageVisitPending && trackPreview.PlayerParkedForGarage && !trackPreview.SessionComplete)
             OpenGarageAfterParking();
         else if (garageVisitPending && !sessionInGarage)
@@ -6262,14 +6278,16 @@ public sealed class StartupMenu : MonoBehaviour
         if (trackSnapshotDialog != null || trackScreen?.style.display != DisplayStyle.Flex)
             return;
 
-        trackSessionMap.UpdateCars();
-        if (trackCameraSelection == TrackPreview.CameraAngle.Cycle && Time.unscaledTimeAsDouble >= nextTrackCameraCut)
+        UpdateFireworksCamera();
+        if (!usingFireworksSpotter && trackCameraSelection == TrackPreview.CameraAngle.Cycle &&
+            Time.unscaledTimeAsDouble >= nextTrackCameraCut)
         {
             ReleaseTrackPointer();
             trackPreview.SetCameraAngle(NextAvailableCamera(trackPreview.ViewAngle, includeCycle: false));
             nextTrackCameraCut = Time.unscaledTimeAsDouble + CameraCycleIntervalSeconds;
             UpdateTrackCameraLabel();
         }
+        trackSessionMap.UpdateCars();
         if (trackPreview.ViewAngle == TrackPreview.CameraAngle.InCar)
         {
             int selected = trackPreview.SelectedCarIndex;
@@ -6286,6 +6304,30 @@ public sealed class StartupMenu : MonoBehaviour
         }
         else
             cockpitSteeringCar = -1;
+    }
+
+    private void UpdateFireworksCamera()
+    {
+        bool active = trackPreview.RaceStartFireworksActive;
+        if (active == raceStartFireworksWereActive)
+            return;
+
+        raceStartFireworksWereActive = active;
+        if (active && trackPreview.ViewAngle == TrackPreview.CameraAngle.TV)
+        {
+            usingFireworksSpotter = true;
+            ReleaseTrackPointer();
+            trackPreview.SetCameraAngle(TrackPreview.CameraAngle.Spotter);
+            UpdateTrackCameraLabel();
+        }
+        else if (!active && usingFireworksSpotter)
+        {
+            usingFireworksSpotter = false;
+            ReleaseTrackPointer();
+            trackPreview.SetCameraAngle(TrackPreview.CameraAngle.TV);
+            nextTrackCameraCut = Time.unscaledTimeAsDouble + CameraCycleIntervalSeconds;
+            UpdateTrackCameraLabel();
+        }
     }
 
     private void UpdateDrivingReadouts()
@@ -6418,12 +6460,15 @@ public sealed class StartupMenu : MonoBehaviour
         if (timing == null)
             return;
 
-        if (Time.unscaledTime < nextStandingsRefresh && timing.TimingRevision == displayedTimingRevision)
+        int focusedCarIndex = trackPreview.FocusedCarIndex;
+        if (Time.unscaledTime < nextStandingsRefresh && timing.TimingRevision == displayedTimingRevision &&
+            focusedCarIndex == displayedFocusedCarIndex)
             return;
 
         nextStandingsRefresh = Time.unscaledTime + 0.15f;
         bool changed = timing.TimingRevision != displayedTimingRevision;
         displayedTimingRevision = timing.TimingRevision;
+        displayedFocusedCarIndex = focusedCarIndex;
         UpdateScoringHeader(timing);
         if (!trackStandingsExpanded)
             return;
@@ -6433,6 +6478,8 @@ public sealed class StartupMenu : MonoBehaviour
             {
                 var cell = timingCells[positionIndex];
                 var result = (SessionCarResult)cell.Row.userData;
+                cell.Driver.EnableInClassList("timing-driver-focused",
+                    focusedCarIndex >= 0 && timing.IndexOfCar(result) == focusedCarIndex);
                 if (scoringColumn == ScoringColumn.Mph)
                     cell.Value.text = FormatScoringSpeed(result.InstantSpeed);
                 UpdateScoringPosition(cell.Position, result, positionIndex);
@@ -6610,6 +6657,8 @@ public sealed class StartupMenu : MonoBehaviour
             cell.Driver.text = scoringDriverNames.TryGetValue(result, out string displayName)
                 ? displayName : cell.Driver.tooltip;
         }
+        cell.Driver.EnableInClassList("timing-driver-focused",
+            carIndex >= 0 && carIndex == displayedFocusedCarIndex);
         cell.Value.text = scoringColumn switch
         {
             ScoringColumn.Mph => FormatScoringSpeed(result.InstantSpeed),
@@ -6814,6 +6863,35 @@ public sealed class StartupMenu : MonoBehaviour
         }
         else
             menu.AddDisabledItem("Preferred Line", false);
+        if (preview?.SupportsMarbles == true)
+        {
+            menu.AddItem("Marbles", preview.MarblesEnabled, () =>
+            {
+                bool enabled = !preview.MarblesEnabled;
+                preview.SetMarblesEnabled(enabled);
+                PlayerPrefs.SetInt(MarblesPreference, enabled ? 1 : 0);
+                PlayerPrefs.Save();
+            });
+        }
+        else
+            menu.AddDisabledItem("Marbles", false);
+        if (preview != null)
+        {
+            menu.AddItem("Loose Car Skid Marks", preview.LooseCarSkidMarksEnabled, () =>
+            {
+                bool enabled = !preview.LooseCarSkidMarksEnabled;
+                preview.SetLooseCarSkidMarksEnabled(enabled);
+                PlayerPrefs.SetInt(LooseCarSkidMarksPreference, enabled ? 1 : 0);
+                PlayerPrefs.Save();
+            });
+            menu.AddItem("Rubber Buildup", preview.RubberBuildupEnabled, () =>
+            {
+                bool enabled = !preview.RubberBuildupEnabled;
+                preview.SetRubberBuildupEnabled(enabled);
+                PlayerPrefs.SetInt(RubberBuildupPreference, enabled ? 1 : 0);
+                PlayerPrefs.Save();
+            });
+        }
         if (preview?.SessionRun != null)
             menu.AddItem("Night Sky", preview.TrackSkyIsNight, ToggleTrackSky);
         if (developmentPractice && preview?.SupportsGrandstands == true)
@@ -6883,7 +6961,8 @@ public sealed class StartupMenu : MonoBehaviour
         playSessionButton.SetEnabled(available && sessionPaused);
         pauseSessionButton.SetEnabled(available && !sessionPaused);
         playbackSpeedButton.SetEnabled(available);
-        playSessionButton.tooltip = $"Play at {sessionPlaybackSpeed}x";
+        playSessionButton.tooltip = $"Play at {sessionPlaybackSpeed}x (Spacebar)";
+        pauseSessionButton.tooltip = "Pause (Spacebar)";
         playbackSpeedButton.text = $"{sessionPlaybackSpeed}x \u25BE";
         playbackSpeedButton.tooltip = $"Playback speed \u00B7 {sessionPlaybackSpeed}x";
     }
@@ -7537,10 +7616,14 @@ public sealed class StartupMenu : MonoBehaviour
             scoringStandingsWidth = 0f;
             trackStandings.style.minWidth = StyleKeyword.Null;
             trackTimingRows.Clear();
+            raceStartFireworksWereActive = false;
             trackPreview = preview.AddComponent<TrackPreview>();
             trackPreview.SetCollisionsEnabled(true);
             trackPreview.TrafficLaneChangesEnabled = true;
             trackPreview.SetPreferredLineVisible(PlayerPrefs.GetInt(PreferredLinePreference, 1) != 0);
+            trackPreview.SetMarblesEnabled(PlayerPrefs.GetInt(MarblesPreference, 1) != 0);
+            trackPreview.SetLooseCarSkidMarksEnabled(PlayerPrefs.GetInt(LooseCarSkidMarksPreference, 1) != 0);
+            trackPreview.SetRubberBuildupEnabled(PlayerPrefs.GetInt(RubberBuildupPreference, 1) != 0);
             if (developmentPracticeFromSchedule)
                 trackPreview.InitializeSolo(track.Definition, ActiveSponsorNames(), playerCar, night);
             else
@@ -7728,6 +7811,7 @@ public sealed class StartupMenu : MonoBehaviour
 
     private void ApplyTrackCameraSelection(TrackPreview.CameraAngle angle)
     {
+        usingFireworksSpotter = false;
         trackCameraSelection = IsTrackCameraAvailable(angle) ? angle : TrackPreview.CameraAngle.Player;
         if (trackCameraSelection == TrackPreview.CameraAngle.Cycle)
             nextTrackCameraCut = Time.unscaledTimeAsDouble + CameraCycleIntervalSeconds;
@@ -7738,6 +7822,9 @@ public sealed class StartupMenu : MonoBehaviour
 
     private void UpdateTrackCameraLabel()
     {
+        cycleTrackCameraButton.tooltip = trackPreview.ViewAngle == TrackPreview.CameraAngle.TV
+            ? "Choose a track camera. In the race view, Ctrl + mouse wheel zooms and middle-click resets."
+            : "Choose a track camera";
         string activeAngle = TrackPreview.CameraAngleName(trackPreview.ViewAngle);
         trackCameraAngle.text = trackCameraSelection == TrackPreview.CameraAngle.Cycle ? $"Cycle / {activeAngle}" : activeAngle;
         var mirror = trackPreview.ViewAngle == TrackPreview.CameraAngle.InCar ? trackPreview.RearViewImage : null;
