@@ -166,8 +166,9 @@ internal sealed class TrackSessionMap
 
         var painter = context.painter2D;
         DrawRing(apron, inside, new Color32(71, 86, 96, 255));
-        DrawRing(outside, inside, new Color32(175, 187, 196, 255));
-        painter.fillColor = new Color32(99, 186, 207, 255);
+        var trackSurfaceColor = new Color32(175, 187, 196, 255);
+        DrawRing(outside, inside, trackSurfaceColor);
+        painter.fillColor = trackSurfaceColor;
         painter.strokeColor = painter.fillColor;
         painter.lineWidth = 1f;
         painter.lineJoin = LineJoin.Round;
