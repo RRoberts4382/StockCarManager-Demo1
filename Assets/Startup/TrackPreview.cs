@@ -105,7 +105,7 @@ public sealed partial class TrackPreview : MonoBehaviour
     private Transform cockpitGlassCar;
     private readonly List<MeshRenderer> hiddenCockpitGlass = new List<MeshRenderer>();
     internal CameraAngle ViewAngle { get; private set; }
-    internal bool CanZoom => ViewAngle is CameraAngle.Player or CameraAngle.Spotter;
+    internal bool CanZoom => ViewAngle is CameraAngle.Player or CameraAngle.Spotter or CameraAngle.TV;
     internal bool TrackSkyIsNight { get; private set; }
     internal bool SupportsRaceNightLighting => bristolFloodlightLens != null;
     internal bool CanUsePitBoxCamera => practiceStallPositions?.Length > 0;
@@ -1022,6 +1022,12 @@ public sealed partial class TrackPreview : MonoBehaviour
     public void Zoom(float wheelDelta, Vector2 anchor)
     {
         float scale = Mathf.Exp(wheelDelta * MouseWheelZoomRate);
+        if (ViewAngle == CameraAngle.TV)
+        {
+            tvFrameScale = Mathf.Clamp(tvFrameScale * scale, MinTvFrameScale, MaxTvFrameScale);
+            ApplyCameraPose();
+            return;
+        }
         if (ViewAngle == CameraAngle.Spotter)
         {
             ZoomSpotter(scale, new Vector2(anchor.x * raceCamera.aspect, anchor.y));
@@ -1289,6 +1295,9 @@ public sealed partial class TrackPreview : MonoBehaviour
             spotterAimOffset = Quaternion.identity;
             raceCamera.fieldOfView = spotterZoomFieldOfView;
         }
+        if (ViewAngle == CameraAngle.TV)
+            tvFrameScale = DefaultTvFrameScale;
+
         if (ViewAngle != CameraAngle.Player)
         {
             ApplyCameraPose();
@@ -1356,7 +1365,8 @@ public sealed partial class TrackPreview : MonoBehaviour
             cameraTransform.localPosition = position;
             cameraTransform.localRotation = Quaternion.LookRotation(target - position);
             if (ViewAngle is CameraAngle.TV or CameraAngle.Leader)
-                raceCamera.fieldOfView = TvFieldOfView(Vector3.Distance(position, target));
+                raceCamera.fieldOfView = TvFieldOfView(Vector3.Distance(position, target),
+                    ViewAngle == CameraAngle.TV ? tvFrameScale : 1f);
             else if (ViewAngle == CameraAngle.Spotter)
                 cameraTransform.localRotation *= spotterAimOffset;
         }

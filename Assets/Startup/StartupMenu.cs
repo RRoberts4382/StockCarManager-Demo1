@@ -7787,6 +7787,9 @@ public sealed class StartupMenu : MonoBehaviour
 
     private void UpdateTrackCameraLabel()
     {
+        cycleTrackCameraButton.tooltip = trackPreview.ViewAngle == TrackPreview.CameraAngle.TV
+            ? "Choose a track camera. In the race view, Ctrl + mouse wheel zooms and middle-click resets."
+            : "Choose a track camera";
         string activeAngle = TrackPreview.CameraAngleName(trackPreview.ViewAngle);
         trackCameraAngle.text = trackCameraSelection == TrackPreview.CameraAngle.Cycle ? $"Cycle / {activeAngle}" : activeAngle;
         var mirror = trackPreview.ViewAngle == TrackPreview.CameraAngle.InCar ? trackPreview.RearViewImage : null;
