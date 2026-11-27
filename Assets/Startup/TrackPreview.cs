@@ -7286,6 +7286,9 @@ public sealed partial class TrackPreview : MonoBehaviour
         }
     }
 
+    private const float SkidDarknessScale = .55f;
+    private const float MaximumSkidDarkness = .38f;
+    private const int LooseSkidLayer = 3;
     private const int SkidMeshSegmentCapacity = 8192;
     private const int SkidMeshVertexCapacity = 4 * SkidMeshSegmentCapacity;
     private const MeshUpdateFlags SkidMeshUpdateFlags =
@@ -7296,8 +7299,9 @@ public sealed partial class TrackPreview : MonoBehaviour
         new(VertexAttribute.Color, VertexAttributeFormat.UNorm8, 4)
     };
     private static readonly ushort[] SkidMeshIndices = BuildSkidMeshIndices();
-    private readonly SkidMarkLayer skidMarks = new();
-    private Vector3?[,] previousSkidContacts;
+    private readonly SkidMarkLayer[] skidMarkLayers = { new(), new(), new(), new() };
+    private (Vector3 Position, bool Loose)?[,] previousSkidContacts;
+    internal bool LooseCarSkidMarksEnabled { get; private set; } = true;
 
     [StructLayout(LayoutKind.Sequential)]
     private readonly struct SkidVertex
@@ -7339,26 +7343,37 @@ public sealed partial class TrackPreview : MonoBehaviour
         return indices;
     }
 
+    internal void SetLooseCarSkidMarksEnabled(bool enabled)
+    {
+        LooseCarSkidMarksEnabled = enabled;
+        var root = skidMarkLayers[LooseSkidLayer].Root;
+        if (root != null)
+            root.SetActive(enabled);
+    }
+
     private void ResetSessionSkids()
     {
         ResetTrackSmoke();
         ClearSkidMarkMeshes();
-        previousSkidContacts = new Vector3?[cars.Length, 4];
+        previousSkidContacts = new (Vector3 Position, bool Loose)?[cars.Length, 4];
     }
 
     private void ClearSkidMarkMeshes()
     {
-        if (skidMarks.Root != null)
+        foreach (var layer in skidMarkLayers)
         {
-            skidMarks.Root.SetActive(false);
-            Destroy(skidMarks.Root);
-            skidMarks.Root = null;
+            if (layer.Root != null)
+            {
+                layer.Root.SetActive(false);
+                Destroy(layer.Root);
+                layer.Root = null;
+            }
+            foreach (var mesh in layer.Meshes)
+                Destroy(mesh);
+            layer.Meshes.Clear();
+            layer.Pending.Clear();
+            layer.VertexCount = 0;
         }
-        foreach (var mesh in skidMarks.Meshes)
-            Destroy(mesh);
-        skidMarks.Meshes.Clear();
-        skidMarks.Pending.Clear();
-        skidMarks.VertexCount = 0;
     }
 
     private void SampleSessionSkids()
@@ -7382,20 +7397,23 @@ public sealed partial class TrackPreview : MonoBehaviour
             float station = traffic?.TrackDistance ?? sessionDistances[i];
             float extremeSlip = SampleLooseSetupYaw(i, station, onPavement && CanApplyTireHandling(i, traffic));
             SampleTrackSmoke(i, traffic, spinning, lockup, emitSmoke, extremeSlip);
-            // Full strength at 20 degrees of tire-wear yaw. Setup-induced marks stay faint.
+            // Keep tire-wear marks separate so the loose-setup visibility toggle only affects loose marks.
             float yawStrength = onPavement ? .61f * Mathf.Clamp01(Mathf.Abs(tireYawAngles[i]) / 20f) : 0f;
-            yawStrength = Mathf.Max(yawStrength, .16f * extremeSlip);
+            float looseStrength = LooseCarSkidMarksEnabled ? .07f * extremeSlip : 0f;
             for (int tire = 0; tire < 4; tire++)
             {
                 bool front = tire < 2;
                 float strength = spinning ? .64f : front ? (lockup ? .61f : 0f) : yawStrength;
-                float setupYaw = !front && extremeSlip > 0f ? looseSetupYawAngles[i] : 0f;
+                bool loose = !front && looseStrength > strength;
+                if (loose)
+                    strength = looseStrength;
+                float setupYaw = loose ? looseSetupYawAngles[i] : 0f;
                 Vector3? contact = strength > 0f
                     ? SkidTireContact(i, station, front, tire % 2 == 0 ? -1f : 1f, setupYaw) : null;
-                Vector3? previous = previousSkidContacts[i, tire];
-                previousSkidContacts[i, tire] = contact;
-                if (contact.HasValue && previous.HasValue)
-                    AddSkidSegment(previous.Value, contact.Value, strength);
+                var previous = previousSkidContacts[i, tire];
+                previousSkidContacts[i, tire] = contact.HasValue ? (contact.Value, loose) : null;
+                if (contact.HasValue && previous.HasValue && previous.Value.Loose == loose)
+                    AddSkidSegment(previous.Value.Position, contact.Value, strength, loose);
             }
         }
     }
@@ -7428,15 +7446,20 @@ public sealed partial class TrackPreview : MonoBehaviour
         return tire;
     }
 
-    private void AddSkidSegment(Vector3 previous, Vector3 current, float strength)
+    private void AddSkidSegment(Vector3 previous, Vector3 current, float strength, bool loose = false)
     {
         Vector3 travel = current - previous;
         if (travel.sqrMagnitude < .000001f || travel.sqrMagnitude > 100f)
             return;
 
+        var color = RubberVertex(Mathf.Min(strength * SkidDarknessScale, MaximumSkidDarkness));
+        if (color.a == 0)
+            return;
+
         Vector3 across = Vector3.Cross(Vector3.up, travel).normalized * .075f;
-        var color = RubberVertex(strength);
-        var pending = skidMarks.Pending;
+        // Give visible lockup and spin marks priority over faint marks at an overlap.
+        int layer = loose ? LooseSkidLayer : strength >= .32f ? 0 : strength >= .10f ? 1 : 2;
+        var pending = skidMarkLayers[layer].Pending;
         pending.Add(new SkidVertex(previous - across, color));
         pending.Add(new SkidVertex(previous + across, color));
         pending.Add(new SkidVertex(current - across, color));
@@ -7445,25 +7468,32 @@ public sealed partial class TrackPreview : MonoBehaviour
 
     private void PresentSessionSkids()
     {
-        var layer = skidMarks;
+        const int firstSkidQueue = (int)RenderQueue.Transparent - 17;
+        for (int layer = 0; layer < LooseSkidLayer; layer++)
+            PresentSkidMarks(skidMarkLayers[layer], "Session skid marks", firstSkidQueue + layer);
+        if (LooseCarSkidMarksEnabled)
+            PresentSkidMarks(skidMarkLayers[LooseSkidLayer], "Loose car skid marks", firstSkidQueue + LooseSkidLayer);
+    }
+
+    private void PresentSkidMarks(SkidMarkLayer layer, string label, int renderQueue)
+    {
         if (layer.Pending.Count == 0)
             return;
 
         if (layer.Material == null)
         {
-            var shader = Resources.Load<Shader>("Startup/TrackRubber");
+            var shader = Resources.Load<Shader>("Startup/TrackSkidMark");
             if (shader == null || !shader.isSupported)
             {
                 layer.Pending.Clear();
                 return;
             }
 
-            layer.Material = new Material(shader) { renderQueue = (int)RenderQueue.Transparent - 19 };
-            layer.Material.SetFloat(RubberBuildupProperty, 1f);
+            layer.Material = new Material(shader) { renderQueue = renderQueue };
             materials.Add(layer.Material);
         }
         if (layer.Root == null)
-            layer.Root = CreateObject("Session skid marks", transform);
+            layer.Root = CreateObject(label, transform);
 
         // Append just the new vertices. Full chunks stay visible but never need another upload.
         int offset = 0;
