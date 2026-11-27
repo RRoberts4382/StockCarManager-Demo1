@@ -363,7 +363,7 @@ internal sealed class TrackState001Stages
         return Math.Min(raceSpeed, coastLimit);
     }
 
-    public void PreserveCautionOrder(TrackPitTraffic.Car[] cars, float[] stepSpeeds, float seconds)
+    public void PreserveCautionOrder(TrackPitTraffic.Car[] cars, float[] stepSpeeds, float seconds, bool[] racingTraffic)
     {
         if (!ReducedFuelBurn) return;
         if (PaceWaveByActive && seconds > 0f && !cars[leader].InPit && !cars[leader].Retired)
@@ -378,13 +378,13 @@ internal sealed class TrackState001Stages
         // bumper clearance and the existing caution order.
         float minimumGap = RowSpacing - 2f * PacePositionVariation * paceVariationBlend;
         PreserveOrder(lapLength, stepSpeeds, seconds, carAhead, gapAhead,
-            index => cars[index].TrackDistance, index => HoldsCautionPosition(index, cars, stepSpeeds), minimumGap,
+            index => cars[index].TrackDistance, index => racingTraffic[index] && HoldsCautionPosition(index, cars, stepSpeeds), minimumGap,
             openGaps: IsCaution && !doubleFile,
             paceLeaderToHold: paceMerged && !paceReturning && paceDistance - cars[leader].TrackDistance < 2f * RowSpacing
                 ? leader : -1);
     }
 
-    internal void HoldPitRejoinsBehindLine(TrackPitTraffic.Car[] cars, float[] stepSpeeds, float seconds)
+    internal void HoldPitRejoinsBehindLine(TrackPitTraffic.Car[] cars, float[] stepSpeeds, float seconds, bool[] racingTraffic)
     {
         if (!IsCaution || seconds <= 0f) return;
 
@@ -401,7 +401,7 @@ internal sealed class TrackState001Stages
             for (int j = 0; j < cars.Length; j++)
             {
                 var other = cars[j];
-                if (i == j || other.InPit || other.Retired || ranks[j] >= ranks[i]) continue;
+                if (i == j || !racingTraffic[j] || other.InPit || other.Retired || ranks[j] >= ranks[i]) continue;
                 float gap = Mathf.Repeat(other.TrackDistance - car.TrackDistance, lapLength);
                 stepSpeeds[i] = Math.Min(stepSpeeds[i], stepSpeeds[j] + Math.Max(0f, gap - RowSpacing) / seconds);
             }

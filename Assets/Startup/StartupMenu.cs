@@ -6908,6 +6908,10 @@ public sealed class StartupMenu : MonoBehaviour
                 menu.AddItem("Call Caution", false, CallCaution);
             else
                 menu.AddDisabledItem("Call Caution", false);
+            if (preview.CanTriggerPlayerMechanicalFailure && !sessionInGarage && !PitSettingsOpen)
+                menu.AddItem("Trigger Player Mechanical Failure", false, preview.TriggerPlayerMechanicalFailure);
+            else
+                menu.AddDisabledItem("Trigger Player Mechanical Failure", false);
         }
         menu.DropDown(trackSettingsButton.worldBound, trackSettingsButton, DropdownMenuSizeMode.Content);
     }

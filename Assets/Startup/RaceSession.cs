@@ -760,6 +760,12 @@ internal sealed class RaceSessionRun
     public string MechanicalFailure(int index) => cars[index].Result.mechanicalFailure;
     private const string FlatTireFailure = "Flat Tire";
 
+    internal void TriggerEngineFailure(int index)
+    {
+        cars[index].Result.mechanicalFailure = "Blown Engine";
+        ApplyDamage(index, 100f);
+    }
+
     public bool HasTerminalFailure(int index) =>
         MechanicalFailure(index) is string failure && !string.IsNullOrEmpty(failure) && failure != FlatTireFailure;
 
@@ -802,7 +808,7 @@ internal sealed class RaceSessionRun
 
     internal float ConditionLimitedSpeedAndPace(int index, float speed, float seconds, out float pace, float brakingLimit = 0f,
         bool allowMechanicalFailure = false, float? paceSpeedCeiling = null, float preferredLineSpeedFactor = 1f,
-        float cleanAirSpeed = float.NaN, bool coastToTarget = false, float surfaceGrip = 1f)
+        float cleanAirSpeed = float.NaN, bool coastToTarget = false, float surfaceGrip = 1f, float terminalCoastDeceleration = 6f)
     {
         pace = 0f;
         var car = cars[index];
@@ -895,7 +901,8 @@ internal sealed class RaceSessionRun
             return nextSpeed;
         }
 
-        float coastingSpeed = Math.Max(0f, (float)car.Result.InstantSpeed - 6f * seconds);
+        float coastDeceleration = HasTerminalFailure(index) ? terminalCoastDeceleration : 6f;
+        float coastingSpeed = Math.Max(0f, (float)car.Result.InstantSpeed - coastDeceleration * seconds);
         if (coastingSpeed <= 0f)
         {
             Retire(index);
