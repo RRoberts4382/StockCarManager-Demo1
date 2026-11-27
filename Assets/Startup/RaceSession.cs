@@ -1102,9 +1102,29 @@ internal sealed class RaceSessionRun
             return false;
         phase = tireTemperatures.HandlingPhaseAt(thermalDistances[index]);
         if (phase < 0) return false;
-        balance = VehicleSpeed003.HandlingBalance(SetupForCar(index), Vehicle(index), dynamicLoads[index],
-            Fuel(index), out tireContribution, out loadContribution);
+        balance = HandlingBalanceAt(index, out tireContribution, out loadContribution);
         return true;
+    }
+
+    private float HandlingBalanceAt(int index, out float tireContribution, out float loadContribution) =>
+        VehicleSpeed003.HandlingBalance(SetupForCar(index), Vehicle(index), dynamicLoads[index],
+            Fuel(index), out tireContribution, out loadContribution);
+
+    internal float LooseSetupYawWeight(int index, out float extremeSlip)
+    {
+        extremeSlip = 0f;
+        if (!usesSpringPerformance || !thermalOnTrack[index])
+            return 0f;
+
+        float corneringLoad = UnityEngine.Mathf.InverseLerp(.35f, 1f, Math.Abs(dynamicLoads[index].LateralG));
+        if (corneringLoad <= 0f)
+            return 0f;
+
+        float balance = HandlingBalanceAt(index, out _, out _);
+        float looseness = UnityEngine.Mathf.InverseLerp(2f, 10f, -balance);
+        extremeSlip = UnityEngine.Mathf.SmoothStep(0f, 1f,
+            UnityEngine.Mathf.InverseLerp(10f, 17f, -balance)) * corneringLoad;
+        return UnityEngine.Mathf.SmoothStep(0f, 1f, looseness) * corneringLoad;
     }
 
     internal float DynamicCornerWeight(int index, int corner) =>

@@ -1203,12 +1203,12 @@ public sealed partial class TrackPreview : MonoBehaviour
 
     private void ConfigureOnboardCamera(int index)
     {
-        var car = cars[index];
-        var anchors = carVisualLods[index].Current.Root.GetComponentsInChildren<Transform>(true);
+        var visual = carVisualLods[index].Current.Root;
+        var anchors = visual.GetComponentsInChildren<Transform>(true);
         var hood = System.Array.Find(anchors, child => child.name == "HoodSponsor");
         Vector3 hoodOffset = hood == null ? new Vector3(0f, 0.8f, 0.975f) :
-            car.InverseTransformPoint(hood.position) + Vector3.up * 0.12f;
-        onboardCameraOffsets[index] = (hoodOffset, carTypes[index].inCarCamera.Resolve(car, anchors));
+            visual.InverseTransformPoint(hood.position) + Vector3.up * 0.12f;
+        onboardCameraOffsets[index] = (hoodOffset, carTypes[index].inCarCamera.Resolve(visual, anchors));
     }
 
     private void UpdateCockpitGlass()
@@ -1336,8 +1336,10 @@ public sealed partial class TrackPreview : MonoBehaviour
         {
             var offsets = onboardCameraOffsets[SelectedCarIndex];
             Vector3 offset = ViewAngle == CameraAngle.Hood ? offsets.Hood : offsets.DriverEye;
-            cameraTransform.localPosition = subject.localPosition + subject.localRotation * offset;
-            cameraTransform.localRotation = subject.localRotation;
+            var visual = carVisualLods[SelectedCarIndex].Current.Root;
+            cameraTransform.localPosition = subject.localPosition +
+                subject.localRotation * (visual.localPosition + visual.localRotation * offset);
+            cameraTransform.localRotation = subject.localRotation * visual.localRotation;
         }
         else if (subject != null && ViewAngle is CameraAngle.Chase or CameraAngle.RearChase)
         {
@@ -1478,6 +1480,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         IVehicleBehaviorModel behaviorModel, int[] qualifyingOrder = null, bool usePaceTruck = false, bool fullBristolStands = false)
     {
         ResetIowaFlagStandTiming();
+        System.Array.Clear(looseSetupYawAngles, 0, looseSetupYawAngles.Length);
         ResetIowaWreckResponse();
         this.simulation = simulation;
         simulation.ResetLiveTrackConditions();
@@ -1855,6 +1858,7 @@ public sealed partial class TrackPreview : MonoBehaviour
     private void LateUpdate()
     {
         UpdateAdaptiveCarLods();
+        PresentLooseSetupYaw();
         UpdateScoringPylon();
         RenderIowaFlagStand();
         UpdateIowaSafetyLights();
@@ -1916,8 +1920,6 @@ public sealed partial class TrackPreview : MonoBehaviour
         UpdateRubberOverlay();
         PresentSessionSkids();
         PositionCars();
-        foreach (var wheels in raceWheels)
-            wheels?.Present();
         paceWheels?.Present();
         if (ViewAngle != CameraAngle.Player || followedCar != null)
             ApplyCameraPose();
@@ -2387,6 +2389,7 @@ public sealed partial class TrackPreview : MonoBehaviour
     private float[] collisionTireEndLanes;
     private float[] collisionTireOffsets;
     private float[] tireYawAngles;
+    private readonly float[] looseSetupYawAngles = new float[CarCount];
 
     private float[] currentTrafficSpeeds;
     private float[] trafficBrakingFactors;
@@ -3640,22 +3643,10 @@ public sealed partial class TrackPreview : MonoBehaviour
     private float TireAdjustedLane(int index, float distance, float lane, TrackPitTraffic.Car traffic, out float yawDegrees)
     {
         yawDegrees = 0f;
-        if (SessionRun == null || !cars[index].gameObject.activeSelf || iowaRecoveredCars[index].HasValue ||
-            crashes[index].Active || SessionRun.Retired(index) || SessionRun.Finished(index) ||
-            traffic?.ApronEntryActive == true || traffic?.ApronExitActive == true ||
-            (traffic?.FlatTireLaneBlend ?? 0f) > 0f || SessionRun.FlatTireMask(index) != 0 ||
-            TrackState is not (null or SessionTrackState.TrackOpen or SessionTrackState.WhiteFlag))
+        if (!CanApplyTireHandling(index, traffic))
             return lane;
 
-        return TireHandlingLaneAt(index, distance, lane, out yawDegrees);
-    }
-
-    private float TireHandlingLaneAt(int index, float distance, float lane, out float yawDegrees)
-    {
-        yawDegrees = 0f;
-        float turn = SessionRun.TireHandlingTurnAt(distance);
-        float speed = SessionRun.CurrentSpeed(index);
-        float turningLoad = turn * Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(12f, 32f, speed));
+        float turningLoad = TireCorneringLoad(index, distance);
         if (turningLoad == 0f)
             return lane;
 
@@ -3671,6 +3662,67 @@ public sealed partial class TrackPreview : MonoBehaviour
         float halfWidth = raceCarHalfWidths[index] > 0f ? raceCarHalfWidths[index] : VehicleCollision001.ContactWidth * .5f;
         float room = Mathf.Max(0f, RoadWidths(distance).x * .5f - halfWidth - lane * outward);
         return lane + outward * Mathf.Min(room, 2.4f * Mathf.Abs(turningLoad) * frontSlip);
+    }
+
+    private bool CanApplyTireHandling(int index, TrackPitTraffic.Car traffic) =>
+        SessionRun != null && cars[index].gameObject.activeSelf && !iowaRecoveredCars[index].HasValue &&
+        !crashes[index].Active && !SessionRun.Retired(index) && !SessionRun.Finished(index) &&
+        traffic?.ApronEntryActive != true && traffic?.ApronExitActive != true &&
+        (traffic?.FlatTireLaneBlend ?? 0f) == 0f && SessionRun.FlatTireMask(index) == 0 &&
+        TrackState is (null or SessionTrackState.TrackOpen or SessionTrackState.WhiteFlag);
+
+    private float TireCorneringLoad(int index, float distance)
+    {
+        float speed = SessionRun.CurrentSpeed(index);
+        return SessionRun.TireHandlingTurnAt(distance) * Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(12f, 32f, speed));
+    }
+
+    private void PresentLooseSetupYaw()
+    {
+        if (raceCamera == null || SessionRun == null)
+            return;
+
+        bool updateOnboardPose = false;
+        for (int i = 0; i < cars.Length; i++)
+        {
+            var visual = carVisualLods[i]?.Current;
+            if (visual == null)
+                continue;
+
+            float yaw = looseSetupYawAngles[i];
+            var root = visual.Root;
+            if (yaw != 0f || root.localRotation != Quaternion.identity)
+            {
+                // The simulated car and its skid and collision poses stay on the existing tire-slip path.
+                root.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
+                Vector3 axle = visual.Wheels?.FrontAxleCenter ?? Vector3.forward * RearAxleHeading.CenterToRearAxle;
+                RaceWheelAnimation.ApplyFrontAxleYaw(root, axle, yaw);
+                updateOnboardPose |= i == SelectedCarIndex;
+            }
+            visual.Wheels?.Present(yaw);
+        }
+
+        if (updateOnboardPose && ViewAngle is (CameraAngle.Hood or CameraAngle.InCar))
+            ApplyCameraPose();
+    }
+
+    private float SampleLooseSetupYaw(int index, float distance, bool canYaw)
+    {
+        const float maxExtraYaw = 5f;
+        const float yawRate = 24f;
+        if (!canYaw)
+        {
+            looseSetupYawAngles[index] = 0f;
+            return 0f;
+        }
+
+        float turn = TireCorneringLoad(index, distance);
+        float extremeSlip = 0f;
+        float weight = turn == 0f ? 0f : SessionRun.LooseSetupYawWeight(index, out extremeSlip);
+        float existingSlip = Mathf.Clamp01(Mathf.Abs(tireYawAngles[index]) / 18f);
+        float target = maxExtraYaw * turn * weight * (1f - existingSlip);
+        looseSetupYawAngles[index] = Mathf.MoveTowards(looseSetupYawAngles[index], target, yawRate * SessionStep);
+        return extremeSlip * Mathf.Abs(turn);
     }
 
     private static float AxleTireSlip(TeamCar car, int firstTire)
@@ -7217,15 +7269,19 @@ public sealed partial class TrackPreview : MonoBehaviour
             bool spinning = onPavement && crashes[i].Active;
             bool lockup = onPavement && !SessionRun.Finished(i) && !SessionRun.Retired(i) &&
                 SessionRun.EmergencyBrakeLockup(i);
-            SampleTrackSmoke(i, traffic, spinning, lockup, emitSmoke);
-            // Full strength at 20 degrees of handling yaw, proportional below that.
-            float yawStrength = onPavement ? .61f * Mathf.Clamp01(Mathf.Abs(tireYawAngles[i]) / 20f) : 0f;
             float station = traffic?.TrackDistance ?? sessionDistances[i];
+            float extremeSlip = SampleLooseSetupYaw(i, station, onPavement && CanApplyTireHandling(i, traffic));
+            SampleTrackSmoke(i, traffic, spinning, lockup, emitSmoke, extremeSlip);
+            // Full strength at 20 degrees of tire-wear yaw. Setup-induced marks stay faint.
+            float yawStrength = onPavement ? .61f * Mathf.Clamp01(Mathf.Abs(tireYawAngles[i]) / 20f) : 0f;
+            yawStrength = Mathf.Max(yawStrength, .16f * extremeSlip);
             for (int tire = 0; tire < 4; tire++)
             {
                 bool front = tire < 2;
                 float strength = spinning ? .64f : front ? (lockup ? .61f : 0f) : yawStrength;
-                Vector3? contact = strength > 0f ? SkidTireContact(i, station, front, tire % 2 == 0 ? -1f : 1f) : null;
+                float setupYaw = !front && extremeSlip > 0f ? looseSetupYawAngles[i] : 0f;
+                Vector3? contact = strength > 0f
+                    ? SkidTireContact(i, station, front, tire % 2 == 0 ? -1f : 1f, setupYaw) : null;
                 Vector3? previous = previousSkidContacts[i, tire];
                 previousSkidContacts[i, tire] = contact;
                 if (contact.HasValue && previous.HasValue)
@@ -7234,12 +7290,17 @@ public sealed partial class TrackPreview : MonoBehaviour
         }
     }
 
-    private Vector3? SkidTireContact(int index, float station, bool front, float side)
+    private Vector3? SkidTireContact(int index, float station, bool front, float side, float setupYaw = 0f)
     {
         var car = cars[index];
         float axle = RearAxleHeading.CenterToRearAxle * (front ? 1f : -1f);
         Vector3 localContact = raceWheels[index]?.TireContact(front, side) ??
             new Vector3(side * FormationHalfWheelTrack, 0f, axle);
+        if (setupYaw != 0f)
+        {
+            Vector3 pivot = raceWheels[index]?.FrontAxleCenter ?? Vector3.forward * RearAxleHeading.CenterToRearAxle;
+            localContact = pivot + Quaternion.AngleAxis(setupYaw, Vector3.up) * (localContact - pivot);
+        }
         Vector3 tire = car.localPosition + car.localRotation * localContact;
         Vector3 datum = TrackPoint(station, 0f, out var tangent, out _);
         Vector3 horizontal = Vector3.ProjectOnPlane(tangent, Vector3.up).normalized;

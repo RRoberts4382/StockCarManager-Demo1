@@ -95,7 +95,8 @@ public sealed partial class TrackPreview
         smokeSeed = 0;
     }
 
-    private void SampleTrackSmoke(int index, TrackPitTraffic.Car traffic, bool spinning, bool lockup, bool emit)
+    private void SampleTrackSmoke(int index, TrackPitTraffic.Car traffic, bool spinning, bool lockup, bool emit,
+        float extremeLooseSlip)
     {
         var car = cars[index];
         string failure = SessionRun.MechanicalFailure(index);
@@ -128,7 +129,8 @@ public sealed partial class TrackPreview
             !SessionRun.Finished(index) && !SessionRun.Retired(index) && !engineFailure;
         bool sliding = spinning && (Mathf.Abs(crashes[index].ForwardSpeed) > 1f ||
             Mathf.Abs(crashes[index].SideSpeed) > 1f || SessionRun.CurrentSpeed(index) > 1f);
-        if (tireSmokeCooldown[index] > 0 || (!sliding && !lockup && !burnout))
+        bool looseSmoke = extremeLooseSlip >= .15f;
+        if (tireSmokeCooldown[index] > 0 || (!sliding && !lockup && !burnout && !looseSmoke))
             return;
         tireSmokeCooldown[index] = 3 * Mathf.Max(1, sessionSpeed);
 
@@ -136,7 +138,7 @@ public sealed partial class TrackPreview
         for (int tire = 0; tire < 4; tire++)
         {
             bool front = tire < 2;
-            if (!sliding && (front ? !lockup : !burnout))
+            if (!sliding && (front ? !lockup : !burnout && !looseSmoke))
                 continue;
 
             float side = tire % 2 == 0 ? -1f : 1f;
@@ -149,15 +151,17 @@ public sealed partial class TrackPreview
             }
             else
             {
-                var contact = SkidTireContact(index, station, front, side);
+                float setupYaw = !front && looseSmoke ? looseSetupYawAngles[index] : 0f;
+                var contact = SkidTireContact(index, station, front, side, setupYaw);
                 if (!contact.HasValue)
                     continue;
                 position = transform.TransformPoint(contact.Value);
             }
 
             var drift = Vector3.up * .6f - car.forward * .6f + car.right * (side * .22f);
+            float alpha = !front && looseSmoke && !sliding && !burnout ? .24f * extremeLooseSlip : .56f;
             EmitTrackSmoke(ref tireSmoke, "Tire smoke", position + Vector3.up * .09f, drift,
-                new Color(.85f, .85f, .84f, .56f), false);
+                new Color(.85f, .85f, .84f, alpha), false);
         }
     }
 
