@@ -5,11 +5,11 @@
   "roadCourseLeftModel": "ToyotaCupCamryRoadLeft",
   "roadCourseRightModel": "ToyotaCupCamryRoadRight",
   "inCarCamera": {
-    "anchor": "DriverEye",
+    "anchor": "",
     "position": {
-      "x": -0.295,
-      "y": 0.656,
-      "z": 0.141
+      "x": -0.305,
+      "y": 0.663,
+      "z": 0.207
     }
   },
   "rearviewCamera": {

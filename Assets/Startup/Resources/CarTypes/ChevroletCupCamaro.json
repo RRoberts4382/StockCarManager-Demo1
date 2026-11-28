@@ -5,11 +5,11 @@
   "roadCourseLeftModel": "ChevroletCupCamaroRoadLeft",
   "roadCourseRightModel": "ChevroletCupCamaroRoadRight",
   "inCarCamera": {
-    "anchor": "DriverEye",
+    "anchor": "",
     "position": {
-      "x": -0.295,
-      "y": 0.656,
-      "z": 0.141
+      "x": -0.273,
+      "y": 0.666,
+      "z": 0.214
     }
   },
   "rearviewCamera": {

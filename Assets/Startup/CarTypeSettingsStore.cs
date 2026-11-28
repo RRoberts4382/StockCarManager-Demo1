@@ -22,6 +22,11 @@ internal static class CarTypeSettingsStore
             if (!File.Exists(path)) return defaults;
             var definition = JsonUtility.FromJson<CarTypeDefinition>(JsonUtility.ToJson(defaults));
             JsonUtility.FromJsonOverwrite(File.ReadAllText(path, System.Text.Encoding.UTF8), definition);
+            // Older files saved the entire car type. Update a copied camera default while preserving custom positions.
+            if ((model is "ChevroletCupCamaro" or "ToyotaCupCamry") &&
+                definition.inCarCamera is { anchor: "DriverEye" } savedCamera &&
+                savedCamera.position.Equals(new Vector3(-0.295f, 0.656f, 0.141f)))
+                definition.inCarCamera = defaults.inCarCamera;
             // LODs are bundled assets, not editable car type settings.
             definition.lodModels = defaults.lodModels;
             definition.trackModelLods = defaults.trackModelLods;
