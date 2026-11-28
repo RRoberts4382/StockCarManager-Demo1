@@ -96,6 +96,22 @@
 
 - [ ] Fix pit stall boxes.
 
+- [ ] Rebuild the pit stop setup form and add a track bar adjustment.
+
+- [ ] Add anti-aliasing to painted track lines.
+
+- [ ] Fix the bar obstructing the Camaro in-car camera and check all car models for similar obstructions.
+
+- [ ] Investigate and fix why too many cars miss pit-road entry during caution stops.
+
+- [ ] Extend rubber buildup farther onto the straights.
+
+- [ ] Freeze the race standings after all cars have finished.
+
+- [ ] Add more spotter radio phrases.
+
+- [ ] Add driver radio phrases for when the car is doing well.
+
 ## Convert procedural racing surfaces to imported geometry
 
 - [ ] Convert Bowman Gray Stadium to imported racing geometry.

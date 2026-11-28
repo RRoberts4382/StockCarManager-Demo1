@@ -538,6 +538,9 @@ public sealed partial class TrackPreview : MonoBehaviour
         trafficCars?[0] is { InPit: false, InGarage: false } &&
         !crashes[0].Active && !SessionRun.Retired(0) && !SessionRun.Finished(0) &&
         SessionRun.CurrentSpeed(0) > 2f;
+    internal bool IsUnderCaution => stages?.StageWhiteOverriddenByCaution == true || CautionReason != null;
+    internal bool IsUnderGreen => !IsUnderCaution &&
+        (TrackState is SessionTrackState.TrackOpen or SessionTrackState.WhiteFlag);
     private string practiceCautionReason;
     internal string CautionReason => TrackState switch
     {
@@ -574,7 +577,18 @@ public sealed partial class TrackPreview : MonoBehaviour
         (SessionRun.IsRace ||
             (practice?.State is SessionTrackState.TrackOpen or SessionTrackState.Caution && !trafficCars[0].InPit)) &&
         pitStops?.CanRequest(SessionRun) == true;
+    internal int PlayerCompletedPitStops => pitStops?.PlayerCompletedStops ?? 0;
+
+    internal bool PlayerOnRacingSurface => trafficCars?[0] is
+        { InPit: false, InGarage: false, ApronEntryActive: false, ApronExitActive: false };
+
     internal bool CanEditQueuedPlayerPit => SessionRun != null && pitStops?.CanEditPlayerRequest(SessionRun) == true;
+    internal bool CanCancelQueuedPlayerPit =>
+        SessionRun != null && pitStops?.CanCancelPlayerRequest(SessionRun) == true;
+
+    internal bool TryCancelQueuedPlayerPit() =>
+        SessionRun != null && pitStops?.TryCancelPlayerRequest(SessionRun) == true;
+
     internal string PlayerPitStatus => SessionRun.HasTerminalFailure(0) ? SessionRun.MechanicalFailure(0) : SessionRun.Retired(0)
         ? (crashes[0].Active || SessionRun.Vehicle(0)?.Damage >= 100f ? "Retired - damage" : "Out of fuel")
         : pitStops?.PlayerStatus ?? string.Empty;
@@ -597,6 +611,23 @@ public sealed partial class TrackPreview : MonoBehaviour
     private Transform paceCar;
     private GameObject paceLights;
     private bool raceReleased;
+    internal bool AwaitingInitialRaceGreen => raceStart != null && !raceReleased;
+
+    internal bool PlayerLeavingPitRoad
+    {
+        get
+        {
+            var player = isQualifying ? qualifying?.Car : trafficCars?[0];
+            if (player == null)
+                return false;
+            if (player.ApronExitActive || player.BackExit)
+                return true;
+
+            return player.InPit && !player.InGarage &&
+                (player.Maneuver && !player.ArrivalManeuver ||
+                    practiceStallDistances != null && player.PitDistance > practiceStallDistances[0]);
+        }
+    }
     internal string LuckyDogMessage
     {
         get
@@ -1986,6 +2017,7 @@ public sealed partial class TrackPreview : MonoBehaviour
     private void AdvanceQualifyingStep()
     {
         var car = qualifying.Car;
+        UpdateDriverPaceActive(car);
         if (crashes[0].Active && !SessionRun.Retired(0))
         {
             AdvanceCrash(0, SessionStep);
@@ -2089,8 +2121,10 @@ public sealed partial class TrackPreview : MonoBehaviour
             drivingLanesReady = true;
 
         ConfigurePitField();
+        var driverPace = SessionRun.DriverPace;
         SessionRun = new RaceSessionRun(simulation.Session, lapLength, raceStart.TimingStartLine,
             simulation, speedModel, simulationRandom, initialDistances: sessionDistances, finishOnCheckered: true);
+        SessionRun.SetDriverPace(driverPace);
         if (marbleDensity != null)
             SessionRun.TireRubberShed = DepositMarbles;
     }
@@ -2341,8 +2375,17 @@ public sealed partial class TrackPreview : MonoBehaviour
         return limited;
     }
 
+    private void UpdateDriverPaceActive(TrackPitTraffic.Car player)
+    {
+        if (SessionRun != null)
+            SessionRun.DriverPaceActive = IsUnderGreen && !crashes[0].Active && !SessionRun.Finished(0) &&
+                !SessionRun.Retired(0) && !SessionRun.HasTerminalFailure(0) &&
+                (player == null || !player.InPit && !player.InGarage && !player.ApronExitActive && !player.ApronEntryActive);
+    }
+
     private void AdvancePracticeStep()
     {
+        UpdateDriverPaceActive(trafficCars?[0]);
         bool yellow = practice.State == SessionTrackState.Caution;
         bool trackOpen = practice.State == SessionTrackState.TrackOpen || yellow;
         float seconds = trackOpen ? SessionRun.StepDuration(SessionStep) : SessionStep;
@@ -2408,7 +2451,8 @@ public sealed partial class TrackPreview : MonoBehaviour
             SessionRun.RecordTravel(i, car.Odometer - beforeMovement, (car.Odometer - beforeMovement) / seconds, car.PreciseTrackDistance, reducedBurn, onTrack: !car.InPit);
             if (trackOpen)
             {
-                SessionRun.Record(i, before, car.InPit ? pitTraffic.RaceDistance(car) : car.PreciseTrackDistance, seconds);
+                SessionRun.Record(i, before, car.InPit ? pitTraffic.RaceDistance(car) : car.PreciseTrackDistance, seconds,
+                    onTrackUnderGreen: !yellow && !wasInPit && !car.InPit && !crashes[i].Active);
                 StartTireWearFailure(i, car);
             }
         }
@@ -2513,6 +2557,7 @@ public sealed partial class TrackPreview : MonoBehaviour
 
     private void AdvanceSimulation(float seconds)
     {
+        UpdateDriverPaceActive(trafficCars?[0]);
         bool scoringCaution = TrackState is SessionTrackState.Caution or SessionTrackState.StageEndingUnderCaution
             or SessionTrackState.FinishUnderCaution or SessionTrackState.Pacing or SessionTrackState.StageComplete;
         bool pitMembershipChanged = false;
@@ -2625,7 +2670,8 @@ public sealed partial class TrackPreview : MonoBehaviour
                 if (wasInPit && !car.InPit) drivingLanes[i] = TargetDrivingLane(i, car.TrackDistance, car);
                 pitMembershipChanged |= wasInPit != car.InPit;
                 TimingRun?.RecordTravel(i, car.Odometer - beforeMovement, (car.Odometer - beforeMovement) / seconds, car.PreciseTrackDistance, reducedBurn, onTrack: !car.InPit);
-                TimingRun?.Record(i, before, car.InPit ? pitTraffic.RaceDistance(car) : car.PreciseTrackDistance, seconds);
+                TimingRun?.Record(i, before, car.InPit ? pitTraffic.RaceDistance(car) : car.PreciseTrackDistance, seconds,
+                    onTrackUnderGreen: !wasInPit && !car.InPit && IsUnderGreen);
                 if (SessionRun != null)
                     StartTireWearFailure(i, car);
             }
@@ -2634,7 +2680,8 @@ public sealed partial class TrackPreview : MonoBehaviour
                 float before = sessionDistances[i];
                 sessionDistances[i] += speed * seconds;
                 SessionRun.RecordTravel(i, sessionDistances[i] - before, speed, sessionDistances[i]);
-                SessionRun.Record(i, before, sessionDistances[i], seconds);
+                SessionRun.Record(i, before, sessionDistances[i], seconds,
+                    onTrackUnderGreen: IsUnderGreen);
                 StartTireWearFailure(i, null);
             }
         }
@@ -3000,7 +3047,8 @@ public sealed partial class TrackPreview : MonoBehaviour
         if (draftPassing != null)
         {
             draftPassing.Update(draft, lapLength, seconds, allowDraftManeuvers, racingTraffic, draftManeuverEligible, drivingDistances,
-                drivingLanes, drivingWidths, currentTrafficSpeeds, trafficPaceSpeeds, targetLanes, simulation.Cars);
+                drivingLanes, drivingWidths, currentTrafficSpeeds, trafficPaceSpeeds, targetLanes, simulation.Cars,
+                SessionRun.DriverAggressionBonus);
             for (int i = 0; i < cars.Length; i++)
                 if (draftPassing.BumperGaps[i] >= 0f)
                     draft.CloseFollowLeaders[i] = draftPassing.LeaderForAttacker(i);
@@ -3022,6 +3070,8 @@ public sealed partial class TrackPreview : MonoBehaviour
                 leader = -1;
             float aggression = leader >= 0 ? VehicleBehavior003.CombinedAggression(
                 simulation.Cars[leader].driver?.personalityTraits?.aggression ?? .5f, SessionRun.RaceProgressAggression) : .5f;
+            if (leader == 0)
+                aggression += SessionRun.DriverAggressionBonus;
             if (draftLeaderBlock.Update(draft, lapLength, seconds, leader, aggression, racingTraffic, draftManeuverEligible,
                     drivingDistances, drivingLanes, drivingWidths, currentTrafficSpeeds, trafficStartLaneSpeeds,
                     directedDraftMoves, targetLanes))
@@ -3031,7 +3081,8 @@ public sealed partial class TrackPreview : MonoBehaviour
             }
         }
         draft?.UpdateBumpIntent(lapLength, seconds, simulation?.Cars, drivingDistances, drivingLanes,
-            currentTrafficSpeeds, allowDraftBumps, draftPassing, raceLeader, allowRegrouping ? draftMerging?.Regrouping : null);
+            currentTrafficSpeeds, allowDraftBumps, draftPassing, raceLeader, allowRegrouping ? draftMerging?.Regrouping : null,
+            SessionRun?.DriverAggressionBonus ?? 0f);
         if (mergeLaneChanges != null || blockingLeader >= 0)
         {
             for (int i = 0; i < cars.Length; i++)
@@ -3054,6 +3105,7 @@ public sealed partial class TrackPreview : MonoBehaviour
         {
             aggressiveBehavior.Drivers = simulation?.Cars;
             aggressiveBehavior.RaceProgressAggression = SessionRun?.RaceProgressAggression ?? 0f;
+            aggressiveBehavior.PlayerAggressionBonus = SessionRun?.DriverAggressionBonus ?? 0f;
         }
         var sweeping = behaviorModel as VehicleBehavior004;
         if (sweeping != null)
@@ -3765,7 +3817,8 @@ public sealed partial class TrackPreview : MonoBehaviour
     {
         float baseSpeed = CarSpeed(index) * SessionRun.SpeedFactor(index) + draftBoost;
         float speed = lapSpeedProfile?.SpeedAt(distance, baseSpeed) ?? baseSpeed;
-        return SessionRun.SetupAdjustedSpeed(index, distance, speed);
+        return SessionRun.SetupAdjustedSpeed(index, distance, speed) *
+            SessionRun.DriverPaceSpeedFactor(index, distance);
     }
 
     private float ForecastOvalPass(int car, int blocker, float destinationLane, float gap)

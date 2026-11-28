@@ -8,9 +8,22 @@ using UnityEngine.UIElements;
 
 internal sealed class GameSettings
 {
-    internal enum SettingsTab { Display, Simulation, TeamColors, ColorScheme }
+    internal enum SettingsTab { Display, Simulation, Audio, TeamColors, ColorScheme }
+    internal enum SpotterCallFrequency { Low, Medium, High }
 
     private const string Key = "StockCarManager.Settings.";
+    private static readonly string[] CrewChiefVoices = { "Roger", "Adam", "Wade" };
+    private static readonly string[] SpotterVoices = { "Adam", "Cal", "Roger" };
+    private readonly RadioVoiceControls driverRadio;
+    private readonly RadioVoiceControls crewChiefRadio;
+    private readonly RadioVoiceControls spotterRadio;
+    private readonly SliderInt spotterFrequency;
+    private readonly Label spotterFrequencyValue;
+    internal SpotterCallFrequency SpotterFrequency { get; private set; }
+    internal (bool Enabled, int Volume, string Voice) DriverRadio => driverRadio.Saved;
+    internal (bool Enabled, int Volume, string Voice) CrewChiefRadio => crewChiefRadio.Saved;
+    internal (bool Enabled, int Volume, string Voice) SpotterRadio => spotterRadio.Saved;
+    internal event Action RadioAudioChanged;
     // Keep the original preference key so existing choices carry over.
     private const string TrackMsaaKey = Key + "InCarMsaaSamples";
     private static readonly int[] TrackMsaaChoices = { 1, 4, 8 };
@@ -237,6 +250,28 @@ internal sealed class GameSettings
         equalConditionPractice.tooltip = "All cars start practice with the player's setup and component condition, fresh tires, no damage, and full fuel.";
         simulation.Add(SettingsFormStyle.Field(equalConditionPractice, equalConditionPractice.value, _ => RefreshRevert()));
 
+        var audio = AddTab(SettingsTab.Audio, "Audio");
+        driverRadio = AddRadioVoiceControls(audio, frame, "Driver", "SpeakDriverMessages", "DriverRadioVolume");
+        crewChiefRadio = AddRadioVoiceControls(audio, frame, "Crew chief", "SpeakCrewChiefMessages",
+            "CrewChiefRadioVolume", "CrewChiefRadioVoice", CrewChiefVoices);
+        spotterRadio = AddRadioVoiceControls(audio, frame, "Spotter", "SpeakSpotterMessages",
+            "SpotterRadioVolume", "SpotterRadioVoice", SpotterVoices);
+
+        SpotterFrequency = (SpotterCallFrequency)Mathf.Clamp(
+            PlayerPrefs.GetInt(Key + "SpotterCallFrequency", (int)SpotterCallFrequency.Medium), 0, 2);
+        var frequencyRow = new VisualElement();
+        frequencyRow.AddToClassList("settings-row");
+        frequencyRow.style.maxWidth = 455;
+        spotterFrequency = SettingsFormStyle.StyleField(new SliderInt("Spotter message frequency", 0, 2));
+        spotterFrequency.tooltip = "Adjust routine spotter call frequency. Traffic and safety warnings are always called.";
+        spotterFrequencyValue = AddSliderValue(frequencyRow, spotterFrequency);
+        spotterFrequency.RegisterValueChangedCallback(change =>
+        {
+            spotterFrequencyValue.text = ((SpotterCallFrequency)change.newValue).ToString();
+            RefreshRevert();
+        });
+        audio.Add(frequencyRow);
+
         AddTab(SettingsTab.TeamColors, "Team", teamColors);
         var teamLayout = new VisualElement();
         teamLayout.AddToClassList("settings-row");
@@ -427,6 +462,147 @@ internal sealed class GameSettings
             navigation.Add(button);
             tabs.Add(tab, (button, group));
             return group;
+        }
+    }
+
+    private RadioVoiceControls AddRadioVoiceControls(VisualElement page, VisualElement frame, string role,
+        string enabledKey, string volumeKey, string voiceKey = null, string[] voices = null)
+    {
+        var controls = new RadioVoiceControls(Key + enabledKey, Key + volumeKey,
+            voiceKey != null ? Key + voiceKey : null, voices);
+        var row = new VisualElement();
+        row.AddToClassList("settings-row");
+        row.style.flexWrap = Wrap.NoWrap;
+        string roleText = role.ToLowerInvariant();
+
+        controls.Enabled = SettingsFormStyle.StyleField(SettingsFormStyle.PillSwitch(role + " audio", labelAbove: true));
+        controls.Enabled.style.flexGrow = 0;
+        controls.Enabled.style.flexShrink = 0;
+        controls.Enabled.tooltip = $"Turn {roleText} radio speech on or off.";
+        controls.Enabled.RegisterValueChangedCallback(_ => RefreshRevert());
+        row.Add(controls.Enabled);
+
+        var level = new VisualElement();
+        level.AddToClassList("settings-row");
+        level.style.flexWrap = Wrap.NoWrap;
+        level.style.flexGrow = 1;
+        level.style.maxWidth = 300;
+        controls.Volume = SettingsFormStyle.StyleField(new SliderInt("Volume", 0, 100));
+        controls.Volume.tooltip = $"Adjust the {roleText} speaking volume.";
+        controls.VolumeValue = AddSliderValue(level, controls.Volume);
+        controls.Volume.RegisterValueChangedCallback(change =>
+        {
+            controls.VolumeValue.text = change.newValue + "%";
+            RefreshRevert();
+        });
+        row.Add(level);
+
+        if (voiceKey != null)
+        {
+            var picker = new VisualElement();
+            picker.AddToClassList("settings-field");
+            picker.style.flexGrow = 0;
+            picker.style.minWidth = 145;
+            picker.Add(SettingsFormStyle.Label("Voice", "settings-note"));
+            controls.VoiceButton = SettingsFormStyle.Button(controls.DraftVoice, () =>
+                OpenTrackOptionPicker(ScreenView, frame, controls.VoiceButton,
+                    voiceKey, $"Choose {roleText} voice", Enumerable.Range(0, voices.Length),
+                    Array.IndexOf(voices, controls.DraftVoice),
+                    index => voices[index],
+                    index => $"Use {voices[index]} as the {roleText}.",
+                    $"Keep the current {roleText} voice.", index =>
+                    {
+                        controls.DraftVoice = voices[index];
+                        controls.VoiceButton.text = controls.DraftVoice;
+                        RefreshRevert();
+                    }, null));
+            controls.VoiceButton.tooltip = $"Choose who voices the {roleText}.";
+            picker.Add(controls.VoiceButton);
+            row.Add(picker);
+        }
+
+        page.Add(row);
+        controls.Restore();
+        return controls;
+    }
+
+    private static Label AddSliderValue(VisualElement row, SliderInt slider)
+    {
+        row.Add(slider);
+        var value = SettingsFormStyle.Label("", "settings-note");
+        value.pickingMode = PickingMode.Ignore;
+        value.style.width = 56;
+        value.style.flexShrink = 0;
+        value.style.marginBottom = 16;
+        row.Add(value);
+        return value;
+    }
+
+    internal void SetDriverRadioEnabled(bool enabled)
+    {
+        if (driverRadio.Saved.Enabled == enabled)
+            return;
+
+        driverRadio.SetEnabled(enabled);
+        PlayerPrefs.Save();
+        RadioAudioChanged?.Invoke();
+    }
+
+    private sealed class RadioVoiceControls
+    {
+        private readonly string enabledKey;
+        private readonly string volumeKey;
+        private readonly string voiceKey;
+        internal Toggle Enabled;
+        internal SliderInt Volume;
+        internal Label VolumeValue;
+        internal Button VoiceButton;
+        internal string DraftVoice;
+        internal (bool Enabled, int Volume, string Voice) Saved { get; private set; }
+
+        internal RadioVoiceControls(string enabledKey, string volumeKey, string voiceKey, string[] voices)
+        {
+            this.enabledKey = enabledKey;
+            this.volumeKey = volumeKey;
+            this.voiceKey = voiceKey;
+            string voice = null;
+            if (voiceKey != null)
+            {
+                voice = PlayerPrefs.GetString(voiceKey, voices[0]);
+                if (!voices.Contains(voice))
+                    voice = voices[0];
+            }
+            Saved = (PlayerPrefs.GetInt(enabledKey, 1) != 0,
+                Mathf.Clamp(PlayerPrefs.GetInt(volumeKey, 100), 0, 100), voice);
+            DraftVoice = voice;
+        }
+
+        internal bool HasChanges => Saved != (Enabled.value, Volume.value, DraftVoice);
+
+        internal void Restore()
+        {
+            Enabled.SetValueWithoutNotify(Saved.Enabled);
+            Volume.SetValueWithoutNotify(Saved.Volume);
+            VolumeValue.text = Saved.Volume + "%";
+            DraftVoice = Saved.Voice;
+            if (VoiceButton != null)
+                VoiceButton.text = DraftVoice;
+        }
+
+        internal void Save()
+        {
+            Saved = (Enabled.value, Volume.value, DraftVoice);
+            PlayerPrefs.SetInt(enabledKey, Saved.Enabled ? 1 : 0);
+            PlayerPrefs.SetInt(volumeKey, Saved.Volume);
+            if (voiceKey != null)
+                PlayerPrefs.SetString(voiceKey, Saved.Voice);
+        }
+
+        internal void SetEnabled(bool enabled)
+        {
+            Saved = (enabled, Saved.Volume, Saved.Voice);
+            Enabled.SetValueWithoutNotify(enabled);
+            PlayerPrefs.SetInt(enabledKey, enabled ? 1 : 0);
         }
     }
 
@@ -715,6 +891,11 @@ internal sealed class GameSettings
 
     private void RestoreSavedValues()
     {
+        driverRadio.Restore();
+        crewChiefRadio.Restore();
+        spotterRadio.Restore();
+        spotterFrequency.SetValueWithoutNotify((int)SpotterFrequency);
+        spotterFrequencyValue.text = SpotterFrequency.ToString();
         draftCarLod = savedCarLod;
         carLodButton.text = CarLodLabel(draftCarLod);
         draftTrackMsaaSamples = savedTrackMsaaSamples;
@@ -791,7 +972,9 @@ internal sealed class GameSettings
             mode.index != savedMode || size.index != savedSize ||
             simulationModel.index != savedSimulationModel || vehicleSpeedModel.index != savedSpeedModel ||
             vehicleBehaviorModel.index != savedBehaviorModel || paceVehicle.index != savedPaceVehicle ||
-            equalConditionPractice.value != EqualConditionPractice)
+            equalConditionPractice.value != EqualConditionPractice ||
+            driverRadio.HasChanges || crewChiefRadio.HasChanges || spotterRadio.HasChanges ||
+            spotterFrequency.value != (int)SpotterFrequency)
             return true;
 
         for (int i = 0; i < colorFields.Length; i++)
@@ -869,7 +1052,15 @@ internal sealed class GameSettings
         PlayerPrefs.SetInt(Key + "CarLOD", savedCarLod);
         savedTrackMsaaSamples = draftTrackMsaaSamples;
         PlayerPrefs.SetInt(TrackMsaaKey, savedTrackMsaaSamples);
+        bool radioChanged = driverRadio.HasChanges || crewChiefRadio.HasChanges || spotterRadio.HasChanges ||
+            spotterFrequency.value != (int)SpotterFrequency;
+        driverRadio.Save();
+        crewChiefRadio.Save();
+        spotterRadio.Save();
+        SpotterFrequency = (SpotterCallFrequency)spotterFrequency.value;
+        PlayerPrefs.SetInt(Key + "SpotterCallFrequency", (int)SpotterFrequency);
         PlayerPrefs.Save();
+        if (radioChanged) RadioAudioChanged?.Invoke();
         ApplyPalette(palette);
         if (lodChanged) CarLodChanged?.Invoke(savedCarLod);
         if (msaaChanged) TrackMsaaSamplesChanged?.Invoke(savedTrackMsaaSamples);

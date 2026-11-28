@@ -104,10 +104,13 @@ internal sealed class TrackDraftPass
             attempt.IsSupporting(index) ? "Supporting" : null;
     }
 
+    private float playerAggressionBonus;
+
     internal void Update(TrackDraft draft, float lapLength, float seconds, bool enabled,
         bool[] onTrack, bool[] eligible, float[] distances, float[] lanes, float[] widths, float[] speeds,
-        float[] paces, float[] targets, IReadOnlyList<SessionCarResult> drivers = null)
+        float[] paces, float[] targets, IReadOnlyList<SessionCarResult> drivers = null, float playerBonus = 0f)
     {
+        playerAggressionBonus = playerBonus;
         Array.Clear(LaneChanges, 0, LaneChanges.Length);
         Array.Fill(BumperGaps, -1f);
         if (!enabled)
@@ -553,10 +556,11 @@ internal sealed class TrackDraftPass
             owners[follower] = null;
     }
 
-    private static float Aggression(IReadOnlyList<SessionCarResult> drivers, int index)
+    private float Aggression(IReadOnlyList<SessionCarResult> drivers, int index)
     {
         float value = drivers?[index].driver?.personalityTraits?.aggression ?? .5f;
-        return float.IsNaN(value) ? .5f : Mathf.Clamp01(value);
+        float baseline = float.IsNaN(value) ? .5f : Mathf.Clamp01(value);
+        return baseline + (index == 0 ? playerAggressionBonus : 0f);
     }
 
     private static float AttemptWait(float aggression, float rearPosition) =>
