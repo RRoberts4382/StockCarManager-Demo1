@@ -115,8 +115,6 @@ public sealed class StartupMenu : MonoBehaviour
     private Button playSessionButton;
     private Button playbackSpeedButton;
     private Button pauseSessionButton;
-    private VisualElement trackFooter;
-    private SliderInt passingCriteriaSlider;
     private Label cautionReasonLabel;
     private VisualElement throttleDisplay, brakeDisplay, fuelDisplay;
     private VisualElement throttleFill, brakeFill, fuelFill;
@@ -140,7 +138,7 @@ public sealed class StartupMenu : MonoBehaviour
     private Button toggleTrackStandingsButton;
     private Button scoringColumnButton;
     private VisualElement scoringColumnIcon;
-    private enum ScoringColumn { Interval, Mph, LastLap }
+    private enum ScoringColumn { Interval, Mph, LastLap, BestLap }
     private ScoringColumn scoringColumn;
     private Label scoringSession, scoringSessionRemaining, scoringRaceLap, scoringRaceRemaining;
     private VisualElement scoringRaceLine, scoringRaceProgress, scoringFlag;
@@ -151,6 +149,86 @@ public sealed class StartupMenu : MonoBehaviour
     private static readonly Color ScoringYellow = new Color32(255, 215, 53, 255);
     private Button pitSettingsButton;
     private Button cycleTrackCameraButton;
+    private Button driverRadioButton;
+    private enum RadioSpeaker { Crew, Driver, Spotter }
+    private ScrollView trackRadioLog;
+    private readonly PlayerSpotter playerSpotter = new();
+    private TrackDriverRadioAudio driverRadioAudio;
+    private (string Message, string CrewMessage)? pendingDriverSpeech;
+#if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
+    private DriverRadioSpeech driverRadioSpeech;
+#endif
+    private VisualElement driverPaceIndicator;
+    private static readonly (DriverPaceMode Mode, string Label, Color32 Color)[] DriverPaceChoices =
+    {
+        (DriverPaceMode.FullSpeed, "Full Speed", new Color32(240, 75, 75, 255)),
+        (DriverPaceMode.Normal, "Normal", new Color32(87, 213, 104, 255)),
+        (DriverPaceMode.SaveTires, "Save Tires", new Color32(255, 236, 63, 255)),
+        (DriverPaceMode.SaveFuel, "Save Fuel", new Color32(255, 177, 54, 255))
+    };
+    private static readonly string[] AlreadyFullSpeedReplies =
+    {
+        "I'm flat out already. What the hell else do you want?",
+        "The pedal's on the floor. There ain't another inch in it.",
+        "This is all she's got. You want more, give me more motor.",
+        "I'm wringing its damn neck as it is. This thing won't go any faster."
+    };
+    private readonly float?[] driverHandlingByPhase = new float?[3];
+    private bool driverWasUnderCaution;
+    private RaceSessionRun driverIncidentRun;
+    private int reportedDriverFlats;
+    private int reportedDriverWrecks;
+    private string reportedDriverFailure;
+    private double lastDriverIncidentTime;
+    private readonly System.Random driverRadioRandom = new();
+    private static readonly string[] PitRadioAcknowledgments =
+    {
+        "10-4, I'll be in next time.",
+        "Copy. Pitting next time by.",
+        "Will do. See you on pit road.",
+        "Got it. I'll bring it in.",
+        "Roger that. Coming to you next lap."
+    };
+    private const double DriverComplaintCooldown = 45d;
+    private const double DriverPositionLossWindow = 20d;
+    private readonly Queue<(double Time, int Position)> driverPositionSamples = new();
+    private RaceSessionRun driverPaceRun;
+    private double nextDriverPositionSample;
+    private double nextDriverComplaint;
+    private double nextRealTimeDriverComplaint;
+    private int observedDriverGreenLaps;
+    private int observedDriverPitStops;
+    private int slowDriverLaps;
+    private float latestDriverGreenLap;
+    private float driverPreStopLap;
+    private float driverPostStopLapTotal;
+    private int driverPostStopLaps;
+    private static readonly string[] LosingPositionsRadioLines =
+    {
+        "I'm getting passed on both sides. What the hell did you send me out here with?",
+        "There goes another one. You guys put a race setup in this thing or just whatever was lying around?",
+        "We've gone backward every corner since the restart. Somebody on that box better have an idea.",
+        "They're driving by me like I'm on pit road. This setup's a damn joke.",
+        "I can hold my line all day. It doesn't matter when this heap won't get off the corner.",
+        "Everybody else found speed at the last stop. What'd we do, take ours out?"
+    };
+    private static readonly string[] SlowPaceRadioLines =
+    {
+        "I'm flat on the floor and they're still pulling away. Check the damn motor.",
+        "This thing's got all the get-up-and-go of the damn pace car.",
+        "You want me to catch the guy ahead? Give me a car that can catch him.",
+        "I can hear the motor working. I'd love to know where all that effort's going.",
+        "Who picked this gear? I'm running out of straightaway before this thing gets moving.",
+        "Don't tell me what the lap time was. Tell me what you're going to do about it."
+    };
+    private static readonly string[] WorseAfterStopRadioLines =
+    {
+        "Whatever you changed, put it back. It was bad before. Now it's undrivable.",
+        "You said that adjustment would free it up. The front end still won't turn.",
+        "You sure those were stickers? Feels like you put the damn scuffs back on.",
+        "It was tight coming in and now it's trying to kill me coming off. Hell of an adjustment.",
+        "I asked for a little help in the middle. You managed to screw up both ends."
+    };
     private Label trackCameraAngle;
     private TrackPreview.CameraAngle trackCameraSelection;
     private bool raceStartFireworksWereActive;
@@ -182,7 +260,9 @@ public sealed class StartupMenu : MonoBehaviour
     private VisualElement titleScreen;
     private VisualElement garageScreen;
     private VisualElement trackScreen;
+    private const string TrackFpsPreference = "StockCarManager.Settings.ShowTrackFps";
     private Label trackFpsLabel;
+    private bool showTrackFps;
     private double fpsSampleStart;
     private int fpsSampleFrames;
     private VisualElement raceViewport;
@@ -310,6 +390,7 @@ public sealed class StartupMenu : MonoBehaviour
 
         trackScreen = root.Q("trackScreen");
         trackFpsLabel = trackScreen.Q<Label>("trackFpsLabel");
+        SetTrackFpsVisible(PlayerPrefs.GetInt(TrackFpsPreference, 1) != 0);
         trackScreen.style.display = DisplayStyle.None;
         raceViewport = trackScreen.Q("raceViewport");
         trackCockpit = trackScreen.Q("trackCockpit");
@@ -343,6 +424,10 @@ public sealed class StartupMenu : MonoBehaviour
         cycleTrackCameraButton = trackScreen.Q<Button>("cycleTrackCameraButton");
         cycleTrackCameraButton.clicked += OpenTrackCameraMenu;
         DrawButtonIcon(cycleTrackCameraButton, DrawSnapshotIcon);
+        driverRadioButton = trackScreen.Q<Button>("driverRadioButton");
+        trackRadioLog = trackScreen.Q<ScrollView>("trackRadioLog");
+        driverRadioButton.clicked += OpenDriverRadioMenu;
+        DrawButtonIcon(driverRadioButton, DrawDriverRadioIcon);
         trackIconTooltip = trackScreen.Q<Label>("trackIconTooltip");
         trackScreen.RegisterCallback<PointerMoveEvent>(UpdateTrackIconTooltip, TrickleDown.TrickleDown);
         trackScreen.RegisterCallback<PointerDownEvent>(HideTrackIconTooltip, TrickleDown.TrickleDown);
@@ -472,9 +557,11 @@ public sealed class StartupMenu : MonoBehaviour
         drivingInputMph = trackScreen.Q<Label>("footerMph");
         drivingInputRpm = trackScreen.Q<Label>("footerRpm");
         drivingInputGear = trackScreen.Q<Label>("footerGear");
-        trackFooter = trackScreen.Q("trackFooter");
-        passingCriteriaSlider = trackScreen.Q<SliderInt>("passingCriteriaSlider");
-        passingCriteriaSlider.RegisterValueChangedCallback(SetTrackPassingCriteria);
+        driverPaceIndicator = TrackIndicatorIcon(tireWear: true, size: 30f);
+        driverPaceIndicator.AddToClassList("track-driver-pace-indicator");
+        driverPaceIndicator.AddToClassList("track-icon-tooltip-target");
+        drivingInputGear.parent.Insert(drivingInputGear.parent.IndexOf(drivingInputGear) + 1, driverPaceIndicator);
+        UpdateDriverPaceIndicator(DriverPaceMode.Normal);
         raceViewport.RegisterCallback<WheelEvent>(ZoomTrack);
         raceViewport.RegisterCallback<PointerDownEvent>(BeginTrackPointer);
         raceViewport.RegisterCallback<PointerMoveEvent>(MoveTrackPointer);
@@ -545,6 +632,7 @@ public sealed class StartupMenu : MonoBehaviour
         garageScreen.Q<Button>("confirmSkipRaceButton").clicked += ConfirmSkipRace;
 
         settings = new GameSettings(root, ApplyDisplaySettings, CloseSettings, SaveTeamSettings);
+        settings.RadioAudioChanged += StopDriverSpeech;
         settings.CarLodChanged += level =>
         {
             if (trackPreview != null && trackPreview.SupportsCarDetail && trackPreview.SetCarDetail(level - 1))
@@ -699,6 +787,7 @@ public sealed class StartupMenu : MonoBehaviour
         AddPage(trackButton, tracks.Screen, tracks.Open);
         AddSettingsGroup("Display", "Adjust the window, screen size, car detail, and anti-aliasing.", GameSettings.SettingsTab.Display);
         AddSettingsGroup("Simulation", "Choose simulation models, the pace vehicle, and practice conditions.", GameSettings.SettingsTab.Simulation);
+        AddSettingsGroup("Audio", "Adjust radio voices, volume, and spotter message frequency.", GameSettings.SettingsTab.Audio);
         AddSettingsGroup("Color Scheme", "Customize the game's interface colors.", GameSettings.SettingsTab.ColorScheme);
         var team = SettingsFormStyle.Button("Team", null);
         team.tooltip = "Choose a saved career and edit its team name, manufacturer, supplier, and colors.";
@@ -920,7 +1009,6 @@ public sealed class StartupMenu : MonoBehaviour
         sessionPaused = false;
         ApplySessionPlayback();
         ConfigureGarageVisitButton();
-        RefreshTrackPassingCriteria();
         UpdateSessionLabel();
     }
 
@@ -1064,6 +1152,9 @@ public sealed class StartupMenu : MonoBehaviour
 
     private void OnDestroy()
     {
+#if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
+        driverRadioSpeech?.Dispose();
+#endif
         CloseTrackSnapshotDialog(resume: false);
         raceEventView?.Dispose();
         employeePortraits.Dispose();
@@ -1088,7 +1179,6 @@ public sealed class StartupMenu : MonoBehaviour
         if (playSessionButton != null) playSessionButton.clicked -= PlaySession;
         if (playbackSpeedButton != null) playbackSpeedButton.clicked -= OpenPlaybackSpeedMenu;
         if (pauseSessionButton != null) pauseSessionButton.clicked -= PauseSession;
-        passingCriteriaSlider?.UnregisterValueChangedCallback(SetTrackPassingCriteria);
         if (toggleTrackStandingsButton != null)
             toggleTrackStandingsButton.clicked -= ToggleTrackStandings;
         if (scoringColumnButton != null)
@@ -1097,6 +1187,8 @@ public sealed class StartupMenu : MonoBehaviour
             scoringRaceProgress.generateVisualContent -= DrawScoringProgress;
         if (pitSettingsButton != null)
             pitSettingsButton.clicked -= TogglePitSettings;
+        if (driverRadioButton != null)
+            driverRadioButton.clicked -= OpenDriverRadioMenu;
         if (cycleTrackCameraButton != null)
         {
             cycleTrackCameraButton.clicked -= OpenTrackCameraMenu;
@@ -6200,7 +6292,6 @@ public sealed class StartupMenu : MonoBehaviour
         sessionPaused = false;
         ApplySessionPlayback();
         ConfigureGarageVisitButton();
-        RefreshTrackPassingCriteria();
         UpdateSessionLabel();
     }
 
@@ -6215,12 +6306,15 @@ public sealed class StartupMenu : MonoBehaviour
 
     private void Update()
     {
+        UpdateDriverRadioAudio();
         if (trackSnapshotDialog != null)
             return;
 
         if (!sessionInGarage && trackPreview != null && trackPreview.gameObject.activeSelf)
         {
-            UpdateTrackFps();
+            if (showTrackFps)
+                UpdateTrackFps();
+            SampleDriverHandling(trackPreview.SessionRun);
             RefreshTrackTiming();
         }
         if (activeSession == null || trackPreview?.SessionRun == null)
@@ -6387,6 +6481,15 @@ public sealed class StartupMenu : MonoBehaviour
         }
     }
 
+    private void SetTrackFpsVisible(bool visible)
+    {
+        showTrackFps = visible;
+        trackFpsLabel.style.display = visible ? DisplayStyle.Flex : DisplayStyle.None;
+        trackFpsLabel.text = "FPS --";
+        fpsSampleStart = Time.unscaledTimeAsDouble;
+        fpsSampleFrames = 0;
+    }
+
     private void UpdateTrackFps()
     {
         const double sampleSeconds = 0.5;
@@ -6429,6 +6532,7 @@ public sealed class StartupMenu : MonoBehaviour
     {
         ScoringColumn.Interval => ScoringColumn.Mph,
         ScoringColumn.Mph => ScoringColumn.LastLap,
+        ScoringColumn.LastLap when activeSession?.kind == RaceSessionKind.Practice => ScoringColumn.BestLap,
         _ => ScoringColumn.Interval
     };
 
@@ -6436,6 +6540,7 @@ public sealed class StartupMenu : MonoBehaviour
     {
         ScoringColumn.Mph => "MPH",
         ScoringColumn.LastLap => "Last Lap",
+        ScoringColumn.BestLap => "Best Lap",
         _ => "Interval"
     };
 
@@ -6503,7 +6608,8 @@ public sealed class StartupMenu : MonoBehaviour
             return;
         }
 
-        bool showLapMinutes = scoringColumn == ScoringColumn.LastLap && timing.HasLapOfAtLeastOneMinute;
+        bool showLapMinutes = (scoringColumn is ScoringColumn.LastLap or ScoringColumn.BestLap) &&
+            timing.HasLapOfAtLeastOneMinute;
         int position = 0;
         if (timing.IsRace)
         {
@@ -6532,9 +6638,8 @@ public sealed class StartupMenu : MonoBehaviour
         double.IsNaN(metersPerSecond) || double.IsInfinity(metersPerSecond) || metersPerSecond < 0d
             ? "\u2014" : $"{metersPerSecond * 3600d / TrackDefinition.MetersPerMile:0} MPH";
 
-    private static string FormatScoringLastLap(SessionCarResult result, bool showMinutes)
+    private static string FormatScoringLap(float seconds, bool showMinutes)
     {
-        float seconds = result.lapTimes is { Count: > 0 } laps ? laps[^1] : 0f;
         if (!(seconds > 0f) || float.IsInfinity(seconds))
             return "\u2014";
 
@@ -6683,13 +6788,15 @@ public sealed class StartupMenu : MonoBehaviour
         cell.Value.text = scoringColumn switch
         {
             ScoringColumn.Mph => FormatScoringSpeed(result.InstantSpeed),
-            ScoringColumn.LastLap => FormatScoringLastLap(result, showLapMinutes),
+            ScoringColumn.LastLap => FormatScoringLap(result.lapTimes is { Count: > 0 } laps ? laps[^1] : 0f, showLapMinutes),
+            ScoringColumn.BestLap => FormatScoringLap(result.FastestLap, showLapMinutes),
             _ => interval
         };
         cell.Value.tooltip = scoringColumn switch
         {
             ScoringColumn.Mph => "Current speed in miles per hour",
             ScoringColumn.LastLap => "Last completed lap time",
+            ScoringColumn.BestLap => "Fastest completed lap in this session",
             _ => trackPreview.TimingRun.IsRace ? "Gap to the race leader" : "Gap to the fastest lap"
         };
         UpdateScoringPosition(cell.Position, result, position);
@@ -6871,6 +6978,14 @@ public sealed class StartupMenu : MonoBehaviour
     private void OpenTrackSettings()
     {
         var menu = new GenericDropdownMenu();
+        menu.AddItem("Show FPS", showTrackFps, () =>
+        {
+            SetTrackFpsVisible(!showTrackFps);
+            PlayerPrefs.SetInt(TrackFpsPreference, showTrackFps ? 1 : 0);
+            PlayerPrefs.Save();
+        });
+        menu.AddItem("Speak driver messages", settings.DriverRadio.Enabled,
+            () => settings.SetDriverRadioEnabled(!settings.DriverRadio.Enabled));
         var preview = trackPreview;
         if (preview?.HasPreferredLineOverlay == true)
         {
@@ -6982,6 +7097,8 @@ public sealed class StartupMenu : MonoBehaviour
 
     private void ApplySessionPlayback()
     {
+        if (sessionPlaybackSpeed > 1)
+            StopDriverSpeech();
         trackPreview?.SetSessionSpeed(sessionPaused || PitSettingsOpen ? 0 : sessionPlaybackSpeed);
         UpdatePlaybackControls();
     }
@@ -7034,18 +7151,6 @@ public sealed class StartupMenu : MonoBehaviour
             });
         }
         menu.DropDown(playbackSpeedButton.worldBound, playbackSpeedButton, DropdownMenuSizeMode.Content);
-    }
-
-    private void RefreshTrackPassingCriteria()
-    {
-        trackFooter.EnableInClassList("track-footer-passing-visible", trackPreview.CanAdjustPassingCriteria);
-        passingCriteriaSlider.SetValueWithoutNotify(trackPreview.OvalPassingStrictness);
-    }
-
-    private void SetTrackPassingCriteria(ChangeEvent<int> change)
-    {
-        if (trackPreview?.CanAdjustPassingCriteria == true)
-            trackPreview.OvalPassingStrictness = change.newValue;
     }
 
     private void UpdateTrackFlags(SessionTrackState? state, bool oneToGo = false)
@@ -7349,10 +7454,166 @@ public sealed class StartupMenu : MonoBehaviour
         UpdatePlayerPitPanel(run);
         var state = trackPreview.TrackState;
         UpdateTrackFlags(state, trackPreview.OneToGoBeforeGreen);
-        UpdateCautionReason(trackPreview.CautionReason);
+        string cautionReason = trackPreview.CautionReason;
+        UpdateCautionReason(cautionReason);
+        bool underCaution = trackPreview.IsUnderCaution;
+        ReportDriverIncidents(run);
+        ReportSpotter(run);
+        if (underCaution && !driverWasUnderCaution && run.PlayerCompletedGreenFlagLap &&
+            run.PreciseElapsed - lastDriverIncidentTime > 5d)
+            ShowDriverMessage(DriverHandlingReply(run));
+        driverWasUnderCaution = underCaution;
+        ReportDriverPace(run);
         string luckyDog = trackPreview.LuckyDogMessage;
         luckyDogLabel.text = luckyDog;
         luckyDogLabel.style.display = luckyDog.Length == 0 ? DisplayStyle.None : DisplayStyle.Flex;
+    }
+
+    private void ReportSpotter(RaceSessionRun run)
+    {
+        var call = playerSpotter.Observe(trackPreview, run, settings.SpotterFrequency);
+        if (call == SpotterCall.None)
+            return;
+
+        AppendRadioMessage(RadioSpeaker.Spotter, PlayerSpotter.Text(call));
+        var spotter = settings.SpotterRadio;
+        if (!spotter.Enabled || spotter.Volume <= 0 || sessionPlaybackSpeed > 1)
+            return;
+
+        driverRadioAudio ??= new TrackDriverRadioAudio(transform);
+        if (driverRadioAudio.TryPlaySpotter(run, call, spotter.Voice, spotter.Volume / 100f))
+        {
+#if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
+            driverRadioSpeech?.Stop();
+#endif
+        }
+    }
+
+    private void ReportDriverPace(RaceSessionRun run)
+    {
+        if (driverPaceRun != run)
+        {
+            driverPaceRun = run;
+            driverPositionSamples.Clear();
+            nextDriverPositionSample = nextDriverComplaint = nextRealTimeDriverComplaint = 0d;
+            observedDriverGreenLaps = observedDriverPitStops = slowDriverLaps = driverPostStopLaps = 0;
+            latestDriverGreenLap = driverPreStopLap = driverPostStopLapTotal = 0f;
+        }
+
+        int stops = trackPreview.PlayerCompletedPitStops;
+        if (stops != observedDriverPitStops)
+        {
+            observedDriverPitStops = stops;
+            driverPreStopLap = latestDriverGreenLap;
+            latestDriverGreenLap = driverPostStopLapTotal = 0f;
+            driverPostStopLaps = slowDriverLaps = 0;
+        }
+
+        double now = run.PreciseElapsed;
+        bool racing = trackPreview.IsUnderGreen && trackPreview.PlayerOnRacingSurface &&
+            !run.Finished(0) && !run.Retired(0) && !run.HasTerminalFailure(0) && run.FlatTireMask(0) == 0;
+        if (!racing)
+        {
+            driverPositionSamples.Clear();
+            slowDriverLaps = 0;
+        }
+
+        bool losingPositions = false;
+        if (racing && run.IsRace && now >= nextDriverPositionSample)
+        {
+            nextDriverPositionSample = now + 1d;
+            while (driverPositionSamples.Count > 0 && now - driverPositionSamples.Peek().Time > DriverPositionLossWindow)
+                driverPositionSamples.Dequeue();
+            int position = run.PlayerRacePosition();
+            losingPositions = driverPositionSamples.Any(sample => position - sample.Position >= 4);
+            driverPositionSamples.Enqueue((now, position));
+        }
+
+        bool worseAfterStop = false;
+        if (run.PlayerGreenFlagLaps != observedDriverGreenLaps)
+        {
+            observedDriverGreenLaps = run.PlayerGreenFlagLaps;
+            latestDriverGreenLap = run.PlayerLastGreenLap;
+            if (racing)
+            {
+                float fieldLap = run.RecentFieldGreenLap();
+                slowDriverLaps = fieldLap > 0f && latestDriverGreenLap >= fieldLap * 1.05f ? slowDriverLaps + 1 : 0;
+
+                if (driverPreStopLap > 0f)
+                {
+                    driverPostStopLapTotal += latestDriverGreenLap;
+                    if (++driverPostStopLaps == 2)
+                    {
+                        worseAfterStop = driverPostStopLapTotal / 2f >= driverPreStopLap * 1.03f;
+                        driverPreStopLap = 0f;
+                    }
+                }
+            }
+        }
+
+        if (!racing || now < nextDriverComplaint || Time.unscaledTimeAsDouble < nextRealTimeDriverComplaint ||
+            now - lastDriverIncidentTime <= 5d)
+            return;
+
+        var lines = worseAfterStop ? WorseAfterStopRadioLines :
+            losingPositions ? LosingPositionsRadioLines : slowDriverLaps >= 2 ? SlowPaceRadioLines : null;
+        if (lines == null)
+            return;
+
+        ShowDriverMessage("Driver: " + lines[driverRadioRandom.Next(lines.Length)]);
+        nextDriverComplaint = now + DriverComplaintCooldown;
+        nextRealTimeDriverComplaint = Time.unscaledTimeAsDouble + 8d;
+        driverPositionSamples.Clear();
+        slowDriverLaps = 0;
+    }
+
+    private void ReportDriverIncidents(RaceSessionRun run)
+    {
+        if (driverIncidentRun != run)
+        {
+            driverIncidentRun = run;
+            reportedDriverFlats = 0;
+            reportedDriverWrecks = 0;
+            reportedDriverFailure = null;
+            lastDriverIncidentTime = double.NegativeInfinity;
+        }
+
+        const int player = 0;
+        int flats = run.FlatTireMask(player);
+        int newFlats = flats & ~reportedDriverFlats;
+        bool wrecked = run.PlayerWreckCount > reportedDriverWrecks;
+        string failure = run.HasTerminalFailure(player) ? run.MechanicalFailure(player) : null;
+        bool newFailure = failure != null && failure != reportedDriverFailure;
+        reportedDriverFlats = flats;
+        reportedDriverWrecks = run.PlayerWreckCount;
+        reportedDriverFailure = failure;
+
+        if (newFlats == 0 && !wrecked && !newFailure)
+            return;
+
+        var messages = new List<string>(3);
+        if (newFlats != 0)
+        {
+            string[] corners = FooterTireLabels.Where((_, corner) => (newFlats & (1 << corner)) != 0).ToArray();
+            messages.Add(corners.Length == 1 ? $"I've got a flat {corners[0].ToLowerInvariant()}."
+                : "I've got more than one tire down.");
+        }
+        if (wrecked)
+            messages.Add("I wrecked it. The car took a hit.");
+        if (newFailure)
+        {
+            messages.Add(failure switch
+            {
+                "Blown Engine" => "The motor just let go.",
+                "Overheating Engine" => "It's overheating. I'm losing power.",
+                "Transmission Failure" => "I've lost the gearbox.",
+                "Rear Gear Failure" => "Something let go in the rear gear.",
+                _ => "Something broke. I'm losing power."
+            });
+        }
+
+        ShowDriverMessage("Driver: " + string.Join(" ", messages), urgent: true, spokenLines: messages);
+        lastDriverIncidentTime = run.PreciseElapsed;
     }
 
     private void CompleteSession(RaceSession session, List<SessionCarResult> results)
@@ -7685,7 +7946,20 @@ public sealed class StartupMenu : MonoBehaviour
             }
         }
 
+        if (session.kind == RaceSessionKind.Practice)
+            scoringColumn = ScoringColumn.BestLap;
+        else if (scoringColumn == ScoringColumn.BestLap)
+            scoringColumn = ScoringColumn.Interval;
+        UpdateScoringColumnButton();
+
         cycleTrackCameraButton.SetEnabled(trackPreview.Image != null);
+        driverRadioButton.SetEnabled(trackPreview.Image != null);
+        StopDriverSpeech();
+        trackRadioLog.contentContainer.Clear();
+        trackRadioLog.scrollOffset = Vector2.zero;
+        UpdateDriverPaceIndicator(DriverPaceMode.Normal);
+        driverWasUnderCaution = false;
+        System.Array.Clear(driverHandlingByPhase, 0, driverHandlingByPhase.Length);
         UpdateCautionReason(trackPreview.CautionReason);
         var trackName = trackScreen.Q<Label>("selectedTrackName");
         trackName.text = $"{track.Definition.name} - {session.name}";
@@ -7917,12 +8191,7 @@ public sealed class StartupMenu : MonoBehaviour
         if (trackScreen.style.display != DisplayStyle.Flex || trackPreview?.Image == null)
             return;
 
-        HideTrackIconTooltip();
-        var menu = new GenericDropdownMenu();
-        menu.contentContainer.AddToClassList("track-camera-menu");
-        menu.contentContainer.AddToClassList("ui-default-font");
-        menu.contentContainer.styleSheets.Add(Resources.Load<StyleSheet>("Startup/Startup"));
-        menu.contentContainer.styleSheets.Add(Resources.Load<StyleSheet>("Fonts/GoogleSans/SettingsTypography"));
+        var menu = CreateTrackChoiceMenu();
         foreach (var angle in TrackCameraChoices)
         {
             string label = TrackPreview.CameraAngleName(angle);
@@ -7931,12 +8200,363 @@ public sealed class StartupMenu : MonoBehaviour
             else
                 menu.AddDisabledItem(label, false);
         }
+        ShowTrackChoiceMenu(menu, cycleTrackCameraButton);
+    }
+
+    private void OpenDriverRadioMenu()
+    {
+        var run = trackPreview?.SessionRun;
+        if (trackScreen.style.display != DisplayStyle.Flex || run == null)
+            return;
+
+        var menu = CreateTrackChoiceMenu();
+        foreach (var choice in DriverPaceChoices)
+        {
+            menu.AddItem(choice.Label, run.DriverPace == choice.Mode, () =>
+            {
+                if (trackScreen.style.display == DisplayStyle.Flex && trackPreview?.SessionRun == run)
+                    SendDriverPaceCommand(run, choice.Mode, choice.Label);
+            });
+            var icon = TrackIndicatorIcon(tireWear: true, size: 16f);
+            icon.style.color = new StyleColor(choice.Color);
+            InsertRadioMenuIcon(menu, icon);
+        }
+        AddRadioMenuDivider(menu);
+        AddQuestion("How\u2019s the car?", new Color32(0, 155, 221, 255),
+            currentRun => "Driver: " + DriverCarConditionReply(currentRun));
+        AddQuestion("How\u2019s the handling?", new Color32(255, 207, 85, 255), DriverHandlingReply);
+        AddQuestion("How are the tires?", new Color32(87, 213, 104, 255), DriverTireConditionReply);
+        AddRadioMenuDivider(menu);
+
+        const string pitCommand = "Pit next time by";
+        if (trackPreview.CanRequestPlayerPit)
+        {
+            menu.AddItem(pitCommand, false, () =>
+            {
+                if (trackScreen.style.display != DisplayStyle.Flex || trackPreview?.SessionRun != run ||
+                    !trackPreview.CanRequestPlayerPit)
+                    return;
+
+                UpdatePlayerPitRequest(queue: true);
+                ShowDriverMessage("Driver: " +
+                    PitRadioAcknowledgments[driverRadioRandom.Next(PitRadioAcknowledgments.Length)],
+                    crewMessage: pitCommand);
+            });
+        }
+        else
+            menu.AddDisabledItem(pitCommand, false);
+        AddRadioMenuIcon(menu, new Color32(245, 245, 245, 255), DrawRadioWrenchIcon);
+
+        const string stayOut = "Stay out";
+        if (trackPreview.CanCancelQueuedPlayerPit)
+        {
+            menu.AddItem(stayOut, false, () =>
+            {
+                if (trackScreen.style.display == DisplayStyle.Flex && trackPreview?.SessionRun == run)
+                {
+                    ShowDriverMessage(trackPreview.TryCancelQueuedPlayerPit()
+                        ? "Driver: Copy, staying out."
+                        : "Driver: I can't call off the stop now.", crewMessage: stayOut);
+                }
+            });
+        }
+        else
+            menu.AddDisabledItem(stayOut, false);
+        AddRadioMenuIcon(menu, new Color32(245, 245, 245, 255), DrawRadioStayOutIcon);
+        ShowTrackChoiceMenu(menu, driverRadioButton);
+
+        void AddQuestion(string question, Color color, System.Func<RaceSessionRun, string> reply)
+        {
+            menu.AddItem(question, false, () =>
+            {
+                if (trackScreen.style.display == DisplayStyle.Flex && trackPreview?.SessionRun == run)
+                    ShowDriverMessage(trackPreview.AwaitingInitialRaceGreen
+                        ? "Driver: I'm still under caution, dummy!"
+                        : trackPreview.PlayerLeavingPitRoad
+                            ? "Driver: I'm not even on the track yet, you knucklehead!"
+                            : reply(run), crewMessage: question);
+            });
+            AddRadioMenuIcon(menu, color, DrawRadioQuestionIcon);
+        }
+    }
+
+    private void ShowDriverMessage(string message, bool urgent = false,
+        IReadOnlyList<string> spokenLines = null, string crewMessage = null)
+    {
+        const string prefix = "Driver: ";
+        string text = message.StartsWith(prefix, System.StringComparison.Ordinal) ? message[prefix.Length..] : message;
+        if (crewMessage != null)
+            AppendRadioMessage(RadioSpeaker.Crew, crewMessage);
+        AppendRadioMessage(RadioSpeaker.Driver, text);
+        PlayDriverMessageAudio(text, urgent, spokenLines, crewMessage);
+    }
+
+    private void AppendRadioMessage(RadioSpeaker speaker, string message)
+    {
+        const int historyLimit = 60;
+        bool followNewMessages = trackRadioLog.verticalScroller.value >= trackRadioLog.verticalScroller.highValue - 2f;
+        var row = new VisualElement { tooltip = speaker == RadioSpeaker.Crew ? "Crew chief" : speaker.ToString() };
+        row.AddToClassList("track-radio-log-row");
+        row.AddToClassList("track-icon-tooltip-target");
+        var icon = new VisualElement { pickingMode = PickingMode.Ignore };
+        icon.AddToClassList("track-radio-log-icon");
+        switch (speaker)
+        {
+            case RadioSpeaker.Crew:
+                icon.style.color = new StyleColor(new Color32(0, 155, 221, 255));
+                DrawTrackIcon(icon, DrawDriverRadioIcon);
+                break;
+            case RadioSpeaker.Driver:
+                icon.style.color = new StyleColor(new Color32(87, 213, 104, 255));
+                DrawTrackIcon(icon, DrawRadioSteeringWheel);
+                break;
+            case RadioSpeaker.Spotter:
+                icon.style.color = new StyleColor(new Color32(255, 207, 85, 255));
+                DrawTrackIcon(icon, DrawRadioBinoculars);
+                break;
+        }
+        row.Add(icon);
+        var text = new Label(message) { pickingMode = PickingMode.Ignore };
+        text.AddToClassList("track-driver-message");
+        row.Add(text);
+        var rows = trackRadioLog.contentContainer;
+        rows.Add(row);
+        if (rows.childCount > historyLimit)
+            rows.RemoveAt(0);
+        if (followNewMessages)
+            row.RegisterCallback<GeometryChangedEvent>(RevealMessage);
+
+        void RevealMessage(GeometryChangedEvent change)
+        {
+            row.UnregisterCallback<GeometryChangedEvent>(RevealMessage);
+            row.schedule.Execute(() => trackRadioLog.ScrollTo(row));
+        }
+    }
+
+    private void PlayDriverMessageAudio(string message, bool urgent, IReadOnlyList<string> spokenLines = null,
+        string crewMessage = null)
+    {
+        if (sessionPlaybackSpeed > 1)
+            return;
+
+        var driver = settings.DriverRadio;
+        var crew = settings.CrewChiefRadio;
+        bool playDriver = driver.Enabled && driver.Volume > 0;
+        bool playCrew = crewMessage != null && crew.Enabled && crew.Volume > 0;
+        if (!playDriver && !playCrew)
+            return;
+
+        if (!urgent && driverRadioAudio?.IsPlayingUrgent == true)
+        {
+            if (crewMessage != null || pendingDriverSpeech?.CrewMessage == null)
+                pendingDriverSpeech = (message, crewMessage);
+            return;
+        }
+
+        pendingDriverSpeech = null;
+        string spokenText = message;
+        if (trackPreview?.SessionRun is RaceSessionRun run)
+        {
+            driverRadioAudio ??= new TrackDriverRadioAudio(transform);
+            IReadOnlyList<string> driverLines = playDriver
+                ? spokenLines ?? spokenText.Split('\n') : System.Array.Empty<string>();
+            if (driverRadioAudio.TryPlay(run, driverLines, urgent, driver.Volume / 100f,
+                playCrew ? crewMessage : null, crew.Voice, crew.Volume / 100f))
+            {
+#if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
+                driverRadioSpeech?.Stop();
+#endif
+                return;
+            }
+        }
+
+#if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
+        if (playDriver)
+        {
+            driverRadioAudio?.Stop();
+            driverRadioSpeech ??= new DriverRadioSpeech();
+            driverRadioSpeech.Speak(spokenText.Replace("\n", " "), urgent, driver.Volume);
+        }
+#endif
+    }
+
+    private void UpdateDriverRadioAudio()
+    {
+        driverRadioAudio?.Update(trackPreview?.SessionRun);
+        if (pendingDriverSpeech is { } pending && driverRadioAudio?.IsPlayingUrgent != true)
+        {
+            pendingDriverSpeech = null;
+            PlayDriverMessageAudio(pending.Message, urgent: false, crewMessage: pending.CrewMessage);
+        }
+    }
+
+    private void StopDriverSpeech()
+    {
+        driverRadioAudio?.Stop();
+        pendingDriverSpeech = null;
+#if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
+        driverRadioSpeech?.Stop();
+#endif
+    }
+
+    private void SendDriverPaceCommand(RaceSessionRun run, DriverPaceMode mode, string crewMessage)
+    {
+        bool alreadyFullSpeed = mode == DriverPaceMode.FullSpeed && run.DriverPace == mode;
+        run.SetDriverPace(mode);
+        UpdateDriverPaceIndicator(mode);
+        string reply = mode switch
+        {
+            DriverPaceMode.FullSpeed when alreadyFullSpeed =>
+                AlreadyFullSpeedReplies[driverRadioRandom.Next(AlreadyFullSpeedReplies.Length)],
+            DriverPaceMode.FullSpeed => "10-4. I'll give it everything it's got.",
+            DriverPaceMode.SaveTires => "Copy. I'll take it easy through the corners.",
+            DriverPaceMode.SaveFuel => "10-4. I'll lift early and let it roll.",
+            _ => "Copy. Back to race pace."
+        };
+        ShowDriverMessage("Driver: " + reply, crewMessage: crewMessage);
+    }
+
+    private void UpdateDriverPaceIndicator(DriverPaceMode mode)
+    {
+        var choice = DriverPaceChoices.First(item => item.Mode == mode);
+        driverPaceIndicator.style.color = new StyleColor(choice.Color);
+        driverPaceIndicator.tooltip = $"Pace mode: {choice.Label}";
+        driverPaceIndicator.MarkDirtyRepaint();
+    }
+
+    private static void AddRadioMenuDivider(GenericDropdownMenu menu)
+    {
+        menu.AddSeparator(string.Empty);
+        menu.contentContainer[menu.contentContainer.childCount - 1].AddToClassList("track-radio-menu-divider");
+    }
+
+    private static void AddRadioMenuIcon(GenericDropdownMenu menu, Color color, System.Action<Painter2D> draw)
+    {
+        var icon = new VisualElement();
+        icon.style.color = color;
+        DrawTrackIcon(icon, draw);
+        InsertRadioMenuIcon(menu, icon);
+    }
+
+    private static void InsertRadioMenuIcon(GenericDropdownMenu menu, VisualElement icon)
+    {
+        icon.pickingMode = PickingMode.Ignore;
+        icon.AddToClassList("track-radio-menu-icon");
+        var row = menu.contentContainer[menu.contentContainer.childCount - 1];
+        row.AddToClassList("track-radio-menu-item");
+        var label = row.Q<Label>();
+        label.parent.Insert(label.parent.IndexOf(label), icon);
+    }
+
+    private static string DriverTireConditionReply(RaceSessionRun run)
+    {
+        var car = run.Vehicle(0);
+        var reports = new List<string>(FooterTireLabels.Length);
+        int okay = 0;
+        for (int corner = 0; corner < FooterTireLabels.Length; corner++)
+        {
+            float? wear = car?.GetTire(corner)?.wear;
+            if (wear is >= 0f and < 0.75f)
+            {
+                okay++;
+                continue;
+            }
+
+            string name = FooterTireLabels[corner];
+            reports.Add(wear switch
+            {
+                >= 0.95f => $"{name} feels shot.",
+                >= 0.75f => $"{name}'s starting to go away.",
+                _ => $"Can't get a read on the {name.ToLowerInvariant()}."
+            });
+        }
+
+        if (okay == FooterTireLabels.Length)
+            return "All four feel fine. I've still got grip.";
+        if (okay > 0)
+            reports.Add(okay == 1 ? "The other one feels fine." : "The others feel fine.");
+        return string.Join("\n", reports);
+    }
+
+    private void SampleDriverHandling(RaceSessionRun run)
+    {
+        if (!trackPreview.IsUnderCaution &&
+            run?.TryHandlingFeedback(0, out int phase, out float balance, out _, out _) == true &&
+            (uint)phase < (uint)driverHandlingByPhase.Length && !float.IsNaN(balance) && !float.IsInfinity(balance))
+            driverHandlingByPhase[phase] = balance;
+    }
+
+    private string DriverHandlingReply(RaceSessionRun run)
+    {
+        SampleDriverHandling(run);
+        string entry = DescribeHandling(driverHandlingByPhase[0]);
+        string middle = DescribeHandling(driverHandlingByPhase[1]);
+        string exit = DescribeHandling(driverHandlingByPhase[2]);
+
+        if (entry == middle && middle == exit)
+        {
+            return entry switch
+            {
+                "tight" => "It's tight all the way through. Front end just won't turn.",
+                "loose" => "It's loose all the way through. Rear wants to come around.",
+                "balanced" => "Feels balanced all the way through the corner.",
+                _ => "Give me a corner at speed and I'll let you know."
+            };
+        }
+
+        return (entry == null ? "Still getting a feel for entry." : $"Feels {entry} going in.") + "\n" +
+               (middle == null ? "Need more time in the middle." : $"It's {middle} in the middle.") + "\n" +
+               (exit == null ? "Haven't got a read on exit yet." : $"Feels {exit} coming off.");
+    }
+
+    private static string DescribeHandling(float? balance) => balance switch
+    {
+        > 2f => "tight",
+        < -2f => "loose",
+        null => null,
+        _ => "balanced"
+    };
+
+    private static string DriverCarConditionReply(RaceSessionRun run)
+    {
+        const int player = 0;
+        if (run.HasTerminalFailure(player))
+            return $"We've got a mechanical problem ({run.MechanicalFailure(player)}).";
+        if (run.FlatTireMask(player) != 0)
+            return "I've got a flat tire.";
+        if (run.Retired(player))
+            return "We're out of the session.";
+
+        float damage = run.DisplayDamage(player);
+        if (damage >= 25f)
+            return "That hit hurt it. We ought to look it over next stop.";
+        double fuel = run.Fuel(player);
+        if (fuel <= SessionFuel.TankCapacity * 0.15)
+            return "We're getting low on fuel. When are we coming in?";
+        if (damage >= 1f)
+            return "We've got a little damage, but the car still feels okay.";
+        return "Feels good from in here. Nothing to worry about.";
+    }
+
+    private GenericDropdownMenu CreateTrackChoiceMenu()
+    {
+        HideTrackIconTooltip();
+        var menu = new GenericDropdownMenu();
+        menu.contentContainer.AddToClassList("track-choice-menu");
+        menu.contentContainer.AddToClassList("ui-default-font");
+        menu.contentContainer.styleSheets.Add(Resources.Load<StyleSheet>("Startup/Startup"));
+        menu.contentContainer.styleSheets.Add(Resources.Load<StyleSheet>("Fonts/GoogleSans/SettingsTypography"));
+        return menu;
+    }
+
+    private static void ShowTrackChoiceMenu(GenericDropdownMenu menu, Button anchor)
+    {
         menu.contentContainer.Query<Label>().ForEach(label =>
         {
             label.style.color = (Color)new Color32(245, 245, 245, 255);
             label.style.fontSize = 12f;
         });
-        menu.DropDown(cycleTrackCameraButton.worldBound, cycleTrackCameraButton, DropdownMenuSizeMode.Content);
+        menu.DropDown(anchor.worldBound, anchor, DropdownMenuSizeMode.Content);
     }
 
     private void ResetTrackCamera()
@@ -7962,11 +8582,6 @@ public sealed class StartupMenu : MonoBehaviour
     {
         trackIconHoverPosition = evt.position;
         var icon = TrackIconAt(trackIconHoverPosition);
-        if (icon == passingCriteriaSlider && evt.pressedButtons != 0)
-        {
-            HideTrackIconTooltip();
-            return;
-        }
         if (icon != hoveredTrackIcon)
         {
             HideTrackIconTooltip();
@@ -8016,9 +8631,12 @@ public sealed class StartupMenu : MonoBehaviour
             trackIconTooltip.style.display = DisplayStyle.None;
     }
 
-    private static void DrawButtonIcon(Button button, System.Action<Painter2D> draw)
+    private static void DrawButtonIcon(Button button, System.Action<Painter2D> draw) =>
+        DrawTrackIcon(button.Q(className: "track-icon-art"), draw);
+
+    private static void DrawTrackIcon(VisualElement icon, System.Action<Painter2D> draw)
     {
-        button.Q(className: "track-icon-art").generateVisualContent += context =>
+        icon.generateVisualContent += context =>
         {
             var painter = context.painter2D;
             painter.strokeColor = context.visualElement.resolvedStyle.color;
@@ -8041,6 +8659,7 @@ public sealed class StartupMenu : MonoBehaviour
                 painter.LineTo(new Vector2(11, 7));
                 break;
             case ScoringColumn.LastLap:
+            case ScoringColumn.BestLap:
                 painter.MoveTo(new Vector2(12.5f, 8.5f));
                 painter.Arc(new Vector2(8, 8.5f), 4.5f, Angle.Degrees(0), Angle.Degrees(360));
                 painter.ClosePath();
@@ -8079,6 +8698,100 @@ public sealed class StartupMenu : MonoBehaviour
     }
 
     internal static void DrawSnapshotButtonIcon(Button button) => DrawButtonIcon(button, DrawSnapshotIcon);
+
+    private static void DrawRadioQuestionIcon(Painter2D painter)
+    {
+        painter.MoveTo(new Vector2(4, 5));
+        painter.QuadraticCurveTo(new Vector2(4, 2), new Vector2(8, 2));
+        painter.QuadraticCurveTo(new Vector2(12, 2), new Vector2(12, 5));
+        painter.QuadraticCurveTo(new Vector2(12, 7), new Vector2(9, 8.5f));
+        painter.QuadraticCurveTo(new Vector2(8, 9), new Vector2(8, 11));
+        painter.MoveTo(new Vector2(7.6f, 14));
+        painter.LineTo(new Vector2(8.4f, 14));
+    }
+
+    private static void DrawRadioStayOutIcon(Painter2D painter)
+    {
+        painter.MoveTo(new Vector2(8, 14));
+        painter.LineTo(new Vector2(8, 2));
+        painter.MoveTo(new Vector2(4, 6));
+        painter.LineTo(new Vector2(8, 2));
+        painter.LineTo(new Vector2(12, 6));
+    }
+
+    private static void DrawRadioWrenchIcon(Painter2D painter)
+    {
+        painter.MoveTo(new Vector2(9, 2));
+        painter.QuadraticCurveTo(new Vector2(5, 3), new Vector2(6, 7));
+        painter.LineTo(new Vector2(2, 11));
+        painter.QuadraticCurveTo(new Vector2(0, 13), new Vector2(2, 14.5f));
+        painter.QuadraticCurveTo(new Vector2(3.5f, 16), new Vector2(5, 14));
+        painter.LineTo(new Vector2(9, 10));
+        painter.QuadraticCurveTo(new Vector2(14, 11), new Vector2(14, 5));
+        painter.LineTo(new Vector2(11, 7));
+        painter.LineTo(new Vector2(9, 5));
+        painter.ClosePath();
+    }
+
+    private static void DrawRadioSteeringWheel(Painter2D painter)
+    {
+        painter.MoveTo(new Vector2(20, 11));
+        painter.Arc(new Vector2(11, 11), 9f, Angle.Degrees(0), Angle.Degrees(360));
+        painter.ClosePath();
+        painter.MoveTo(new Vector2(14, 11));
+        painter.Arc(new Vector2(11, 11), 3f, Angle.Degrees(0), Angle.Degrees(360));
+        painter.ClosePath();
+        painter.MoveTo(new Vector2(3, 8));
+        painter.LineTo(new Vector2(8, 10));
+        painter.MoveTo(new Vector2(19, 8));
+        painter.LineTo(new Vector2(14, 10));
+        painter.MoveTo(new Vector2(11, 14));
+        painter.LineTo(new Vector2(11, 20));
+    }
+
+    private static void DrawRadioBinoculars(Painter2D painter)
+    {
+        painter.MoveTo(new Vector2(2, 13));
+        painter.LineTo(new Vector2(5, 5));
+        painter.LineTo(new Vector2(9, 5));
+        painter.LineTo(new Vector2(10, 13));
+        painter.MoveTo(new Vector2(12, 13));
+        painter.LineTo(new Vector2(13, 5));
+        painter.LineTo(new Vector2(17, 5));
+        painter.LineTo(new Vector2(20, 13));
+        painter.MoveTo(new Vector2(10, 9));
+        painter.LineTo(new Vector2(12, 9));
+        painter.MoveTo(new Vector2(10, 14));
+        painter.Arc(new Vector2(6, 14), 4f, Angle.Degrees(0), Angle.Degrees(360));
+        painter.ClosePath();
+        painter.MoveTo(new Vector2(20, 14));
+        painter.Arc(new Vector2(16, 14), 4f, Angle.Degrees(0), Angle.Degrees(360));
+        painter.ClosePath();
+    }
+
+    private static void DrawDriverRadioIcon(Painter2D painter)
+    {
+        painter.MoveTo(new Vector2(4, 11));
+        painter.LineTo(new Vector2(4, 10));
+        painter.Arc(new Vector2(11, 10), 7, Angle.Degrees(180), Angle.Degrees(360));
+        painter.LineTo(new Vector2(18, 11));
+
+        painter.MoveTo(new Vector2(6, 11));
+        painter.LineTo(new Vector2(3, 11));
+        painter.LineTo(new Vector2(3, 17));
+        painter.LineTo(new Vector2(6, 17));
+        painter.ClosePath();
+
+        painter.MoveTo(new Vector2(16, 11));
+        painter.LineTo(new Vector2(19, 11));
+        painter.LineTo(new Vector2(19, 17));
+        painter.LineTo(new Vector2(16, 17));
+        painter.ClosePath();
+
+        painter.MoveTo(new Vector2(18, 17));
+        painter.LineTo(new Vector2(16, 20));
+        painter.LineTo(new Vector2(11, 20));
+    }
 
     private static void DrawSnapshotIcon(Painter2D painter)
     {
@@ -8178,6 +8891,7 @@ public sealed class StartupMenu : MonoBehaviour
         garageVisitPending = false;
         ReleaseTrackPointer();
         sessionInGarage = true;
+        StopDriverSpeech();
         SetPitSettingsOpen(false);
         trackPreview.SetSessionSpeed(1);
         garageCarParked = trackPreview.PlayerParkedForGarage;
@@ -8191,6 +8905,7 @@ public sealed class StartupMenu : MonoBehaviour
 
     private void ResumeSession()
     {
+        System.Array.Clear(driverHandlingByPhase, 0, driverHandlingByPhase.Length);
         trackPreview.CancelGarageLapSimulation();
         if (trackPreview.PlayerParkedForGarage)
             trackPreview.SessionRun.SetFuel(0, raceEventView.StartingFuelGallons);
@@ -8217,6 +8932,7 @@ public sealed class StartupMenu : MonoBehaviour
     private void CloseTrackSession(bool showTestPracticeGarage = false, string testPracticeMessage = null)
     {
         CloseTrackSnapshotDialog(resume: false);
+        StopDriverSpeech();
         closeTrackOptionPicker?.Invoke();
         ReleaseTrackPointer();
         SetPitSettingsOpen(false);
@@ -8232,6 +8948,7 @@ public sealed class StartupMenu : MonoBehaviour
         visitGarageButton.tooltip = CallToGarageTooltip;
         UpdateTrackFlags(null);
         UpdateCautionReason(null);
+        driverIncidentRun = driverPaceRun = null;
         snapshotStatus.text = string.Empty;
         snapshotStatus.tooltip = null;
         snapshotStatus.style.display = DisplayStyle.None;

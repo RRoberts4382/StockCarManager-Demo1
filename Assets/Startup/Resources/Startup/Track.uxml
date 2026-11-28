@@ -124,63 +124,63 @@
                     </ui:VisualElement>
                 </ui:VisualElement>
             </ui:VisualElement>
+            <ui:Label name="trackFpsLabel" text="FPS --" class="track-fps ui-default-font" picking-mode="Ignore" />
         </ui:VisualElement>
         <ui:VisualElement name="trackFooter" class="footer track-footer ui-default-font">
-            <ui:VisualElement class="track-footer-driving">
-                <ui:VisualElement name="footerThrottle" class="driving-meter track-icon-tooltip-target" tooltip="Throttle 0%">
-                    <ui:VisualElement class="driving-meter-bar"><ui:VisualElement name="footerThrottleFill" class="driving-meter-fill throttle-fill" /></ui:VisualElement>
-                </ui:VisualElement>
-                <ui:VisualElement name="footerBrake" class="driving-meter track-icon-tooltip-target" tooltip="Brake 0%">
-                    <ui:VisualElement class="driving-meter-bar"><ui:VisualElement name="footerBrakeFill" class="driving-meter-fill brake-fill" /></ui:VisualElement>
-                </ui:VisualElement>
-                <ui:VisualElement name="footerFuel" class="driving-meter track-icon-tooltip-target" tooltip="Fuel">
-                    <ui:VisualElement class="driving-meter-bar"><ui:VisualElement name="footerFuelFill" class="driving-meter-fill fuel-fill" /></ui:VisualElement>
-                </ui:VisualElement>
-                <ui:VisualElement style="flex-shrink: 0; margin-right: 3px;">
-                    <ui:VisualElement style="flex-direction: row; margin-bottom: 2px;">
-                        <ui:VisualElement name="footerTireLeftFront" class="driving-meter-bar track-icon-tooltip-target" style="height: 14px; margin-right: 2px;">
-                            <ui:VisualElement name="footerTireLeftFrontFill" class="driving-meter-fill" picking-mode="Ignore" />
+            <ui:VisualElement class="track-footer-extras">
+                <ui:Label name="snapshotStatus" class="garage-detail" style="display: none;" />
+            </ui:VisualElement>
+            <ui:VisualElement class="track-footer-row">
+                <ui:VisualElement class="track-footer-driving">
+                    <ui:VisualElement name="footerThrottle" class="driving-meter track-icon-tooltip-target" tooltip="Throttle 0%">
+                        <ui:VisualElement class="driving-meter-bar"><ui:VisualElement name="footerThrottleFill" class="driving-meter-fill throttle-fill" /></ui:VisualElement>
+                    </ui:VisualElement>
+                    <ui:VisualElement name="footerBrake" class="driving-meter track-icon-tooltip-target" tooltip="Brake 0%">
+                        <ui:VisualElement class="driving-meter-bar"><ui:VisualElement name="footerBrakeFill" class="driving-meter-fill brake-fill" /></ui:VisualElement>
+                    </ui:VisualElement>
+                    <ui:VisualElement name="footerFuel" class="driving-meter track-icon-tooltip-target" tooltip="Fuel">
+                        <ui:VisualElement class="driving-meter-bar"><ui:VisualElement name="footerFuelFill" class="driving-meter-fill fuel-fill" /></ui:VisualElement>
+                    </ui:VisualElement>
+                    <ui:VisualElement style="flex-shrink: 0; margin-right: 3px;">
+                        <ui:VisualElement style="flex-direction: row; margin-bottom: 2px;">
+                            <ui:VisualElement name="footerTireLeftFront" class="driving-meter-bar track-icon-tooltip-target" style="height: 14px; margin-right: 2px;">
+                                <ui:VisualElement name="footerTireLeftFrontFill" class="driving-meter-fill" picking-mode="Ignore" />
+                            </ui:VisualElement>
+                            <ui:VisualElement name="footerTireRightFront" class="driving-meter-bar track-icon-tooltip-target" style="height: 14px;">
+                                <ui:VisualElement name="footerTireRightFrontFill" class="driving-meter-fill" picking-mode="Ignore" />
+                            </ui:VisualElement>
                         </ui:VisualElement>
-                        <ui:VisualElement name="footerTireRightFront" class="driving-meter-bar track-icon-tooltip-target" style="height: 14px;">
-                            <ui:VisualElement name="footerTireRightFrontFill" class="driving-meter-fill" picking-mode="Ignore" />
+                        <ui:VisualElement style="flex-direction: row;">
+                            <ui:VisualElement name="footerTireLeftRear" class="driving-meter-bar track-icon-tooltip-target" style="height: 14px; margin-right: 2px;">
+                                <ui:VisualElement name="footerTireLeftRearFill" class="driving-meter-fill" picking-mode="Ignore" />
+                            </ui:VisualElement>
+                            <ui:VisualElement name="footerTireRightRear" class="driving-meter-bar track-icon-tooltip-target" style="height: 14px;">
+                                <ui:VisualElement name="footerTireRightRearFill" class="driving-meter-fill" picking-mode="Ignore" />
+                            </ui:VisualElement>
                         </ui:VisualElement>
                     </ui:VisualElement>
-                    <ui:VisualElement style="flex-direction: row;">
-                        <ui:VisualElement name="footerTireLeftRear" class="driving-meter-bar track-icon-tooltip-target" style="height: 14px; margin-right: 2px;">
-                            <ui:VisualElement name="footerTireLeftRearFill" class="driving-meter-fill" picking-mode="Ignore" />
-                        </ui:VisualElement>
-                        <ui:VisualElement name="footerTireRightRear" class="driving-meter-bar track-icon-tooltip-target" style="height: 14px;">
-                            <ui:VisualElement name="footerTireRightRearFill" class="driving-meter-fill" picking-mode="Ignore" />
-                        </ui:VisualElement>
-                    </ui:VisualElement>
+                    <ui:Label name="footerMph" text="0.0 MPH" class="track-footer-mph" />
+                    <ui:Label name="footerRpm" text="RPM 900" class="track-footer-engine" />
+                    <ui:Label name="footerGear" text="Gear 1" class="track-footer-engine" />
                 </ui:VisualElement>
-                <ui:Label name="footerMph" text="0.0 MPH" class="track-footer-mph" />
-                <ui:Label name="footerRpm" text="RPM 900" class="track-footer-engine" />
-                <ui:Label name="footerGear" text="Gear 1" class="track-footer-engine" />
-            </ui:VisualElement>
-            <ui:VisualElement class="track-footer-center">
-                <ui:VisualElement class="track-passing-criteria">
-                    <ui:Label text="Passing" class="track-passing-label" picking-mode="Ignore" />
-                    <ui:Label text="Easier" picking-mode="Ignore" />
-                    <ui:SliderInt name="passingCriteriaSlider" low-value="0" high-value="100" value="50"
-                                  class="track-passing-slider track-icon-tooltip-target"
-                                  tooltip="Move left to ease the requirements for new 007 passing attempts." />
-                    <ui:Label text="Strict" picking-mode="Ignore" />
+                <ui:VisualElement name="driverMessagePanel" class="track-driver-message-panel">
+                    <ui:ScrollView name="trackRadioLog" class="track-radio-log"
+                                   horizontal-scroller-visibility="Hidden" vertical-scroller-visibility="Hidden" />
                 </ui:VisualElement>
-                <ui:VisualElement class="track-footer-metrics">
-                    <ui:Label name="trackFpsLabel" text="FPS --" class="muted" />
-                    <ui:Label name="snapshotStatus" class="garage-detail" style="display: none;" />
+                <ui:VisualElement class="track-footer-pit">
+                    <ui:Button name="driverRadioButton" tooltip="Send a message to the driver" class="track-header-icon track-driver-radio">
+                        <ui:VisualElement class="track-icon-art" picking-mode="Ignore" />
+                    </ui:Button>
+                    <ui:Label text="Radio" class="garage-detail track-driver-radio-label" />
+                    <ui:Button name="cycleTrackCameraButton" tooltip="Choose a track camera" class="track-header-icon">
+                        <ui:VisualElement class="track-icon-art" picking-mode="Ignore" />
+                    </ui:Button>
+                    <ui:Label name="trackCameraAngle" text="Player" class="garage-detail" />
+                    <ui:Label name="playerPitStatus" class="garage-detail" />
+                    <ui:Button name="pitSettingsButton" tooltip="Show pit stop settings" class="track-header-icon pit-settings-button">
+                        <ui:VisualElement class="track-icon-art" picking-mode="Ignore" />
+                    </ui:Button>
                 </ui:VisualElement>
-            </ui:VisualElement>
-            <ui:VisualElement class="track-footer-pit">
-                <ui:Button name="cycleTrackCameraButton" tooltip="Choose a track camera" class="track-header-icon">
-                    <ui:VisualElement class="track-icon-art" picking-mode="Ignore" />
-                </ui:Button>
-                <ui:Label name="trackCameraAngle" text="Player" class="garage-detail" />
-                <ui:Label name="playerPitStatus" class="garage-detail" />
-                <ui:Button name="pitSettingsButton" tooltip="Show pit stop settings" class="track-header-icon pit-settings-button">
-                    <ui:VisualElement class="track-icon-art" picking-mode="Ignore" />
-                </ui:Button>
             </ui:VisualElement>
         </ui:VisualElement>
         <ui:Label name="trackIconTooltip" class="track-icon-tooltip ui-default-font" picking-mode="Ignore" />

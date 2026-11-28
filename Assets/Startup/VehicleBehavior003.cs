@@ -7,6 +7,7 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
     // Bound to the active context before each update: registry models are shared.
     internal IReadOnlyList<SessionCarResult> Drivers { get; set; }
     internal float RaceProgressAggression { get; set; }
+    internal float PlayerAggressionBonus { get; set; }
     internal delegate float PassForecast(int car, int blocker, float lane, float gap);
     internal (Vector2[] PassingLaneRanges, bool[] CornerApproaches, PassForecast ForecastPass) OvalPassingContext { get; set; }
     internal Action<int, int, int> OvalPassCommitted { get; set; }
@@ -362,7 +363,8 @@ internal class VehicleBehavior003 : IVehicleBehaviorModel
         // Aggression changes the driver's caution, never the physical collision footprint.
         // Keep neutral spacing for 007 so merely looking for a pass does not change traffic following.
         bool legacyPassing = allowPassing && !UsePreferredLineTraffic;
-        float Risk(int index) => legacyPassing ? Aggression(index) : .5f;
+        float Risk(int index) => (legacyPassing ? Aggression(index) : .5f) +
+            (index == 0 ? PlayerAggressionBonus : 0f);
         float ContactWidthBetween(int first, int second) => VehicleCollision001.TrackContactWidth(TrackContactHalfWidths, first, second);
         bool keepLaneControl = allowPassing || UsePreferredLineTraffic;
         var (passingLaneRanges, cornerApproaches, forecastPass) = OvalPassingContext;

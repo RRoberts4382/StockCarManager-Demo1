@@ -63,6 +63,7 @@ internal sealed class SessionPitStops
     }
 
     public string PlayerStatus { get; private set; } = string.Empty;
+    internal int PlayerCompletedStops { get; private set; }
 
     public bool NeedsFlatTireService(int index) => stops[index].FlatTireStop;
 
@@ -79,6 +80,23 @@ internal sealed class SessionPitStops
     public bool CanEditPlayerRequest(RaceSessionRun run) =>
         !holdPlayerInGarage && !run.Finished(0) && !run.Retired(0) &&
         stops[0].Requested && stops[0].PlayerEditable && !stops[0].Duration.HasValue;
+
+    internal bool CanCancelPlayerRequest(RaceSessionRun run) =>
+        CanEditPlayerRequest(run) && !cars[0].InPit && !stops[0].FlatTireStop && run.FlatTireMask(0) == 0;
+
+    internal bool TryCancelPlayerRequest(RaceSessionRun run)
+    {
+        if (!CanCancelPlayerRequest(run))
+            return false;
+
+        stops[0] = default;
+        var player = cars[0];
+        player.NextEntry = float.PositiveInfinity;
+        player.DeferredEntry = float.NegativeInfinity;
+        player.ApronEntryActive = false;
+        PlayerStatus = string.Empty;
+        return true;
+    }
 
     public void RequestPlayer(RaceSessionRun run, float fuelGallons, int tireMask, float repairPoints,
         float[] pressures = null, bool playerEditable = false)
@@ -277,7 +295,10 @@ internal sealed class SessionPitStops
                     CompleteService(run, index, stop.FuelGallons, stop.TireMask, stop.RepairPoints, stop.Pressures);
                     stop = default;
                     if (index == 0)
+                    {
+                        PlayerCompletedStops++;
                         PlayerStatus = "Pit stop complete";
+                    }
                 }
                 else if (index == 0)
                 {

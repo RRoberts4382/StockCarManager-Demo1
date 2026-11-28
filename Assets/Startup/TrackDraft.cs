@@ -407,7 +407,7 @@ internal sealed class TrackDraft
 
     public void UpdateBumpIntent(float lapLength, float seconds, System.Collections.Generic.IReadOnlyList<SessionCarResult> drivers,
         float[] distances, float[] lanes, float[] speeds, bool allowBumps, TrackDraftPass pass = null, int raceLeader = -1,
-        bool[] regrouping = null)
+        bool[] regrouping = null, float playerAggressionBonus = 0f)
     {
         bool hasLeaderLine = allowBumps && (uint)raceLeader < (uint)speedStrength.Length && speedStrength[raceLeader] > 0f;
         if (hasLeaderLine)
@@ -439,6 +439,8 @@ internal sealed class TrackDraft
             float aggression = drivers?[i].driver?.personalityTraits?.aggression ?? .5f;
             if (float.IsNaN(aggression))
                 aggression = .5f;
+            if (i == 0)
+                aggression += playerAggressionBonus;
             bool chasing = hasLeaderLine && !raceLeaderLine[i] && !raceLeaderLine[leader];
             bool regroupingPair = chasing && regrouping?[i] == true && regrouping[leader] &&
                 lineAhead[i] == leader && lineBehind[leader] == i;

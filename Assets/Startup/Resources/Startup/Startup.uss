@@ -212,83 +212,115 @@
     width: 22px;
     height: 22px;
 }
-.track-camera-menu {
+.track-choice-menu {
     background-color: #10151e;
     padding: 3px;
 }
-.track-camera-menu .unity-generic-dropdown-menu__item {
+.track-choice-menu .unity-generic-dropdown-menu__item {
     min-height: 24px;
     padding: 2px 8px;
     background-color: #10151e;
 }
-.track-camera-menu .unity-generic-dropdown-menu__item:hover {
+.track-choice-menu .unity-generic-dropdown-menu__item:hover {
     background-color: #263e50;
 }
-.track-camera-menu .unity-generic-dropdown-menu__item:disabled {
+.track-choice-menu .unity-generic-dropdown-menu__item:disabled {
     opacity: 0.65;
 }
 
-.track-footer-center {
-    align-items: center;
-    min-width: 0;
-    max-width: 48%;
+.track-radio-menu-item {
+    min-height: 24px;
+    padding: 2px 8px;
 }
-.track-passing-criteria, .track-footer-passing-visible .track-footer-metrics {
-    flex-direction: row;
-    align-items: center;
-    justify-content: center;
-    min-width: 0;
+.track-radio-menu-item:hover {
+    background-color: #263e50;
 }
-.track-footer-metrics {
-    align-items: center;
+.track-radio-menu-item:disabled {
+    opacity: 0.65;
 }
-.track-passing-criteria {
-    display: none;
-}
-.track-footer-passing-visible .track-passing-criteria {
-    display: flex;
-}
-.track-passing-criteria > Label {
-    margin: 0;
+.track-radio-menu-icon {
+    width: 16px;
+    height: 16px;
     flex-shrink: 0;
-    font-size: 12px;
-    color: #c9d3e0;
+    align-self: center;
+    margin-right: 6px;
 }
-.track-passing-criteria > .track-passing-label {
-    margin-right: 8px;
-    font-size: 13px;
+.track-radio-menu-divider {
+    height: 1px;
+    min-height: 1px;
+    margin: 4px 8px;
+    background-color: #009bdd;
+}
+
+.track-fps {
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    margin: 0;
+    padding: 2px 6px;
+    background-color: #000000;
     color: #f5f5f5;
 }
-.track-passing-slider {
-    width: 128px;
-    min-width: 64px;
-    height: 22px;
-    margin: 0 6px;
-    flex-shrink: 1;
-}
-.track-passing-slider #unity-tracker {
-    height: 4px;
-    border-radius: 2px;
-    background-color: #39495e;
-}
-.track-passing-slider #unity-dragger {
-    background-color: #009bdd;
-    border-color: #009bdd;
-}
-.track-passing-slider:hover #unity-dragger, .track-passing-slider:focus #unity-dragger {
-    background-color: #55c4ef;
-    border-color: #f5f5f5;
-}
-.track-footer-passing-visible .track-footer-metrics > .garage-detail {
-    margin: 0 0 0 8px;
-    font-size: 13px;
+.track-footer-extras {
+    align-items: center;
 }
 .track-footer.footer {
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
     height: auto;
     min-height: 54px;
     padding: 4px 12px;
     background-color: rgba(16, 21, 30, 0.9);
     border-top-color: #009bdd;
+}
+.track-footer-row {
+    flex-direction: row;
+    align-items: center;
+}
+.track-driver-message-panel {
+    width: 33.333%;
+    height: 92px;
+    flex-shrink: 0;
+    padding: 3px 6px;
+    background-color: #10151e;
+    border-width: 1px;
+    border-color: #009bdd;
+    border-radius: 5px;
+}
+.track-radio-log {
+    flex-grow: 1;
+    min-height: 0;
+}
+.track-radio-log-row {
+    flex-direction: row;
+    align-items: flex-start;
+    flex-shrink: 0;
+    margin-bottom: 2px;
+}
+.track-radio-log-icon {
+    width: 22px;
+    height: 22px;
+    flex-shrink: 0;
+    margin-right: 5px;
+}
+.track-driver-message {
+    font-size: 13px;
+    flex-grow: 1;
+    flex-basis: 0;
+    min-width: 0;
+    margin: 2px 0 0;
+    padding: 0;
+    color: #f5f5f5;
+    overflow: hidden;
+    white-space: normal;
+}
+.track-footer-pit > .track-driver-radio {
+    margin: 0 4px 0 0;
+}
+.track-footer-pit > .track-driver-radio-label {
+    flex-shrink: 0;
+    margin-right: 12px;
 }
 .track-footer-driving, .track-footer-pit {
     flex-direction: row;
@@ -296,9 +328,6 @@
     flex-grow: 1;
     flex-basis: 0;
     min-width: 0;
-}
-.track-footer-passing-visible > .track-footer-pit {
-    flex-basis: 32px;
 }
 .driving-meter {
     align-items: center;
@@ -336,6 +365,12 @@
     margin-left: 8px;
     color: #c9d3e0;
     font-size: 13px;
+}
+.track-driver-pace-indicator {
+    width: 30px;
+    height: 30px;
+    flex-shrink: 0;
+    margin-left: 6px;
 }
 .track-footer-pit {
     justify-content: flex-end;

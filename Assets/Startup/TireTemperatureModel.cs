@@ -93,7 +93,7 @@ internal sealed class TireTemperatureModel
     }
 
     internal void Advance(TeamCar car, float seconds, float distance, float speed, float previousSpeed,
-        TrackDefinition springTrack = null, Setup setup = null, bool racing = true, float trackFahrenheit = 90f, double fuelGallons = 0d, DynamicTireLoads dynamicLoads = null, bool onTrack = true)
+        TrackDefinition springTrack = null, Setup setup = null, bool racing = true, float trackFahrenheit = 90f, double fuelGallons = 0d, DynamicTireLoads dynamicLoads = null, bool onTrack = true, float heatFactor = 1f)
     {
         if (car == null || seconds <= 0f)
             return;
@@ -132,7 +132,7 @@ internal sealed class TireTemperatureModel
                 Mathf.Lerp(0.85f, 1.15f, roughness);
             if (springTrack != null)
                 target += VehicleSpeed003.TrackTemperatureHeatOffset(trackFahrenheit);
-            target = Mathf.Clamp(target, AmbientFahrenheit, MaximumFahrenheit);
+            target = Mathf.Clamp(target * heatFactor, AmbientFahrenheit, MaximumFahrenheit);
             float current = Fahrenheit(tire.temperature);
             float timeConstant = target > current ? 100f : speed > 1f ? 150f : 300f;
             float next = Mathf.Lerp(current, target, 1f - Mathf.Exp(-seconds / timeConstant));
@@ -146,7 +146,7 @@ internal sealed class TireTemperatureModel
             {
                 float warmupFactor = springTrack != null
                     ? VehicleSpeed003.TrackTemperatureWarmupFactor(trackFahrenheit) : 1f;
-                next = WarmupTemperature(current, speed * seconds / length * warmupFactor * pressureHeat);
+                next = WarmupTemperature(current, speed * seconds / length * warmupFactor * pressureHeat * heatFactor);
                 if (next >= 185f)
                     warmup.Complete = true;
             }

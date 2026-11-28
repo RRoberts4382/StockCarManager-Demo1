@@ -12,10 +12,7 @@ internal sealed class TrackEngineAudio
 
     internal TrackEngineAudio(Transform[] cars)
     {
-        var onThrottle = Resources.Load<AudioClip>("Startup/StockCarEngineOnThrottle");
-        var offThrottle = Resources.Load<AudioClip>("Startup/StockCarEngineOffThrottle");
-        if (onThrottle == null || offThrottle == null ||
-            onThrottle.samples != offThrottle.samples || onThrottle.frequency != offThrottle.frequency)
+        if (!TryLoadLoops(out var onThrottle, out var offThrottle))
         {
             Debug.LogWarning("The stock car engine needs a matched pair of on- and off-throttle audio loops.");
             voices = System.Array.Empty<EngineVoice>();
@@ -64,10 +61,18 @@ internal sealed class TrackEngineAudio
             voice.Stop();
     }
 
+    internal static bool TryLoadLoops(out AudioClip onThrottle, out AudioClip offThrottle)
+    {
+        onThrottle = Resources.Load<AudioClip>("Startup/StockCarEngineOnThrottle");
+        offThrottle = Resources.Load<AudioClip>("Startup/StockCarEngineOffThrottle");
+        return onThrottle != null && offThrottle != null &&
+            onThrottle.samples == offThrottle.samples && onThrottle.frequency == offThrottle.frequency;
+    }
+
     internal static float PitchForRpm(double rpm) => (float)(rpm / ReferenceRpm);
     internal static float DistanceGain(float meters) => NearDistanceMeters / (NearDistanceMeters + meters);
 
-    private sealed class EngineVoice
+    internal sealed class EngineVoice
     {
         private readonly AudioSource loaded;
         private readonly AudioSource coast;
